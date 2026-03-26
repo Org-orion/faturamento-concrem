@@ -1,142 +1,324 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
-import { useToast } from '@/components/ToastProvider';
-import Modal from '@/components/Modal';
-import { Load } from '@/types';
-import { FormField, inputClass, btnPrimary, btnSecondary, loadStatusColors, StatusBadge } from '@/components/shared';
+import { formatCurrency, getOrderTotal, loadStatusColors, StatusBadge, btnSecondary } from '@/components/shared';
+import { Edit2, Plus, Package, FileText, Download } from 'lucide-react';
+import * as XLSX from 'xlsx';
+import logoSrc from '@/assets/logo.png';
+
+type ReportRow = {
+  driverName: string;
+  date: string;
+  orderId: string;
+  company: string;
+  uf: string;
+  value: number;
+};
+
+const formatDateBR = (iso?: string) => {
+  if (!iso) return '-';
+  return new Date(iso).toLocaleDateString('pt-BR');
+};
+
+const todayStr = () => new Date().toISOString().slice(0, 10);
+
+const getLogoDataUrl = async (): Promise<string> => {
+  try {
+    const response = await fetch(logoSrc);
+    const blob = await response.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch {
+    return '';
+  }
+};
 
 const LoadsPage = () => {
-  const { loads, drivers, orders, clients, addLoad, updateLoad } = useApp();
-  const { showToast } = useToast();
-  const [modalOpen, setModalOpen] = useState(false);
-  const [driverId, setDriverId] = useState('');
-  const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
-  const [weight, setWeight] = useState(0);
+  const { loads, drivers, orders, supportOrders } = useApp();
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  const availableOrders = orders.filter(o => o.status === 'Aguardando' || o.status === 'Separando');
-
-  const openNew = () => {
-    setDriverId('');
-    setSelectedOrders([]);
-    setWeight(0);
-    setModalOpen(true);
+  const toggleSelect = (id: string) => {
+    setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const save = () => {
-    if (!driverId || selectedOrders.length === 0) {
-      showToast('Selecione motorista e pedidos.', 'error');
-      return;
+  const toggleAll = () => {
+    setSelectedIds((prev) => (prev.length === loads.length ? [] : loads.map((l) => l.id)));
+  };
+
+  const reportRows = useMemo((): ReportRow[] => {
+    const selected = loads.filter((l) => selectedIds.includes(l.id));
+    const rows: ReportRow[] = [];
+
+    for (const load of selected) {
+      const driver = drivers.find((d) => d.id === load.driverId);
+      const driverName = (driver?.name || '-').toUpperCase();
+      const dateStr = formatDateBR(load.plannedDate);
+
+      for (const orderId of load.orderIds) {
+        const order = orders.find((o) => o.id === orderId);
+        const supOrder = order ? undefined : supportOrders.find((o) => o.id === orderId);
+        const src = order || supOrder;
+        if (!src) continue;
+
+        rows.push({
+          driverName,
+          date: dateStr,
+          orderId: src.id,
+          company: `${src.clientCode || ''} - ${src.clientName || ''}`.toUpperCase(),
+          uf: (src.clientUF || '-').toUpperCase(),
+          value: getOrderTotal(src),
+        });
+      }
     }
-    addLoad({ driverId, orderIds: selectedOrders, status: 'Aguardando Saída', estimatedWeight: weight });
-    showToast('Carga criada com sucesso!');
-    setModalOpen(false);
+
+    rows.sort((a, b) => a.driverName.localeCompare(b.driverName) || a.date.localeCompare(b.date));
+    return rows;
+  }, [selectedIds, loads, drivers, orders, supportOrders]);
+
+  const totalGeral = useMemo(() => reportRows.reduce((acc, r) => acc + r.value, 0), [reportRows]);
+
+  const handleGeneratePdf = async () => {
+    const logoDataUrl = await getLogoDataUrl();
+
+    const tableRows = reportRows
+      .map(
+        (r) => `
+        <tr>
+          <td>${r.driverName}</td>
+          <td>${r.date}</td>
+          <td>${r.orderId}</td>
+          <td>${r.company}</td>
+          <td>${r.uf}</td>
+          <td class="right">${formatCurrency(r.value)}</td>
+        </tr>`,
+      )
+      .join('');
+
+    const html = `<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>RELATÓRIO GERAL DE CARREGAMENTOS</title>
+  <style>
+    @page { size: A4; margin: 14mm; }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #000; }
+    .header { display: flex; align-items: center; border: 2px solid #000; margin-bottom: 16px; }
+    .header-logo { padding: 10px 16px; border-right: 2px solid #000; display: flex; align-items: center; }
+    .header-logo img { height: 48px; }
+    .header-title { flex: 1; text-align: center; padding: 10px 16px; }
+    .header-title h1 { font-size: 14px; font-weight: 900; letter-spacing: .5px; margin: 0; }
+    .header-title h2 { font-size: 13px; font-weight: 900; letter-spacing: .5px; margin: 2px 0 0 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 11px; text-transform: uppercase; }
+    th, td { border: 1px solid #000; padding: 8px 10px; }
+    th { font-weight: 900; background: #f5f5f5; text-align: center; }
+    td { text-align: center; }
+    .right { text-align: right !important; }
+    .left { text-align: left !important; }
+    tfoot td { font-weight: 900; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-logo">
+      ${logoDataUrl ? `<img src="${logoDataUrl}" alt="CONCREM" />` : '<strong style="font-size:18px;">CONCREM</strong>'}
+    </div>
+    <div class="header-title">
+      <h1>RELATÓRIO GERAL DE CARREGAMENTOS</h1>
+      <h2>CONCREM INDUSTRIAL LTDA</h2>
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th>MOTORISTA</th>
+        <th>DATA</th>
+        <th>Nº PEDIDO</th>
+        <th>EMPRESA</th>
+        <th>UF</th>
+        <th>VALOR</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${tableRows}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td colspan="5" class="right">TOTAL GERAL</td>
+        <td class="right">${formatCurrency(totalGeral)}</td>
+      </tr>
+    </tfoot>
+  </table>
+
+  <script>window.onload = () => window.print();</script>
+</body>
+</html>`;
+
+    const w = window.open('', '_blank');
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
   };
 
-  const toggleOrder = (id: string) => {
-    setSelectedOrders(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
-  };
+  const handleGenerateExcel = () => {
+    const data = reportRows.map((r) => ({
+      MOTORISTA: r.driverName,
+      DATA: r.date,
+      'Nº PEDIDO': r.orderId,
+      EMPRESA: r.company,
+      UF: r.uf,
+      VALOR: r.value,
+    }));
 
-  const updateLoadStatus = (load: Load, status: Load['status']) => {
-    updateLoad({ ...load, status });
-    showToast(`Carga ${load.id} — ${status}`);
+    data.push({
+      MOTORISTA: '',
+      DATA: '',
+      'Nº PEDIDO': '',
+      EMPRESA: '',
+      UF: 'TOTAL GERAL',
+      VALOR: totalGeral,
+    });
+
+    const ws = XLSX.utils.json_to_sheet(data);
+
+    const colWidths = [
+      { wch: 30 },
+      { wch: 12 },
+      { wch: 12 },
+      { wch: 45 },
+      { wch: 6 },
+      { wch: 16 },
+    ];
+    ws['!cols'] = colWidths;
+
+    const lastRowIdx = data.length;
+    const valCol = 'F';
+    for (let i = 2; i <= lastRowIdx + 1; i++) {
+      const cell = ws[`${valCol}${i}`];
+      if (cell) cell.z = '#,##0.00';
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Carregamentos');
+    XLSX.writeFile(wb, `relatorio-carregamentos-${todayStr()}.xlsx`);
   };
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <h1 className="text-2xl font-bold font-display text-foreground">Cargas</h1>
-        <button className={btnPrimary} onClick={openNew}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Nova Carga
-        </button>
+        <h1 className="text-2xl font-bold font-display text-foreground">Programação de Carregamentos</h1>
+        <div className="flex items-center gap-3">
+          {selectedIds.length > 0 && (
+            <>
+              <button onClick={() => void handleGeneratePdf()} className={btnSecondary}>
+                <FileText className="h-4 w-4" />
+                Gerar PDF
+              </button>
+              <button onClick={handleGenerateExcel} className={btnSecondary}>
+                <Download className="h-4 w-4" />
+                Gerar Excel
+              </button>
+            </>
+          )}
+          <Link to="/carregamento/novo">
+            <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-display text-sm font-medium hover:opacity-90 active:opacity-80 transition-opacity">
+              <Plus className="h-4 w-4" />
+              Nova Programação
+            </button>
+          </Link>
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {loads.map(load => {
-          const driver = drivers.find(d => d.id === load.driverId);
-          const loadOrders = orders.filter(o => load.orderIds.includes(o.id));
-          return (
-            <div key={load.id} className="bg-card rounded-lg shadow-sm border border-border p-5 space-y-4">
-              <div className="flex items-center justify-between">
-                <span className="font-mono-data text-sm text-muted-foreground">{load.id}</span>
-                <StatusBadge status={load.status} colorMap={loadStatusColors} />
-              </div>
-              <div>
-                <p className="font-display font-semibold text-foreground">{driver?.name || '-'}</p>
-                <p className="text-sm text-muted-foreground font-display">{driver?.vehicleType} — {driver?.plate}</p>
-              </div>
-              <div className="flex gap-4 text-sm text-muted-foreground font-display">
-                <span>{loadOrders.length} pedido(s)</span>
-                {load.estimatedWeight > 0 && <span>{load.estimatedWeight}kg</span>}
-              </div>
-              <div className="space-y-2 border-t border-border pt-3">
-                {loadOrders.map(o => {
-                  const client = clients.find(c => c.id === o.clientId);
-                  return (
-                    <div key={o.id} className="text-sm">
-                      <span className="font-mono-data text-muted-foreground">{o.id}</span>
-                      <span className="font-display ml-2">{client?.name}</span>
-                      <p className="text-xs text-muted-foreground ml-0">{client?.address.street}, {client?.address.number} — {client?.address.city}</p>
-                    </div>
-                  );
-                })}
-              </div>
-              <select
-                className={inputClass + ' text-xs'}
-                value={load.status}
-                onChange={e => updateLoadStatus(load, e.target.value as Load['status'])}
-              >
-                <option value="Aguardando Saída">Aguardando Saída</option>
-                <option value="Em Rota">Em Rota</option>
-                <option value="Finalizada">Finalizada</option>
-              </select>
-            </div>
-          );
-        })}
-        {loads.length === 0 && (
-          <p className="col-span-full text-center text-muted-foreground font-display py-12">Nenhuma carga criada.</p>
-        )}
-      </div>
+      <div className="bg-card rounded-xl shadow-card border border-border overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
+                  <input
+                    type="checkbox"
+                    checked={selectedIds.length === loads.length && loads.length > 0}
+                    onChange={toggleAll}
+                  />
+                </th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Carregamento</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Motorista</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor do Pedido</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor do Frete</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {loads.map((load, index) => {
+                const driver = drivers.find((d) => d.id === load.driverId);
+                const saleOrders = orders.filter((o) => load.orderIds.includes(o.id));
+                const supOrders = supportOrders.filter((o) => load.orderIds.includes(o.id));
+                const totalOrderValue =
+                  saleOrders.reduce((acc, o) => acc + getOrderTotal(o), 0) +
+                  supOrders.reduce((acc, o) => acc + o.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0), 0);
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Nova Carga">
-        <div className="space-y-4">
-          <FormField label="Motorista">
-            <select className={inputClass} value={driverId} onChange={e => setDriverId(e.target.value)}>
-              <option value="">Selecionar...</option>
-              {drivers.filter(d => d.status === 'Disponível').map(d => (
-                <option key={d.id} value={d.id}>{d.name} — {d.vehicleType} ({d.plate})</option>
-              ))}
-            </select>
-          </FormField>
-          <FormField label="Peso Estimado (kg)">
-            <input className={inputClass} type="number" value={weight} onChange={e => setWeight(Number(e.target.value))} />
-          </FormField>
-          <FormField label="Vincular Pedidos">
-            <div className="border border-border rounded-lg max-h-48 overflow-y-auto">
-              {availableOrders.length === 0 && <p className="px-3 py-4 text-sm text-muted-foreground text-center">Nenhum pedido disponível</p>}
-              {availableOrders.map(o => {
-                const client = clients.find(c => c.id === o.clientId);
                 return (
-                  <label key={o.id} className="flex items-center gap-3 px-3 py-2 hover:bg-muted/50 cursor-pointer transition-colors border-b border-border/50 last:border-0">
-                    <input
-                      type="checkbox"
-                      checked={selectedOrders.includes(o.id)}
-                      onChange={() => toggleOrder(o.id)}
-                      className="accent-primary"
-                    />
-                    <span className="font-mono-data text-sm">{o.id}</span>
-                    <span className="font-display text-sm">{client?.name}</span>
-                  </label>
+                  <tr key={`${load.id}-${index}`} className="hover:bg-muted/30 transition-colors group">
+                    <td className="py-4 px-6 text-center">
+                      <input
+                        type="checkbox"
+                        checked={selectedIds.includes(load.id)}
+                        onChange={() => toggleSelect(load.id)}
+                      />
+                    </td>
+                    <td className="py-4 px-6 font-mono-data font-bold text-primary">{load.id}</td>
+                    <td className="py-4 px-6">
+                      <div className="flex flex-col">
+                        <span className="font-display font-bold text-foreground">{driver?.name || '-'}</span>
+                        <span className="text-[11px] text-muted-foreground font-display uppercase tracking-tight">
+                          {driver?.vehicleType} — <span className="font-mono-data font-bold">{driver?.plate}</span>
+                        </span>
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 font-mono-data text-muted-foreground">
+                      {load.plannedDate ? new Date(load.plannedDate).toLocaleDateString('pt-BR') : '-'}
+                    </td>
+                    <td className="py-4 px-6 font-mono-data font-bold text-foreground">
+                      {formatCurrency(totalOrderValue)}
+                    </td>
+                    <td className="py-4 px-6 font-mono-data font-bold text-primary">
+                      {formatCurrency(load.freightValue || 0)}
+                    </td>
+                    <td className="py-4 px-6">
+                      <div className="flex flex-col gap-2">
+                        <StatusBadge status={load.productionStatus} colorMap={loadStatusColors} />
+                        <StatusBadge status={load.shipmentStatus} colorMap={loadStatusColors} />
+                      </div>
+                    </td>
+                    <td className="py-4 px-6 text-right">
+                      <Link
+                        to={`/carregamento/editar/${load.id}`}
+                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
+                      >
+                        <Edit2 className="h-3 w-3" />
+                        Editar
+                      </Link>
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
-          </FormField>
+            </tbody>
+          </table>
         </div>
-        <div className="flex justify-end gap-3 mt-6">
-          <button className={btnSecondary} onClick={() => setModalOpen(false)}>Cancelar</button>
-          <button className={btnPrimary} onClick={save}>Criar Carga</button>
-        </div>
-      </Modal>
+        {loads.length === 0 && (
+          <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
+            <Package className="h-12 w-12 mb-4 opacity-10" />
+            <p className="font-display text-sm italic">Nenhuma programação criada até o momento.</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 };

@@ -1,38 +1,148 @@
-import React, { useState } from 'react';
-import { useApp } from '@/contexts/AppContext';
+import React, { useEffect, useState } from 'react';
 import { useToast } from '@/components/ToastProvider';
+import { useApp } from '@/contexts/AppContext';
 import Modal from '@/components/Modal';
 import { Driver } from '@/types';
-import { FormField, inputClass, btnPrimary, btnSecondary, driverStatusColors, StatusBadge } from '@/components/shared';
+import { FormField, inputClass, btnPrimary, btnDanger, driverStatusColors, StatusBadge } from '@/components/shared';
+import { deleteMotorista, insertMotorista, listMotoristas, updateMotorista } from '@/lib/cadastrosOps';
 
-const emptyDriver = { name: '', cnh: '', cnhCategory: 'B', phone: '', vehicleType: '', plate: '', status: 'Disponível' as const };
+const emptyDriver = { name: '', cnh: '', cnhCategory: 'B', phone: '', vehicleType: 'Carreta Bau', vehicleVolume: 0, vehicleWeight: 0, plate: '', status: 'Disponível' as const };
 
 const DriversPage = () => {
-  const { drivers, addDriver, updateDriver, deleteDriver } = useApp();
   const { showToast } = useToast();
-  const [statusFilter, setStatusFilter] = useState('');
+  const { addDriver, updateDriver: updateAppDriver, deleteDriver: deleteAppDriver } = useApp();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Driver | null>(null);
   const [form, setForm] = useState<Omit<Driver, 'id'>>(emptyDriver);
+  const [items, setItems] = useState<Driver[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const filtered = drivers.filter(d => !statusFilter || d.status === statusFilter);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const rows = await listMotoristas();
+        if (cancelled) return;
+        const next: Driver[] = rows.map((r) => ({
+          id: r.id,
+          name: r.nome || '',
+          cnh: r.cnh_numero || '',
+          cnhCategory: r.cnh_categoria || 'B',
+          phone: r.telefone || '',
+          vehicleType: r.tipo_veiculo || 'Carreta Bau',
+          vehicleVolume: Number(r.volume_suportado_m3 || 0),
+          vehicleWeight: Number(r.peso_suportado_kg || 0),
+          plate: r.placa_veiculo || '',
+          status: 'Disponível',
+        }));
+        setItems(next);
+      } catch (e: any) {
+        showToast(e?.message || 'Falha ao carregar motoristas.', 'error');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [showToast]);
+
+  const filtered = items;
 
   const openNew = () => { setEditing(null); setForm(emptyDriver); setModalOpen(true); };
-  const openEdit = (d: Driver) => { setEditing(d); setForm({ name: d.name, cnh: d.cnh, cnhCategory: d.cnhCategory, phone: d.phone, vehicleType: d.vehicleType, plate: d.plate, status: d.status }); setModalOpen(true); };
+  const openEdit = (d: Driver) => { 
+    setEditing(d); 
+    setForm({ 
+      name: d.name, 
+      cnh: d.cnh, 
+      cnhCategory: d.cnhCategory, 
+      phone: d.phone, 
+      vehicleType: d.vehicleType || 'Carreta Bau', 
+      vehicleVolume: d.vehicleVolume || 0,
+      vehicleWeight: d.vehicleWeight || 0,
+      plate: d.plate, 
+      status: d.status 
+    }); 
+    setModalOpen(true); 
+  };
 
   const save = () => {
     if (!form.name.trim()) return;
     if (editing) {
-      updateDriver({ ...form, id: editing.id });
-      showToast('Motorista atualizado!');
+      void (async () => {
+        try {
+          const row = await updateMotorista(editing.id, {
+            nome: form.name.trim(),
+            telefone: form.phone.trim(),
+            cnh_numero: form.cnh.trim(),
+            cnh_categoria: String(form.cnhCategory || 'B'),
+            placa_veiculo: form.plate.trim(),
+            tipo_veiculo: String(form.vehicleType || 'Carreta Bau'),
+            volume_suportado_m3: Number(form.vehicleVolume || 0),
+            peso_suportado_kg: Number(form.vehicleWeight || 0),
+          });
+          const updatedDriver: Driver = {
+            id: editing.id,
+            name: row.nome || '',
+            phone: row.telefone || '',
+            cnh: row.cnh_numero || '',
+            cnhCategory: row.cnh_categoria || 'B',
+            plate: row.placa_veiculo || '',
+            vehicleType: row.tipo_veiculo || 'Carreta Bau',
+            vehicleVolume: Number(row.volume_suportado_m3 || 0),
+            vehicleWeight: Number(row.peso_suportado_kg || 0),
+            status: editing.status,
+          };
+          setItems((prev) =>
+            prev.map((d) => (d.id === editing.id ? updatedDriver : d))
+          );
+          updateAppDriver(updatedDriver);
+          showToast('Motorista atualizado!');
+          setModalOpen(false);
+        } catch (e: any) {
+          showToast(e?.message || 'Falha ao salvar.', 'error');
+        }
+      })();
     } else {
-      addDriver(form);
-      showToast('Motorista cadastrado!');
+      void (async () => {
+        try {
+          const row = await insertMotorista({
+            nome: form.name.trim(),
+            telefone: form.phone.trim(),
+            cnh_numero: form.cnh.trim(),
+            cnh_categoria: String(form.cnhCategory || 'B'),
+            placa_veiculo: form.plate.trim(),
+            tipo_veiculo: String(form.vehicleType || 'Carreta Bau'),
+            volume_suportado_m3: Number(form.vehicleVolume || 0),
+            peso_suportado_kg: Number(form.vehicleWeight || 0),
+          });
+          const newDriver: Driver = {
+            id: row.id,
+            name: row.nome || '',
+            cnh: row.cnh_numero || '',
+            cnhCategory: row.cnh_categoria || 'B',
+            phone: row.telefone || '',
+            vehicleType: row.tipo_veiculo || 'Carreta Bau',
+            vehicleVolume: Number(row.volume_suportado_m3 || 0),
+            vehicleWeight: Number(row.peso_suportado_kg || 0),
+            plate: row.placa_veiculo || '',
+            status: 'Disponível',
+          };
+          setItems((prev) => [...prev, newDriver]);
+          addDriver(newDriver);
+          showToast('Motorista cadastrado!');
+          setModalOpen(false);
+        } catch (e: any) {
+          showToast(e?.message || 'Falha ao salvar.', 'error');
+        }
+      })();
     }
-    setModalOpen(false);
   };
 
-  const setField = (key: string, value: any) => setForm(prev => ({ ...prev, [key]: value }));
+  const setField = <K extends keyof Omit<Driver, 'id'>>(key: K, value: Omit<Driver, 'id'>[K]) =>
+    setForm(prev => ({ ...prev, [key]: value }));
 
   return (
     <div className="space-y-6">
@@ -44,18 +154,11 @@ const DriversPage = () => {
         </button>
       </div>
 
-      <select className={inputClass + ' max-w-xs'} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-        <option value="">Todos os Status</option>
-        <option value="Disponível">Disponível</option>
-        <option value="Em Rota">Em Rota</option>
-        <option value="Inativo">Inativo</option>
-      </select>
-
       <div className="bg-card rounded-lg shadow-sm border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              {['Nome', 'CNH', 'Telefone', 'Veículo', 'Placa', 'Status', 'Ações'].map(h => (
+              {['Nome', 'Telefone', 'Veículo', 'Volume (m³)', 'Peso (Kg)', 'Placa', 'Ações'].map(h => (
                 <th key={h} className="text-left py-3 px-4 font-display font-medium text-muted-foreground">{h}</th>
               ))}
             </tr>
@@ -64,17 +167,31 @@ const DriversPage = () => {
             {filtered.map((d, i) => (
               <tr key={d.id} className={`border-b border-border/50 hover:bg-muted/50 transition-colors ${i % 2 ? 'bg-muted/20' : ''}`}>
                 <td className="py-3 px-4 font-display font-medium">{d.name}</td>
-                <td className="py-3 px-4 font-mono-data">{d.cnh} ({d.cnhCategory})</td>
                 <td className="py-3 px-4 font-mono-data">{d.phone}</td>
                 <td className="py-3 px-4 font-display">{d.vehicleType}</td>
+                <td className="py-3 px-4 font-mono-data">{d.vehicleVolume || 0} m³</td>
+                <td className="py-3 px-4 font-mono-data">{d.vehicleWeight || 0} Kg</td>
                 <td className="py-3 px-4 font-mono-data">{d.plate}</td>
-                <td className="py-3 px-4"><StatusBadge status={d.status} colorMap={driverStatusColors} /></td>
                 <td className="py-3 px-4">
                   <div className="flex gap-2">
                     <button onClick={() => openEdit(d)} className="text-muted-foreground hover:text-primary transition-colors">
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     </button>
-                    <button onClick={() => { deleteDriver(d.id); showToast('Motorista excluído.', 'info'); }} className="text-muted-foreground hover:text-destructive transition-colors">
+                    <button
+                      onClick={() => {
+                        void (async () => {
+                          try {
+                            await deleteMotorista(d.id);
+                            setItems((prev) => prev.filter((x) => x.id !== d.id));
+                            deleteAppDriver(d.id);
+                            showToast('Motorista excluído.', 'info');
+                          } catch (e: any) {
+                            showToast(e?.message || 'Falha ao excluir.', 'error');
+                          }
+                        })();
+                      }}
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                    >
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
                     </button>
                   </div>
@@ -84,6 +201,11 @@ const DriversPage = () => {
           </tbody>
         </table>
       </div>
+      {loading && (
+        <div className="text-sm text-muted-foreground font-display">
+          Carregando...
+        </div>
+      )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Editar Motorista' : 'Novo Motorista'}>
         <div className="space-y-4">
@@ -98,19 +220,20 @@ const DriversPage = () => {
           </div>
           <FormField label="Telefone"><input className={inputClass} value={form.phone} onChange={e => setField('phone', e.target.value)} /></FormField>
           <div className="grid grid-cols-2 gap-4">
-            <FormField label="Tipo de Veículo"><input className={inputClass} value={form.vehicleType} onChange={e => setField('vehicleType', e.target.value)} /></FormField>
+            <FormField label="Tipo de Veículo">
+              <select className={inputClass} value={form.vehicleType} onChange={e => setField('vehicleType', e.target.value)}>
+                {['Carreta Bau', 'Carreta Sider', 'Truck Bau', 'Truck Sider'].map(v => <option key={v} value={v}>{v}</option>)}
+              </select>
+            </FormField>
             <FormField label="Placa"><input className={inputClass} value={form.plate} onChange={e => setField('plate', e.target.value)} /></FormField>
           </div>
-          <FormField label="Status">
-            <select className={inputClass} value={form.status} onChange={e => setField('status', e.target.value)}>
-              <option value="Disponível">Disponível</option>
-              <option value="Em Rota">Em Rota</option>
-              <option value="Inativo">Inativo</option>
-            </select>
-          </FormField>
+          <div className="grid grid-cols-2 gap-4">
+            <FormField label="Volume Carga (m³)"><input className={inputClass} type="number" value={form.vehicleVolume} onChange={e => setField('vehicleVolume', Number(e.target.value))} /></FormField>
+            <FormField label="Peso Carga (Kg)"><input className={inputClass} type="number" value={form.vehicleWeight} onChange={e => setField('vehicleWeight', Number(e.target.value))} /></FormField>
+          </div>
         </div>
         <div className="flex justify-end gap-3 mt-6">
-          <button className={btnSecondary} onClick={() => setModalOpen(false)}>Cancelar</button>
+          <button className={btnDanger} onClick={() => setModalOpen(false)}>Cancelar</button>
           <button className={btnPrimary} onClick={save}>Salvar</button>
         </div>
       </Modal>

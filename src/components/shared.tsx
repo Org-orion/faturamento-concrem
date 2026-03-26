@@ -1,30 +1,38 @@
 import React from 'react';
-import { Order, OrderStatus } from '@/types';
+import { Order, OrderItem, OrderStatus } from '@/types';
 
 export const statusColors: Record<OrderStatus, string> = {
-  'Aguardando': 'bg-warning/15 text-warning',
-  'Separando': 'bg-info/15 text-info',
-  'Em Rota': 'bg-primary/10 text-primary',
-  'Entregue': 'bg-success/15 text-success',
+  'Aguardando Avaliação': 'bg-status-warning/15 text-status-warning',
+  'Liberado p/ Produção': 'bg-status-success/15 text-status-success',
+  'Em Carregamento': 'bg-status-info/15 text-status-info',
+  'Produção Concluída': 'bg-status-success/15 text-status-success',
+  'Despachado': 'bg-status-info/15 text-status-info',
+  'Em Rota': 'bg-status-info/15 text-status-info',
+  'Entregue': 'bg-status-success/15 text-status-success',
   'Cancelado': 'bg-destructive/10 text-destructive',
 };
 
 export const paymentStatusColors: Record<string, string> = {
-  'Pendente': 'bg-warning/15 text-warning',
-  'Pago': 'bg-success/15 text-success',
+  'Pendente': 'bg-status-warning/15 text-status-warning',
+  'Pago': 'bg-status-success/15 text-status-success',
   'Vencido': 'bg-destructive/10 text-destructive',
 };
 
 export const driverStatusColors: Record<string, string> = {
-  'Disponível': 'bg-success/15 text-success',
-  'Em Rota': 'bg-info/15 text-info',
+  'Disponível': 'bg-status-success/15 text-status-success',
+  'Em Trânsito': 'bg-status-info/15 text-status-info',
   'Inativo': 'bg-muted text-muted-foreground',
 };
 
 export const loadStatusColors: Record<string, string> = {
-  'Aguardando Saída': 'bg-warning/15 text-warning',
-  'Em Rota': 'bg-info/15 text-info',
-  'Finalizada': 'bg-success/15 text-success',
+  'Aguardando Produção': 'bg-muted text-muted-foreground',
+  'Em Produção': 'bg-status-warning/15 text-status-warning',
+  'Produção Concluída': 'bg-status-success/15 text-status-success',
+  'Aguardando Despacho': 'bg-muted text-muted-foreground',
+  'Despachado': 'bg-status-info/15 text-status-info',
+  'Em Rota': 'bg-status-warning/15 text-status-warning',
+  'Entregue': 'bg-status-success/15 text-status-success',
+  'Cancelado': 'bg-destructive/10 text-destructive',
 };
 
 export const StatusBadge = ({ status, colorMap }: { status: string; colorMap: Record<string, string> }) => (
@@ -36,8 +44,10 @@ export const StatusBadge = ({ status, colorMap }: { status: string; colorMap: Re
 export const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
-export const getOrderTotal = (order: Order) =>
-  order.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+export const getOrderTotal = (order: { items: OrderItem[]; totalPedidoVenda?: number | null }) => {
+  if (typeof order.totalPedidoVenda === 'number' && Number.isFinite(order.totalPedidoVenda)) return order.totalPedidoVenda;
+  return order.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+};
 
 export const FormField = ({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) => (
   <div className="space-y-1.5">

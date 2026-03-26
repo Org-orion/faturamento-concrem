@@ -1,4 +1,5 @@
 import type { Config } from "tailwindcss";
+import tailwindcssAnimate from "tailwindcss-animate";
 
 export default {
   darkMode: ["class"],
@@ -12,8 +13,8 @@ export default {
     },
     extend: {
       fontFamily: {
-        display: ["Outfit", "sans-serif"],
-        mono: ["DM Mono", "monospace"],
+        sans: ["Manrope", "sans-serif"],
+        display: ["Manrope", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -24,6 +25,7 @@ export default {
         primary: {
           DEFAULT: "hsl(var(--primary))",
           foreground: "hsl(var(--primary-foreground))",
+          hover: "hsl(171, 100%, 35%)",
         },
         secondary: {
           DEFAULT: "hsl(var(--secondary))",
@@ -48,18 +50,24 @@ export default {
         card: {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
+          blue: "hsl(var(--card-blue))",
+          green: "hsl(var(--card-green))",
+          red: "hsl(var(--card-red))",
+          orange: "hsl(var(--card-orange))",
+          purple: "hsl(var(--card-purple))",
+          pink: "hsl(var(--card-pink))",
+          teal: "hsl(var(--card-teal))",
+          magenta: "hsl(var(--card-magenta))",
+          brown: "hsl(var(--card-brown))",
+          lime: "hsl(var(--card-lime))",
+          darkBlue: "hsl(var(--card-dark-blue))",
+          cyan: "hsl(var(--card-cyan))",
         },
-        success: {
-          DEFAULT: "hsl(var(--success))",
-          foreground: "hsl(var(--success-foreground))",
-        },
-        warning: {
-          DEFAULT: "hsl(var(--warning))",
-          foreground: "hsl(var(--warning-foreground))",
-        },
-        info: {
-          DEFAULT: "hsl(var(--info))",
-          foreground: "hsl(var(--info-foreground))",
+        status: {
+          success: "hsl(var(--status-success) / <alpha-value>)",
+          warning: "hsl(var(--status-warning) / <alpha-value>)",
+          danger: "hsl(var(--status-danger) / <alpha-value>)",
+          info: "hsl(var(--status-info) / <alpha-value>)",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
@@ -70,13 +78,16 @@ export default {
           "accent-foreground": "hsl(var(--sidebar-accent-foreground))",
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
-          muted: "hsl(var(--sidebar-muted))",
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
-        md: "calc(var(--radius) - 2px)",
-        sm: "calc(var(--radius) - 4px)",
+        lg: "12px",
+        md: "8px",
+        sm: "6px",
+      },
+      boxShadow: {
+        card: "0 1px 3px rgba(0, 0, 0, 0.08)",
+        "card-hover": "0 4px 12px rgba(0, 0, 0, 0.12)",
       },
       keyframes: {
         "accordion-down": {
@@ -94,5 +105,5 @@ export default {
       },
     },
   },
-  plugins: [require("tailwindcss-animate")],
+  plugins: [tailwindcssAnimate],
 } satisfies Config;

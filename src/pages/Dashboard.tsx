@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { formatCurrency, getOrderTotal, statusColors, StatusBadge } from '@/components/shared';
+import { roleLabel } from '@/utils/access';
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
   const [display, setDisplay] = useState(0);
@@ -42,94 +43,144 @@ const SimpleBarChart = ({ data }: { data: { label: string; value: number }[] }) 
 };
 
 const Dashboard = () => {
-  const { clients, orders, invoices } = useApp();
+  const { orders, invoices, drivers, user } = useApp();
+  const role = user?.role || 'ADMIN';
+
+  const activeDrivers = drivers.filter(d => d.status === 'Em Trânsito').length;
 
   const totalInvoiced = invoices.filter(i => i.paymentStatus === 'Pago').reduce((s, i) => s + i.value, 0);
-  const openOrders = orders.filter(o => o.status !== 'Entregue' && o.status !== 'Cancelado').length;
-  const delivered = orders.filter(o => o.status === 'Entregue').length;
-  const activeClients = new Set(orders.map(o => o.clientId)).size;
+  const visibleOrders = orders.filter((o) => {
+    if (role === 'FATURAMENTO') return ['Liberado p/ Produção', 'Em Carregamento', 'Produção Concluída', 'Despachado', 'Em Rota', 'Entregue', 'Cancelado'].includes(o.status);
+    if (role === 'COMERCIAL') return o.status === 'Aguardando Avaliação' || o.status === 'Liberado p/ Produção';
+    if (role === 'PRODUCAO') return ['Liberado p/ Produção', 'Em Carregamento', 'Produção Concluída'].includes(o.status);
+    return true;
+  });
+
+  const delivered = visibleOrders.filter(o => o.status === 'Entregue').length;
+  const inTransit = visibleOrders.filter(o => o.status === 'Em Rota').length;
+  const inPrep = visibleOrders.filter(o => o.status === 'Em Carregamento' || o.status === 'Despachado').length;
+  const awaitingEval = orders.filter(o => o.status === 'Aguardando Avaliação').length;
+  const releasedForProd = orders.filter(o => o.status === 'Liberado p/ Produção').length;
+  const openInvoices = invoices.filter(i => i.paymentStatus === 'Pendente' || i.paymentStatus === 'Vencido').length;
+  const activeRepresentatives = new Set(orders.map(o => o.representativeName || o.representativeId || o.clientId)).size;
 
   const months = ['Out', 'Nov', 'Dez', 'Jan', 'Fev', 'Mar'];
   const chartData = months.map((m, i) => ({ label: m, value: Math.floor(Math.random() * 15000) + 5000 + (i * 2000) }));
   chartData[5] = { label: 'Mar', value: totalInvoiced || 2300 };
 
-  const lastOrders = [...orders].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+  const lastOrders = [...visibleOrders].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
 
-  const clientVolume = clients.map(c => ({
-    ...c,
-    total: orders.filter(o => o.clientId === c.id).reduce((s, o) => s + getOrderTotal(o), 0),
-  })).sort((a, b) => b.total - a.total).slice(0, 5);
+  const representativeVolume = (() => {
+    const acc = new Map<string, number>();
+    for (const o of visibleOrders) {
+      const key = o.representativeName || o.representativeId || o.clientId;
+      if (!key) continue;
+      acc.set(key, (acc.get(key) || 0) + getOrderTotal(o));
+    }
+    return [...acc.entries()]
+      .map(([name, total]) => ({ name, total }))
+      .sort((a, b) => b.total - a.total)
+      .slice(0, 5);
+  })();
 
-  const cards = [
-    { label: 'Total Faturado', value: totalInvoiced, prefix: 'R$ ', color: 'text-success' },
-    { label: 'Pedidos em Aberto', value: openOrders, color: 'text-warning' },
-    { label: 'Pedidos Entregues', value: delivered, color: 'text-info' },
-    { label: 'Clientes Ativos', value: activeClients, color: 'text-primary' },
-  ];
+  const cards = role === 'ADMIN'
+    ? [
+        { label: 'Total Faturado', value: totalInvoiced, prefix: 'R$ ', color: 'bg-card-green' },
+        { label: 'Aguardando Avaliação', value: awaitingEval, color: 'bg-card-orange' },
+        { label: 'Em Programação', value: releasedForProd + inPrep + inTransit, color: 'bg-card-blue' },
+        { label: 'Representantes Ativos', value: activeRepresentatives, color: 'bg-card-dark-blue' },
+      ]
+    : role === 'FATURAMENTO'
+      ? [
+          { label: 'Em Programação', value: inPrep + inTransit, color: 'bg-card-blue' },
+          { label: 'Entregues', value: delivered, color: 'bg-card-green' },
+          { label: 'Faturas Pendentes', value: openInvoices, color: 'bg-card-purple' },
+          { label: 'Total Faturado', value: totalInvoiced, prefix: 'R$ ', color: 'bg-card-green' },
+        ]
+      : role === 'PRODUCAO'
+        ? [
+            { label: 'Liberados p/ Produção', value: releasedForProd, color: 'bg-card-orange' },
+            { label: 'Em Carregamento', value: orders.filter(o => o.status === 'Em Carregamento').length, color: 'bg-card-red' },
+            { label: 'Produção Concluída', value: orders.filter(o => o.status === 'Produção Concluída').length, color: 'bg-card-green' },
+            { label: 'Total de Pedidos', value: visibleOrders.length, color: 'bg-card-dark-blue' },
+          ]
+      : [
+          { label: 'Aguardando Avaliação', value: awaitingEval, color: 'bg-card-orange' },
+          { label: 'Liberados', value: releasedForProd, color: 'bg-card-green' },
+          { label: 'Total de Pedidos', value: visibleOrders.length, color: 'bg-card-red' },
+          { label: 'Valor em Análise', value: orders.filter(o => o.status === 'Aguardando Avaliação').reduce((s, o) => s + getOrderTotal(o), 0), prefix: 'R$ ', color: 'bg-card-dark-blue' },
+        ];
 
   return (
-    <div className="space-y-6">
-      <h1 className="text-2xl font-bold font-display text-foreground">Dashboard</h1>
+    <div className="space-y-8">
+      <div className="flex flex-col gap-2">
+        <h1 className="text-3xl font-bold font-sans text-foreground tracking-tight">Dashboard</h1>
+        <p className="text-sm text-muted-foreground">Visão geral — perfil {roleLabel[role]}</p>
+      </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         {cards.map((card, i) => (
-          <div key={i} className="bg-card rounded-lg p-5 shadow-sm border border-border">
-            <p className="text-sm text-muted-foreground font-display">{card.label}</p>
-            <p className={`text-2xl font-bold font-mono-data mt-2 ${card.color}`}>
-              <AnimatedCounter value={card.value} prefix={card.prefix || ''} />
-            </p>
+          <div key={i} className={`${card.color} rounded-xl p-6 shadow-card hover:shadow-card-hover transition-all duration-300 text-white relative overflow-hidden group`}>
+            <div className="relative z-10">
+              <p className="text-sm font-medium opacity-90 mb-1">{card.label}</p>
+              <h3 className="text-3xl font-bold tracking-tight">
+                <AnimatedCounter value={card.value} prefix={card.prefix || ''} />
+              </h3>
+            </div>
+            {/* Decorative background element */}
+            <div className="absolute -right-4 -top-4 w-24 h-24 bg-white/10 rounded-full blur-2xl group-hover:bg-white/20 transition-all duration-500" />
           </div>
         ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-card rounded-lg p-5 shadow-sm border border-border">
-          <h3 className="text-sm font-semibold font-display text-foreground mb-4">Faturamento — Últimos 6 Meses</h3>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        <div className="bg-card rounded-xl p-6 shadow-card border border-border hover:shadow-card-hover transition-all">
+          <h3 className="text-lg font-semibold font-sans text-foreground mb-6">Faturamento — Últimos 6 Meses</h3>
           <SimpleBarChart data={chartData} />
         </div>
 
-        <div className="bg-card rounded-lg p-5 shadow-sm border border-border">
-          <h3 className="text-sm font-semibold font-display text-foreground mb-4">Top 5 Clientes por Volume</h3>
-          <div className="space-y-3">
-            {clientVolume.map((c, i) => (
-              <div key={c.id} className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <span className="w-6 h-6 rounded-full bg-primary/10 text-primary text-xs font-bold flex items-center justify-center">{i + 1}</span>
-                  <span className="text-sm font-display">{c.name}</span>
+        <div className="bg-card rounded-xl p-6 shadow-card border border-border hover:shadow-card-hover transition-all">
+          <h3 className="text-lg font-semibold font-sans text-foreground mb-6">Top 5 Representantes por Volume</h3>
+          <div className="space-y-4">
+            {representativeVolume.map((c, i) => (
+              <div key={c.name} className="flex items-center justify-between group">
+                <div className="flex items-center gap-4">
+                  <span className="w-8 h-8 rounded-lg bg-primary/10 text-primary text-xs font-bold flex items-center justify-center group-hover:bg-primary group-hover:text-white transition-colors">{i + 1}</span>
+                  <span className="text-sm font-medium text-foreground">{c.name}</span>
                 </div>
-                <span className="text-sm font-mono-data text-muted-foreground">{formatCurrency(c.total)}</span>
+                <span className="text-sm font-semibold text-foreground">{formatCurrency(c.total)}</span>
               </div>
             ))}
           </div>
         </div>
       </div>
 
-      <div className="bg-card rounded-lg p-5 shadow-sm border border-border">
-        <h3 className="text-sm font-semibold font-display text-foreground mb-4">Últimos Pedidos</h3>
+      <div className="bg-card rounded-xl p-6 shadow-card border border-border hover:shadow-card-hover transition-all">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-lg font-semibold font-sans text-foreground">Últimos Pedidos</h3>
+          <button className="text-sm font-medium text-primary hover:text-primary-hover transition-colors">Ver todos</button>
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left py-2 px-3 font-display font-medium text-muted-foreground">Pedido</th>
-                <th className="text-left py-2 px-3 font-display font-medium text-muted-foreground">Cliente</th>
-                <th className="text-left py-2 px-3 font-display font-medium text-muted-foreground">Data</th>
-                <th className="text-right py-2 px-3 font-display font-medium text-muted-foreground">Valor</th>
-                <th className="text-left py-2 px-3 font-display font-medium text-muted-foreground">Status</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
+                <th className="text-right py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
+                <th className="text-left py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
               </tr>
             </thead>
             <tbody>
-              {lastOrders.map((o, i) => {
-                const client = clients.find(c => c.id === o.clientId);
-                return (
-                  <tr key={o.id} className={`border-b border-border/50 hover:bg-muted/50 transition-colors ${i % 2 === 0 ? '' : 'bg-muted/20'}`}>
-                    <td className="py-2.5 px-3 font-mono-data">{o.id}</td>
-                    <td className="py-2.5 px-3 font-display">{client?.name || '-'}</td>
-                    <td className="py-2.5 px-3 font-mono-data">{new Date(o.date).toLocaleDateString('pt-BR')}</td>
-                    <td className="py-2.5 px-3 font-mono-data text-right">{formatCurrency(getOrderTotal(o))}</td>
-                    <td className="py-2.5 px-3"><StatusBadge status={o.status} colorMap={statusColors} /></td>
-                  </tr>
-                );
-              })}
+              {lastOrders.map((o) => (
+                <tr key={o.id} className="border-b border-border/50 hover:bg-muted transition-colors">
+                  <td className="py-4 px-4 font-medium text-foreground">{o.id}</td>
+                  <td className="py-4 px-4 text-foreground">{o.representativeName || '-'}</td>
+                  <td className="py-4 px-4 text-muted-foreground">{new Date(o.date).toLocaleDateString('pt-BR')}</td>
+                  <td className="py-4 px-4 text-right font-semibold text-foreground">{formatCurrency(getOrderTotal(o))}</td>
+                  <td className="py-4 px-4"><StatusBadge status={o.status} colorMap={statusColors} /></td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

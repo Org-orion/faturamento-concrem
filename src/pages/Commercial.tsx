@@ -1,0 +1,986 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { useApp } from '@/contexts/AppContext';
+import { useToast } from '@/components/ToastProvider';
+import Modal from '@/components/Modal';
+import { btnDanger, btnPrimary, btnSecondary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
+import { CheckCircle2, Eye, Plus } from 'lucide-react';
+import { StatusBadge } from '@/components/shared';
+import { useDebounce } from '@/hooks/useDebounce';
+import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { tableColumns, vendasOr } from '@/contexts/AppContext';
+import { rowToOrder } from '@/lib/pedidoMapper';
+import { Order, SupportOrder, PedidoStatusRow } from '@/types';
+import type { FilterCondition, FilterField } from '@/lib/filters';
+import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
+import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
+import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
+import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
+
+type ScheduleCandidate = {
+  id: string;
+  representativeName: string;
+  total: number;
+  kind: 'VENDA' | 'SUPORTE';
+};
+
+const commercialStatusColors: Record<string, string> = {
+  'Aguardando Avaliação': 'bg-status-warning/15 text-status-warning',
+  'Liberado p/ Produção': 'bg-status-success/15 text-status-success',
+};
+
+const Commercial = () => {
+  const { orders, supportOrders, user, updateOrderCommercialNotes, updateSupportOrderCommercialNotes, createProductionSchedule } = useApp();
+  const { showToast } = useToast();
+  const navigate = useNavigate();
+
+  const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
+
+  const [filterPedido, setFilterPedido] = useState<string>('');
+  const [filterConf, setFilterConf] = useState<string>('');
+  const [filterRep, setFilterRep] = useState<string>('');
+  const [issueDate, setIssueDate] = useState<string>('');
+  const [validDate, setValidDate] = useState<string>('');
+
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [conditions, setConditions] = useState<FilterCondition[]>([]);
+
+  const [page, setPage] = useState(1);
+  const [serverOrders, setServerOrders] = useState<Order[]>([]);
+  const [totalCount, setTotalCount] = useState(0);
+  const [loadingList, setLoadingList] = useState(false);
+  const [loadingDetails, setLoadingDetails] = useState(false);
+  const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
+
+  // --- Pedido status tracking ---
+  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const statusByPedidoId = useMemo(() => new Map(statusRows.map(r => [r.pedido_id, r] as const)), [statusRows]);
+
+  const refreshStatusRows = async (ids: string[]) => {
+    if (!ids.length) return;
+    const rows = await listPedidosStatusByPedidoIds(ids);
+    setStatusRows(rows);
+  };
+
+  // Load status rows when serverOrders change
+  useEffect(() => {
+    const ids = serverOrders.map(o => o.id);
+    if (ids.length) void refreshStatusRows(ids);
+  }, [serverOrders]);
+
+  // Pedidos aguardando confirmação (status = aguardando_confirmacao)
+  const awaitingConfirmation = useMemo(() => {
+    return serverOrders.filter(o => {
+      const st = statusByPedidoId.get(o.id)?.status_atual;
+      return !st || st === 'aguardando_confirmacao';
+    });
+  }, [serverOrders, statusByPedidoId]);
+
+  // Pedidos aguardando envio/confirmação da diretoria — based on pedidos_status
+  const awaitingEnvioDiretoria = useMemo(() => {
+    return serverOrders.filter(o => {
+      const st = statusByPedidoId.get(o.id)?.status_atual;
+      return st === 'aguardando_envio_diretoria' || st === 'aguardando_confirmacao_diretoria';
+    });
+  }, [serverOrders, statusByPedidoId]);
+
+  // Pedidos confirmados pela diretoria — prontos para liberação
+  const confirmedByDiretoria = useMemo(() => {
+    return serverOrders.filter(o => {
+      const st = statusByPedidoId.get(o.id)?.status_atual;
+      return st === 'confirmado_diretoria';
+    });
+  }, [serverOrders, statusByPedidoId]);
+
+  // Track sent-at dates from confirmacao_diretoria table for display
+  const [diretoriaSentAtById, setDiretoriaSentAtById] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!supabaseOps) return;
+    let cancelled = false;
+    const loadDiretoria = async () => {
+      const ids = serverOrders.map(o => o.id);
+      if (!ids.length) return;
+      const { data } = await supabaseOps
+        .from('confirmacao_diretoria')
+        .select('pedido_id, status, enviado_em')
+        .in('pedido_id', ids);
+      if (cancelled || !data) return;
+      const sentAt: Record<string, string> = {};
+      for (const r of data as any[]) {
+        const id = String(r.pedido_id);
+        if (r.enviado_em) sentAt[id] = String(r.enviado_em);
+      }
+      setDiretoriaSentAtById(sentAt);
+    };
+    void loadDiretoria();
+    return () => { cancelled = true; };
+  }, [serverOrders]);
+
+  useEffect(() => {
+    if (!supabaseOps) return;
+
+    const ch = supabaseOps
+      .channel('commercial_realtime_status')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedidos_status' },
+        (payload) => {
+          const row = (payload as any)?.new as any;
+          const pedidoId = String(row?.pedido_id || '');
+          if (!pedidoId) return;
+
+          setStatusRows((prev) => {
+            const idx = prev.findIndex((r) => r.pedido_id === pedidoId);
+            if (idx === -1) return [...prev, row as PedidoStatusRow];
+            const next = prev.slice();
+            next[idx] = row as PedidoStatusRow;
+            return next;
+          });
+        },
+      )
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'confirmacao_diretoria' },
+        (payload) => {
+          const row = (payload as any)?.new as any;
+          const pedidoId = String(row?.pedido_id || '');
+          if (!pedidoId) return;
+
+          if (row?.enviado_em) {
+            const sentAt = String(row.enviado_em);
+            setDiretoriaSentAtById((prev: Record<string, string>) => ({ ...prev, [pedidoId]: sentAt }));
+          }
+        },
+      )
+      .subscribe();
+
+    return () => {
+      void supabaseOps.removeChannel(ch);
+    };
+  }, []);
+
+  const debouncedFilterPedido = useDebounce(filterPedido, 400);
+  const debouncedFilterConf = useDebounce(filterConf, 400);
+  const debouncedFilterRep = useDebounce(filterRep, 400);
+
+  const [openDetail, setOpenDetail] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [openConfirm, setOpenConfirm] = useState<null | { type: 'liberar' }>(null);
+  const [decisionNote, setDecisionNote] = useState('');
+  const [tempNotes, setTempNotes] = useState('');
+
+  const [openSchedule, setOpenSchedule] = useState(false);
+  const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split('T')[0]);
+  const [scheduleObs, setScheduleObs] = useState('');
+  const [scheduleSelected, setScheduleSelected] = useState<string[]>([]);
+
+  const eligibleForSchedule = useMemo(() => {
+    const sale: ScheduleCandidate[] = orders
+      .filter((o) => o.status === 'Liberado p/ Produção' && !o.carregamentoId)
+      .map((o) => ({
+        id: o.id,
+        representativeName: o.representativeName || '-',
+        total: getOrderTotal(o),
+        kind: 'VENDA' as const,
+      }));
+
+    const support: ScheduleCandidate[] = supportOrders
+      .filter((o) => o.status === 'Liberado p/ Produção' && !o.carregamentoId)
+      .map((o) => ({
+        id: o.id,
+        representativeName: o.representativeName || '-',
+        total: o.items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0),
+        kind: 'SUPORTE' as const,
+      }));
+
+    return [...sale, ...support].sort((a, b) => a.id.localeCompare(b.id));
+  }, [orders, supportOrders]);
+
+  useEffect(() => {
+    if (!supabaseOps) return;
+    let cancelled = false;
+
+    const loadOverrides = async () => {
+      const ids = Array.from(new Set([...orders.map((o) => o.id), ...supportOrders.map((o) => o.id)]));
+      if (!ids.length) {
+        setMoveOverride({});
+        return;
+      }
+
+      const { data, error } = await supabaseOps
+        .from('comercial_pedidos_acoes')
+        .select('pedido_id, acao, criado_em')
+        .in('pedido_id', ids)
+        .in('acao', ['mover_para_suporte', 'mover_para_venda']);
+
+      if (cancelled) return;
+      if (error || !data) return;
+
+      const latest: Record<string, { at: string; to: 'VENDA' | 'SUPORTE' }> = {};
+      for (const r of data as any[]) {
+        const id = String(r.pedido_id);
+        const at = String(r.criado_em || '');
+        const to = String(r.acao) === 'mover_para_suporte' ? 'SUPORTE' : 'VENDA';
+        if (!latest[id] || at > latest[id].at) latest[id] = { at, to };
+      }
+
+      const map: Record<string, 'VENDA' | 'SUPORTE'> = {};
+      for (const id of Object.keys(latest)) map[id] = latest[id].to;
+      setMoveOverride(map);
+    };
+
+    void loadOverrides();
+    return () => {
+      cancelled = true;
+    };
+  }, [orders, supportOrders]);
+
+  const isSupport = (o: Order | SupportOrder): o is SupportOrder => {
+    return 'num' in o;
+  };
+
+  const filterFields = useMemo(() => {
+    return [
+      { id: 'pedido', label: 'Nº Pedido', type: 'text', getValue: (o: Order) => o.id, placeholder: 'Número do pedido' },
+      { id: 'conf', label: 'Conf.', type: 'text', getValue: (o: Order) => o.idNotaConf ?? '', placeholder: 'id_nota_conf' },
+      {
+        id: 'rep',
+        label: 'Representante',
+        type: 'text',
+        getValue: (o: Order) => o.representativeName || '',
+        placeholder: 'Nome do representante...',
+      },
+      { id: 'emissao', label: 'Emissão', type: 'date', getValue: (o: Order) => o.date || '' },
+      { id: 'validade', label: 'Validade', type: 'date', getValue: (o: Order) => o.expiryDate || '' },
+    ] satisfies Array<FilterField<Order>>;
+  }, []);
+
+  useEffect(() => {
+    const byField = new Map<string, FilterCondition>();
+    for (const c of conditions) byField.set(c.fieldId, c);
+    setFilterPedido(byField.get('pedido')?.value ?? '');
+    setFilterConf(byField.get('conf')?.value ?? '');
+    setFilterRep(byField.get('rep')?.value ?? '');
+    setIssueDate(byField.get('emissao')?.value ?? '');
+    setValidDate(byField.get('validade')?.value ?? '');
+    setPage(1);
+  }, [conditions]);
+
+  // Fetch paginated data from Supabase
+  useEffect(() => {
+    if (!supabasePedidos) return;
+    let cancelled = false;
+
+    const fetchPage = async () => {
+      setLoadingList(true);
+      try {
+        const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+
+        const movedToSupport = Object.entries(moveOverride).filter((x) => x[1] === 'SUPORTE').map((x) => x[0]);
+        const movedToVenda = Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0]);
+
+        let finalOr = vendasOr;
+        if (movedToVenda.length > 0) {
+          finalOr += `,numero_pedido.in.(${movedToVenda.map((x) => `"${x}"`).join(',')})`;
+        }
+
+        let query = supabasePedidos.from(table).select(tableColumns, { count: 'estimated' }).or(finalOr);
+
+        if (movedToSupport.length > 0) {
+          query = query.not('numero_pedido', 'in', `(${movedToSupport.map((x) => `"${x}"`).join(',')})`);
+        }
+
+        if (debouncedFilterPedido) {
+          query = query.ilike('numero_pedido', `%${debouncedFilterPedido}%`);
+        }
+        if (debouncedFilterConf) {
+          query = query.eq('id_nota_conf', debouncedFilterConf);
+        }
+        if (debouncedFilterRep) {
+          query = query.ilike('representante', `%${debouncedFilterRep}%`);
+        }
+        if (issueDate) {
+          query = query.gte('data_emissao', `${issueDate}T00:00:00`).lte('data_emissao', `${issueDate}T23:59:59`);
+        }
+        if (validDate) {
+          query = query.gte('data_validade', `${validDate}T00:00:00`).lte('data_validade', `${validDate}T23:59:59`);
+        }
+
+        const from = (page - 1) * 50;
+        const to = from + 49;
+        query = query.range(from, to).order('data_emissao', { ascending: false });
+
+        const { data, count, error } = await query;
+        if (cancelled) return;
+
+        if (error) {
+          console.error('[Supabase] Erro ao buscar página:', error.message);
+          if (String(error.message || '').includes('Failed to fetch')) {
+            showToast('Falha ao conectar ao Supabase. Verifique URL/Key e CORS liberado para localhost.', 'error');
+          }
+          return;
+        }
+
+        if (data) {
+          const mapped = data.map((row: any) => rowToOrder(row, 'CLI-001'));
+          setServerOrders(mapped);
+        }
+        if (count !== null) {
+          setTotalCount(count);
+        }
+      } catch (e: any) {
+        if (cancelled) return;
+        console.error('[Supabase] Erro ao buscar página:', e?.message || e);
+        showToast('Falha ao conectar ao Supabase. Verifique URL/Key e CORS liberado para localhost.', 'error');
+      } finally {
+        if (!cancelled) setLoadingList(false);
+      }
+    };
+
+    fetchPage();
+    return () => { cancelled = true; };
+  }, [debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, issueDate, moveOverride, page, validDate]);
+
+  const totals = useMemo(() => {
+    const awaiting = orders.filter((o) => o.status === 'Aguardando Avaliação');
+    const today = new Date().toISOString().slice(0, 10);
+    const releasedToday = orders.filter((o) => {
+      const last = (o.history || []).slice(-1)[0];
+      return o.status === 'Liberado p/ Produção' && last?.action === 'Liberou pedido para produção' && (last.at || '').slice(0, 10) === today;
+    });
+    const inAnalysisValue = awaiting.reduce((sum, o) => sum + getOrderTotal(o), 0);
+
+    return {
+      awaitingCount: awaiting.length,
+      releasedTodayCount: releasedToday.length,
+      inAnalysisValue,
+    };
+  }, [orders]);
+
+
+
+  const openDetails = async (id: string) => {
+    const o = serverOrders.find((x) => x.id === id);
+    if (!o) return;
+    
+    setSelectedId(id);
+    setTempNotes(o?.commercialNotes || '');
+    setDecisionNote('');
+    setOpenConfirm(null);
+    setOpenDetail(true);
+    setLoadingDetails(true);
+    setSelectedOrderDetails(o);
+
+    try {
+      if (supabasePedidos) {
+        const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+        const { data, error } = await supabasePedidos
+          .from(table)
+          .select('dados_tabela, cliente_fantasia, ped_compra_cliente')
+          .eq('numero_pedido', id)
+          .single();
+
+        if (!error && data) {
+          const fullRow = { ...o, ...data };
+          const tempOrder = rowToOrder(fullRow as any, 'CLI-001');
+          setSelectedOrderDetails((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  items: tempOrder.items,
+                  clienteFantasia: tempOrder.clienteFantasia,
+                  pedCompraCliente: tempOrder.pedCompraCliente,
+                }
+              : null,
+          );
+        }
+
+        const prec = await supabasePedidos.from(table).select('precisao_embarque').eq('numero_pedido', id).single();
+        if (!prec.error && prec.data && prec.data.precisao_embarque != null) {
+          const v = String(prec.data.precisao_embarque);
+          setSelectedOrderDetails((prev) => (prev ? { ...prev, previsaoCarregamento: v } : null));
+        }
+      }
+    } finally {
+      setLoadingDetails(false);
+    }
+  };
+
+  const canDecide = user?.role === 'COMERCIAL' || user?.role === 'ADMIN';
+
+  const canCreateSchedule = user?.role === 'COMERCIAL' || user?.role === 'ADMIN';
+
+  const saveSchedule = () => {
+    if (scheduleSelected.length === 0) return;
+    createProductionSchedule({ plannedDate: scheduleDate, obs: scheduleObs, orderIds: scheduleSelected, kind: 'CRN' });
+    showToast('Cronograma criado e enviado para Produção');
+    setOpenSchedule(false);
+    setScheduleObs('');
+    setScheduleSelected([]);
+    setScheduleDate(new Date().toISOString().split('T')[0]);
+  };
+
+  const handleSaveNotes = () => {
+    if (!selectedOrderDetails) return;
+    if (isSupport(selectedOrderDetails)) updateSupportOrderCommercialNotes(selectedOrderDetails.id, tempNotes);
+    else updateOrderCommercialNotes(selectedOrderDetails.id, tempNotes);
+    
+    // update local state
+    setSelectedOrderDetails(prev => prev ? { ...prev, commercialNotes: tempNotes } : null);
+    showToast('Observações atualizadas');
+  };
+
+  const confirmRelease = async () => {
+    if (!selectedOrderDetails) return;
+
+    // New flow: confirm pedido → set status to aguardando_envio_diretoria
+    const res = await updatePedidoStatus({
+      pedidoId: selectedOrderDetails.id,
+      numeroPedido: selectedOrderDetails.id,
+      statusNovo: 'aguardando_envio_diretoria',
+      alteradoPor: user?.username || null,
+      observacao: decisionNote || 'Pedido confirmado — aguardando envio para diretoria',
+    });
+
+    if (!res.ok) {
+      showToast('Erro ao confirmar pedido', 'error');
+      return;
+    }
+
+    // Refresh status rows
+    await refreshStatusRows(serverOrders.map(o => o.id));
+
+    const username = user?.username;
+    if (supabaseOps && username) {
+      const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert([
+        {
+          pedido_id: selectedOrderDetails.id,
+          acao: 'confirmar_pedido',
+          criado_em: new Date().toISOString(),
+          criado_por: username,
+          payload: { note: decisionNote },
+        },
+      ] as any);
+      if (error) console.error('[Supabase OPS] confirmar_pedido:', error.message);
+    }
+
+    if (supabaseOps) {
+      const now = new Date().toISOString();
+      const { error } = await supabaseOps
+        .from('confirmacao_diretoria')
+        .upsert(
+          [
+            {
+              pedido_id: selectedOrderDetails.id,
+              status: 'pendente',
+              enviado_em: now,
+              enviado_por: username || null,
+            },
+          ] as any,
+          { onConflict: 'pedido_id' },
+        );
+      if (error) console.error('[Supabase OPS] confirmacao_diretoria upsert:', error.message);
+      else {
+        setDiretoriaSentAtById((prev) => ({ ...prev, [selectedOrderDetails.id]: now }));
+      }
+    }
+
+    showToast(`Pedido ${selectedOrderDetails.id} confirmado — aguardando envio para diretoria`);
+    setOpenConfirm(null);
+    setOpenDetail(false);
+  };
+
+  const moveToSupport = async () => {
+    if (!selectedOrderDetails) return;
+    setMoveOverride((prev) => ({ ...prev, [selectedOrderDetails.id]: 'SUPORTE' }));
+    setServerOrders(prev => prev.filter(o => o.id !== selectedOrderDetails.id));
+    setOpenDetail(false);
+
+    const username = user?.username;
+    if (!supabaseOps || !username) return;
+    const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert([
+      {
+        pedido_id: selectedOrderDetails.id,
+        acao: 'mover_para_suporte',
+        criado_em: new Date().toISOString(),
+        criado_por: username,
+        payload: { de: 'VENDA', para: 'SUPORTE' },
+      },
+    ] as any);
+    if (error) console.error('[Supabase OPS] mover_para_suporte:', error.message);
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <h1 className="text-2xl font-bold font-display text-foreground">Pedidos de Venda</h1>
+          <p className="text-sm text-muted-foreground">Confirme pedidos de venda para enviar ao mapeamento</p>
+        </div>
+        {canCreateSchedule && (
+          <button className={btnPrimary} onClick={() => navigate('/comercial/liberacao')}>
+            <Plus className="h-4 w-4" />
+            Criar Conograma
+          </button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-card border border-border rounded-xl p-5 shadow-card">
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Total aguardando</p>
+          <p className="text-2xl font-bold mt-2">{totals.awaitingCount}</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5 shadow-card">
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Liberados hoje</p>
+          <p className="text-2xl font-bold mt-2">{totals.releasedTodayCount}</p>
+        </div>
+        <div className="bg-card border border-border rounded-xl p-5 shadow-card">
+          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Valor em análise</p>
+          <p className="text-2xl font-bold mt-2">{formatCurrency(totals.inAnalysisValue)}</p>
+        </div>
+      </div>
+
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex flex-col gap-2">
+          <div className="text-sm font-semibold text-foreground">Filtros</div>
+          <ActiveFiltersChips
+            fields={filterFields}
+            conditions={conditions}
+            onRemove={(id) => setConditions((prev) => prev.filter((c) => c.id !== id))}
+            onClear={() => setConditions([])}
+          />
+        </div>
+        <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
+      </div>
+
+      <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-border bg-muted/30">
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº Pedido</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Conf.</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
+                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border/50">
+              {loadingList ? (
+                <tr>
+                  <td colSpan={8} className="py-10 text-center text-muted-foreground font-display">
+                    Carregando pedidos...
+                  </td>
+                </tr>
+              ) : awaitingConfirmation.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="py-10 text-center text-muted-foreground font-display">
+                    Nenhum pedido aguardando confirmação encontrado.
+                  </td>
+                </tr>
+              ) : (
+                awaitingConfirmation.map((o) => {
+                  return (
+                    <tr key={o.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="py-4 px-6 font-mono-data font-bold text-primary">
+                        {o.id}
+                        <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-blue-200 text-blue-900">
+                          Venda
+                        </span>
+                      </td>
+                      <td className="py-4 px-6 font-mono-data text-muted-foreground">{typeof o.idNotaConf === 'number' ? o.idNotaConf : '-'}</td>
+                      <td className="py-4 px-6 font-display font-semibold text-foreground">{o.representativeName || '-'}</td>
+                      <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? new Date(o.date).toLocaleDateString('pt-BR') : '-'}</td>
+                      <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? new Date(o.expiryDate).toLocaleDateString('pt-BR') : '-'}</td>
+                      <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
+                      <td className="py-4 px-6">
+                        <PedidoStatusBadge value={statusByPedidoId.get(o.id)?.status_atual || 'aguardando_confirmacao'} />
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <button
+                          onClick={() => void openDetails(o.id)}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
+                        >
+                          <Eye className="h-3 w-3" />
+                          Detalhes
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })
+              )}
+            </tbody>
+          </table>
+        </div>
+        {!loadingList && serverOrders.length > 0 && (
+          <div className="px-6 py-4 border-t border-border flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">
+              Mostrando {awaitingConfirmation.length} de {totalCount} pedidos
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                disabled={page === 1}
+                onClick={() => setPage(p => p - 1)}
+                className="px-3 py-1.5 rounded border border-border bg-card text-xs font-semibold disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <button
+                disabled={page * 50 >= totalCount}
+                onClick={() => setPage(p => p + 1)}
+                className="px-3 py-1.5 rounded border border-border bg-card text-xs font-semibold disabled:opacity-50"
+              >
+                Próxima
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Seção 2: Aguardando Confirmação da Diretoria */}
+      {awaitingEnvioDiretoria.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Aguardando Confirmação da Diretoria</h2>
+          <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº Pedido</th>
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data de Envio</th>
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {awaitingEnvioDiretoria.map((o: Order) => (
+                    <tr key={o.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
+                      <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || '-'}</td>
+                      <td className="py-4 px-6">{o.representativeName || '-'}</td>
+                      <td className="py-4 px-6 font-mono-data text-muted-foreground">
+                        {diretoriaSentAtById[o.id] ? new Date(diretoriaSentAtById[o.id]).toLocaleDateString('pt-BR') : '-'}
+                      </td>
+                      <td className="py-4 px-6">
+                        <PedidoStatusBadge value={statusByPedidoId.get(o.id)?.status_atual || 'aguardando_envio_diretoria'} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Seção 3: Confirmados pela Diretoria — Aguardando Liberação */}
+      {confirmedByDiretoria.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Confirmados pela Diretoria — Aguardando Liberação</h2>
+          <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border bg-muted/30">
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº Pedido</th>
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
+                    <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
+                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+                    <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border/50">
+                  {confirmedByDiretoria.map((o: Order) => (
+                    <tr key={o.id} className="hover:bg-muted/30 transition-colors">
+                      <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
+                      <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || '-'}</td>
+                      <td className="py-4 px-6">{o.representativeName || '-'}</td>
+                      <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
+                      <td className="py-4 px-6">
+                        <PedidoStatusBadge value="confirmado_diretoria" />
+                      </td>
+                      <td className="py-4 px-6 text-right">
+                        <button
+                          onClick={async () => {
+                            const res = await updatePedidoStatus({
+                              pedidoId: o.id,
+                              numeroPedido: o.id,
+                              statusNovo: 'liberado_producao',
+                              alteradoPor: user?.username || null,
+                              observacao: 'Liberado para produção pelo comercial',
+                            });
+                            if (res.ok) {
+                              await refreshStatusRows(serverOrders.map(x => x.id));
+                              showToast(`Pedido ${o.id} liberado para produção`);
+                            } else {
+                              showToast('Erro ao liberar pedido', 'error');
+                            }
+                          }}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          Liberar p/ Produção
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      <Modal open={openDetail} onClose={() => setOpenDetail(false)} title={selectedOrderDetails ? `Pedido ${selectedOrderDetails.id}` : 'Pedido'} wide>
+        {!selectedOrderDetails ? (
+          <div className="text-sm text-muted-foreground">Pedido não encontrado.</div>
+        ) : (
+          <div className="space-y-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="bg-muted/20 border border-border rounded-lg p-4">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Cliente</p>
+                <p className="mt-1 font-semibold text-foreground">{selectedOrderDetails.clientName || '-'}</p>
+                {selectedOrderDetails.clienteFantasia && <p className="text-xs text-muted-foreground">{selectedOrderDetails.clienteFantasia}</p>}
+                <p className="text-xs text-muted-foreground mt-1">Código: {selectedOrderDetails.clientCode || '-'}</p>
+                {selectedOrderDetails.pedCompraCliente && <p className="text-xs text-muted-foreground mt-1">Ped. Compra Cliente: <span className="font-medium text-foreground">{selectedOrderDetails.pedCompraCliente}</span></p>}
+                <p className="text-xs text-muted-foreground mt-2">Data Emissão: {selectedOrderDetails.date ? new Date(selectedOrderDetails.date).toLocaleDateString('pt-BR') : '-'}</p>
+                <p className="text-xs text-muted-foreground">Validade: {selectedOrderDetails.expiryDate ? new Date(selectedOrderDetails.expiryDate).toLocaleDateString('pt-BR') : '-'}</p>
+              </div>
+              <div className="bg-muted/20 border border-border rounded-lg p-4">
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</p>
+                <div className="mt-2">
+                  <StatusBadge status={selectedOrderDetails.status} colorMap={commercialStatusColors} />
+                </div>
+                {selectedOrderDetails.previsaoCarregamento && <p className="text-xs text-muted-foreground mt-3">Previsão de Carregamento: <span className="font-semibold text-foreground">{selectedOrderDetails.previsaoCarregamento}</span></p>}
+                <p className="text-xs text-muted-foreground mt-3">Valor total: <span className="font-mono-data font-bold text-foreground">{formatCurrency(getOrderTotal(selectedOrderDetails))}</span></p>
+                <p className="text-xs text-muted-foreground mt-1">Frete: <span className="font-mono-data font-bold text-foreground">{formatCurrency(selectedOrderDetails.freightValue || 0)}</span></p>
+              </div>
+            </div>
+
+            <div className="bg-card border border-border rounded-xl overflow-hidden">
+              <div className="px-5 py-3 border-b border-border bg-muted/30">
+                <p className="text-sm font-bold font-display">Itens</p>
+              </div>
+              <div className="overflow-auto max-h-[360px]">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border/60">
+                      <th className="text-left py-3 px-5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Produto</th>
+                      <th className="text-right py-3 px-5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Qtd</th>
+                      <th className="text-right py-3 px-5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Unit</th>
+                      <th className="text-right py-3 px-5 text-[11px] font-bold text-muted-foreground uppercase tracking-wider">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/50">
+                    {loadingDetails ? (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-center text-muted-foreground text-xs">Carregando itens...</td>
+                      </tr>
+                    ) : selectedOrderDetails.items.length === 0 ? (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-center text-muted-foreground text-xs">Nenhum item detalhado encontrado.</td>
+                      </tr>
+                    ) : (
+                      selectedOrderDetails.items.map((it, idx) => (
+                        <tr key={idx}>
+                          <td className="py-3 px-5 font-display font-medium">{it.name}</td>
+                          <td className="py-3 px-5 text-right font-mono-data">{it.quantity}</td>
+                          <td className="py-3 px-5 text-right font-mono-data">{formatCurrency(it.unitPrice)}</td>
+                          <td className="py-3 px-5 text-right font-mono-data font-bold">{formatCurrency((it.total ?? it.unitPrice * it.quantity) as number)}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-sm font-semibold font-display text-foreground">Observações (Comercial)</label>
+              <textarea
+                className={`${inputClass} mt-2 min-h-[96px]`}
+                value={tempNotes}
+                onChange={(e) => setTempNotes(e.target.value)}
+                placeholder="Anotações internas para análise..."
+              />
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-xs text-muted-foreground">Última atualização registrada no histórico.</p>
+                <button
+                  onClick={handleSaveNotes}
+                  className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground hover:bg-border transition-colors font-semibold"
+                >
+                  Salvar observações
+                </button>
+              </div>
+            </div>
+
+            <div className="bg-muted/20 border border-border rounded-xl p-4">
+              <p className="text-sm font-bold font-display text-foreground">Histórico</p>
+              <div className="mt-3 space-y-2">
+                {(selectedOrderDetails.history || []).length === 0 ? (
+                  <p className="text-sm text-muted-foreground">Nenhum histórico registrado.</p>
+                ) : (
+                  (selectedOrderDetails.history || []).slice().reverse().map((h, idx) => (
+                    <div key={idx} className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{h.action}</p>
+                        {h.note && <p className="text-xs text-muted-foreground mt-0.5">{h.note}</p>}
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xs text-muted-foreground font-mono-data">{new Date(h.at).toLocaleString('pt-BR')}</p>
+                        <p className="text-xs text-muted-foreground">{h.by}</p>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+              <button
+                onClick={() => void moveToSupport()}
+                className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors font-semibold"
+              >
+                Mover para Pedido Suporte
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+              <button
+                disabled={!canDecide}
+                onClick={() => setOpenConfirm({ type: 'liberar' })}
+                className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold transition-opacity ${
+                  canDecide ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-muted text-muted-foreground opacity-70 cursor-not-allowed'
+                }`}
+              >
+                <CheckCircle2 className="h-4 w-4" />
+                Confirmar Pedido
+              </button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal
+        open={Boolean(openConfirm)}
+        onClose={() => setOpenConfirm(null)}
+        title="Confirmar Pedido"
+      >
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Confirme o pedido para enviar para mapeamento (Logística).
+          </p>
+
+          <div>
+            <label className="text-sm font-semibold font-display text-foreground">Observação (opcional)</label>
+            <textarea
+              className={`${inputClass} mt-2 min-h-[88px]`}
+              value={decisionNote}
+              onChange={(e) => setDecisionNote(e.target.value)}
+              placeholder="Detalhes adicionais para registro..."
+            />
+          </div>
+
+          <div className="flex justify-end gap-3">
+            <button
+              onClick={() => setOpenConfirm(null)}
+              className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors"
+            >
+              Cancelar
+            </button>
+            <button onClick={confirmRelease} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-semibold">
+              Confirmar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={openSchedule} onClose={() => setOpenSchedule(false)} title="Criar Cronograma de Produção" wide>
+        <div className="space-y-5">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="text-sm font-medium font-display text-foreground">Data Prevista Produção</label>
+              <input type="date" className={inputClass + ' mt-1'} value={scheduleDate} onChange={(e) => setScheduleDate(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-sm font-medium font-display text-foreground">Nº Cronograma</label>
+              <div className={inputClass + ' mt-1'}>Auto (CRN-xxx)</div>
+            </div>
+          </div>
+
+          <div>
+            <label className="text-sm font-medium font-display text-foreground">Observações</label>
+            <textarea className={inputClass + ' mt-1'} rows={3} value={scheduleObs} onChange={(e) => setScheduleObs(e.target.value)} />
+          </div>
+
+          <div className="bg-card rounded-xl border border-border overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="border-b border-border bg-muted/30">
+                  <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Selecionar</th>
+                  <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
+                  <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
+                  <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border/50">
+                {eligibleForSchedule.map((o) => (
+                  <tr key={o.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="py-3 px-4">
+                      <input
+                        type="checkbox"
+                        checked={scheduleSelected.includes(o.id)}
+                        onChange={() =>
+                          setScheduleSelected((prev) =>
+                            prev.includes(o.id) ? prev.filter((x) => x !== o.id) : [...prev, o.id],
+                          )
+                        }
+                      />
+                    </td>
+                    <td className="py-3 px-4 font-mono-data font-bold text-primary">
+                      {o.id}
+                      {o.kind === 'SUPORTE' && (
+                        <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">
+                          SUPORTE
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3 px-4">{o.representativeName}</td>
+                    <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(o.total)}</td>
+                  </tr>
+                ))}
+                {eligibleForSchedule.length === 0 && (
+                  <tr>
+                    <td colSpan={4} className="py-10 text-center text-muted-foreground">Nenhum pedido liberado para produção.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="flex items-center justify-end gap-3">
+            <button className={btnDanger} onClick={() => setOpenSchedule(false)}>Cancelar</button>
+            <button className={btnPrimary} onClick={saveSchedule}>Salvar</button>
+          </div>
+        </div>
+      </Modal>
+
+      <FilterConfiguratorDialog
+        open={filtersOpen}
+        onOpenChange={setFiltersOpen}
+        fields={filterFields}
+        value={conditions}
+        onApply={setConditions}
+      />
+    </div>
+  );
+};
+
+export default Commercial;

@@ -1,49 +1,82 @@
-import React, { useState, useEffect } from 'react';
-import { AppProvider } from '@/contexts/AppContext';
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { AppProvider, useApp } from '@/contexts/AppContext';
 import { ToastProvider } from '@/components/ToastProvider';
-import Sidebar, { Page } from '@/components/Sidebar';
+import { MainLayout } from '@/components/Layout/MainLayout';
 import SkeletonLoader from '@/components/SkeletonLoader';
-import Dashboard from '@/pages/Dashboard';
-import ClientsPage from '@/pages/Clients';
-import DriversPage from '@/pages/Drivers';
-import OrdersPage from '@/pages/Orders';
-import LoadsPage from '@/pages/Loads';
-import InvoicesPage from '@/pages/Invoices';
-import ReportsPage from '@/pages/Reports';
+import { canAccessRoute } from '@/utils/access';
 
-const pages: Record<Page, React.ComponentType> = {
-  dashboard: Dashboard,
-  clients: ClientsPage,
-  drivers: DriversPage,
-  orders: OrdersPage,
-  loads: LoadsPage,
-  invoices: InvoicesPage,
-  reports: ReportsPage,
+// Lazy loading pages
+const Login = lazy(() => import('@/pages/Login'));
+const Dashboard = lazy(() => import('@/pages/Dashboard'));
+const ClientsPage = lazy(() => import('@/pages/Clients'));
+const DriversPage = lazy(() => import('@/pages/Drivers'));
+const LoadsPage = lazy(() => import('@/pages/Loads'));
+const CreateCarregamento = lazy(() => import('@/pages/CreateShipment'));
+const FinancialPage = lazy(() => import('@/pages/Financial'));
+const CommercialPage = lazy(() => import('@/pages/Commercial'));
+const ComercialLiberacaoPage = lazy(() => import('@/pages/ComercialLiberacao'));
+const ComercialConfirmacaoPage = lazy(() => import('@/pages/ComercialConfirmacao'));
+const PedidoSuportePage = lazy(() => import('@/pages/PedidoSuporte'));
+const PedidoSuporteLiberacaoPage = lazy(() => import('@/pages/PedidoSuporteLiberacao'));
+const ProducaoPage = lazy(() => import('@/pages/Producao'));
+const PainelPedidosPage = lazy(() => import('@/pages/PainelPedidos'));
+const AtualizacaoStatusPage = lazy(() => import('@/pages/AtualizacaoStatus'));
+const UsersPage = lazy(() => import('@/pages/Users'));
+const AccessDenied = lazy(() => import('@/pages/AccessDenied'));
+const NotFound = lazy(() => import('@/pages/NotFound'));
+
+const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
+  const { isAuthenticated, user } = useApp();
+  const location = useLocation();
+  
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user && !canAccessRoute(user.role, location.pathname)) {
+    return <Navigate to="/acesso-negado" replace />;
+  }
+
+  return <MainLayout>{children}</MainLayout>;
+};
+
+const AppRoutes = () => {
+  return (
+    <Suspense fallback={<SkeletonLoader />}>
+      <Routes>
+        <Route path="/login" element={<Login />} />
+        <Route path="/acesso-negado" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
+        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/dashboard" element={<Navigate to="/" replace />} />
+        <Route path="/representantes" element={<ProtectedRoute><ClientsPage /></ProtectedRoute>} />
+        <Route path="/motoristas" element={<ProtectedRoute><DriversPage /></ProtectedRoute>} />
+        <Route path="/comercial/liberacao" element={<ProtectedRoute><ComercialLiberacaoPage /></ProtectedRoute>} />
+        <Route path="/comercial/confirmacao" element={<ProtectedRoute><ComercialConfirmacaoPage /></ProtectedRoute>} />
+        <Route path="/comercial" element={<ProtectedRoute><CommercialPage /></ProtectedRoute>} />
+        <Route path="/pedido-suporte/liberacao" element={<ProtectedRoute><PedidoSuporteLiberacaoPage /></ProtectedRoute>} />
+        <Route path="/pedido-suporte" element={<ProtectedRoute><PedidoSuportePage /></ProtectedRoute>} />
+        <Route path="/producao" element={<ProtectedRoute><ProducaoPage /></ProtectedRoute>} />
+        <Route path="/painel-pedidos" element={<ProtectedRoute><PainelPedidosPage /></ProtectedRoute>} />
+        <Route path="/atualizacao-status" element={<ProtectedRoute><AtualizacaoStatusPage /></ProtectedRoute>} />
+        <Route path="/carregamento" element={<ProtectedRoute><LoadsPage /></ProtectedRoute>} />
+        <Route path="/carregamento/novo" element={<ProtectedRoute><CreateCarregamento /></ProtectedRoute>} />
+        <Route path="/carregamento/editar/:id" element={<ProtectedRoute><CreateCarregamento /></ProtectedRoute>} />
+        <Route path="/financeiro" element={<ProtectedRoute><FinancialPage /></ProtectedRoute>} />
+        <Route path="/usuarios" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+    </Suspense>
+  );
 };
 
 const App = () => {
-  const [activePage, setActivePage] = useState<Page>('dashboard');
-  const [loading, setLoading] = useState(false);
-  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
-
-  const navigate = (page: Page) => {
-    if (page === activePage) return;
-    setLoading(true);
-    setActivePage(page);
-    setTimeout(() => setLoading(false), 300);
-  };
-
-  const PageComponent = pages[activePage];
-
   return (
     <AppProvider>
       <ToastProvider>
-        <div className="flex min-h-screen bg-background">
-          <Sidebar active={activePage} onNavigate={navigate} />
-          <main className="flex-1 lg:ml-[240px] p-6 lg:p-8 pt-16 lg:pt-8">
-            {loading ? <SkeletonLoader /> : <PageComponent />}
-          </main>
-        </div>
+        <Router>
+          <AppRoutes />
+        </Router>
       </ToastProvider>
     </AppProvider>
   );

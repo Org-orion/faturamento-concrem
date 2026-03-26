@@ -1,0 +1,400 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useApp } from '@/contexts/AppContext';
+import { useToast } from '@/components/ToastProvider';
+import Modal from '@/components/Modal';
+import { FormField, inputClass, btnPrimary, btnDanger, btnSecondary } from '@/components/shared';
+import { UserRole, roleLabel } from '@/utils/access';
+import { deleteUsuario, insertUsuario, listUsuarios, updateUsuario, UsuarioPerfilAcesso } from '@/lib/cadastrosOps';
+import { hashPassword } from '@/lib/password';
+
+type UserForm = {
+  name: string;
+  username: string;
+  role: UserRole;
+};
+
+const emptyForm: UserForm = {
+  name: '',
+  username: '',
+  role: 'COMERCIAL',
+};
+
+const UsersPage = () => {
+  const { user: currentUser, logout } = useApp();
+  const { showToast } = useToast();
+
+  const [items, setItems] = useState<{ id: string; name: string; username: string; role: UserRole; ativo: boolean }[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState('');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [form, setForm] = useState<UserForm>(emptyForm);
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const [resetOpen, setResetOpen] = useState(false);
+  const [resetUserId, setResetUserId] = useState<string | null>(null);
+  const [resetPassword, setResetPassword] = useState('');
+  const [resetError, setResetError] = useState<string | null>(null);
+
+  const isAdmin = currentUser?.role === 'ADMIN';
+
+  const roleToPerfil = (r: UserRole): UsuarioPerfilAcesso => {
+    if (r === 'ADMIN') return 'administrador';
+    if (r === 'FATURAMENTO') return 'faturamento';
+    if (r === 'PRODUCAO') return 'producao';
+    if (r === 'LOGISTICA') return 'logistica';
+    return 'comercial';
+  };
+
+  const perfilToRole = (p: UsuarioPerfilAcesso | null): UserRole => {
+    if (p === 'administrador') return 'ADMIN';
+    if (p === 'faturamento') return 'FATURAMENTO';
+    if (p === 'producao') return 'PRODUCAO';
+    if (p === 'logistica') return 'LOGISTICA';
+    return 'COMERCIAL';
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      setLoading(true);
+      try {
+        const rows = await listUsuarios();
+        if (cancelled) return;
+        setItems(
+          rows.map((r) => ({
+            id: r.id,
+            name: r.nome || '',
+            username: r.email || '',
+            role: perfilToRole(r.perfil_acesso),
+            ativo: Boolean(r.ativo),
+          })),
+        );
+      } catch (e: any) {
+        showToast(e?.message || 'Falha ao carregar usuários.', 'error');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [showToast]);
+
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return items;
+    return items.filter((u) => {
+      return (
+        u.name.toLowerCase().includes(q) ||
+        u.username.toLowerCase().includes(q) ||
+        u.role.toLowerCase().includes(q)
+      );
+    });
+  }, [items, search]);
+
+  const openNew = () => {
+    setEditingId(null);
+    setForm(emptyForm);
+    setErrors({});
+    setModalOpen(true);
+  };
+
+  const openEdit = (id: string) => {
+    const u = items.find((x) => x.id === id);
+    if (!u) return;
+    setEditingId(id);
+    setForm({ name: u.name, username: u.username, role: u.role });
+    setErrors({});
+    setModalOpen(true);
+  };
+
+  const validate = (): boolean => {
+    const e: Record<string, string> = {};
+    if (!form.name.trim()) e.name = 'Obrigatório';
+    if (!form.username.trim()) e.username = 'Obrigatório';
+
+    const normalized = form.username.trim().toLowerCase();
+    const duplicated = items.some((u) => u.username.toLowerCase() === normalized && u.id !== editingId);
+    if (duplicated) e.username = 'Usuário já existe';
+
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  };
+
+  const save = () => {
+    if (!validate()) return;
+
+    const payload = {
+      name: form.name.trim(),
+      username: form.username.trim(),
+      role: form.role,
+    };
+
+    if (editingId) {
+      void (async () => {
+        try {
+          const row = await updateUsuario(editingId, {
+            nome: payload.name,
+            email: payload.username,
+            perfil_acesso: roleToPerfil(payload.role),
+          });
+          setItems((prev) =>
+            prev.map((u) =>
+              u.id === editingId
+                ? { ...u, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo) }
+                : u,
+            ),
+          );
+          showToast('Usuário atualizado com sucesso!');
+          setModalOpen(false);
+        } catch (e: any) {
+          showToast(e?.message || 'Falha ao salvar.', 'error');
+        }
+      })();
+    } else {
+      void (async () => {
+        try {
+          const senha_hash = await hashPassword('1234');
+          const row = await insertUsuario({
+            nome: payload.name,
+            email: payload.username,
+            senha_hash,
+            perfil_acesso: roleToPerfil(payload.role),
+            ativo: true,
+          });
+          setItems((prev) => [
+            ...prev,
+            { id: row.id, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo) },
+          ]);
+          showToast('Usuário cadastrado com sucesso!');
+          setModalOpen(false);
+        } catch (e: any) {
+          showToast(e?.message || 'Falha ao salvar.', 'error');
+        }
+      })();
+    }
+  };
+
+  const requestDelete = (id: string) => {
+    setDeletingId(id);
+    setConfirmDeleteOpen(true);
+  };
+
+  const confirmDelete = () => {
+    if (!deletingId) return;
+    const deleting = items.find((u) => u.id === deletingId) || null;
+    void (async () => {
+      try {
+        await deleteUsuario(deletingId);
+        setItems((prev) => prev.filter((u) => u.id !== deletingId));
+        setConfirmDeleteOpen(false);
+        setDeletingId(null);
+        showToast('Usuário excluído.', 'info');
+        if (deleting && currentUser && deleting.username === currentUser.username) logout();
+      } catch (e: any) {
+        showToast(e?.message || 'Falha ao excluir.', 'error');
+      }
+    })();
+  };
+
+  const setField = (key: keyof UserForm, value: string) => {
+    setForm((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const deletingUser = deletingId ? items.find((u) => u.id === deletingId) : null;
+  const isDeletingSelf = Boolean(deletingUser && currentUser && deletingUser.username === currentUser.username);
+
+  const requestResetPassword = (id: string) => {
+    if (!isAdmin) return;
+    setResetUserId(id);
+    setResetPassword('');
+    setResetError(null);
+    setResetOpen(true);
+  };
+
+  const confirmResetPassword = () => {
+    if (!isAdmin) return;
+    if (!resetUserId) return;
+    if (!resetPassword.trim()) {
+      setResetError('Obrigatório');
+      return;
+    }
+    setResetError(null);
+    void (async () => {
+      try {
+        const senha_hash = await hashPassword(resetPassword.trim());
+        await updateUsuario(resetUserId, { senha_hash });
+        showToast('Senha redefinida com sucesso!', 'info');
+        setResetOpen(false);
+        setResetUserId(null);
+        setResetPassword('');
+      } catch (e: any) {
+        showToast(e?.message || 'Falha ao redefinir senha.', 'error');
+      }
+    })();
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <h1 className="text-2xl font-bold font-display text-foreground">Usuários</h1>
+        <button className={btnPrimary} onClick={openNew}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Novo Usuário
+        </button>
+      </div>
+
+      <input
+        type="text"
+        placeholder="Buscar por nome, usuário ou perfil..."
+        className={inputClass + ' max-w-sm'}
+        value={search}
+        onChange={(e) => setSearch(e.target.value)}
+      />
+
+      <div className="bg-card rounded-lg shadow-sm border border-border overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-border bg-muted/30">
+              {['Nome', 'Usuário', 'Perfil', 'Ações'].map((h) => (
+                <th key={h} className="text-left py-3 px-4 font-display font-medium text-muted-foreground">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.map((u, i) => (
+              <tr key={u.id} className={`border-b border-border/50 hover:bg-muted/50 transition-colors ${i % 2 ? 'bg-muted/20' : ''}`}>
+                <td className="py-3 px-4 font-display font-medium">{u.name}</td>
+                <td className="py-3 px-4 font-mono-data">{u.username}</td>
+                <td className="py-3 px-4">
+                  <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-bold bg-muted text-foreground">
+                    {roleLabel[u.role]}
+                  </span>
+                </td>
+                <td className="py-3 px-4">
+                  <div className="flex gap-2">
+                    <button onClick={() => openEdit(u.id)} className="text-muted-foreground hover:text-primary transition-colors" aria-label="Editar">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                      </svg>
+                    </button>
+                    {isAdmin && (
+                      <button
+                        onClick={() => requestResetPassword(u.id)}
+                        className="text-muted-foreground hover:text-primary transition-colors"
+                        aria-label="Redefinir senha"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z" />
+                          <path d="M20 17V9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z" />
+                        </svg>
+                      </button>
+                    )}
+                    <button onClick={() => requestDelete(u.id)} className="text-muted-foreground hover:text-destructive transition-colors" aria-label="Excluir">
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                        <polyline points="3 6 5 6 21 6" />
+                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {filtered.length === 0 && (
+              <tr>
+                <td colSpan={4} className="py-8 text-center text-muted-foreground font-display">
+                  Nenhum usuário encontrado.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      {loading && (
+        <div className="text-sm text-muted-foreground font-display">
+          Carregando...
+        </div>
+      )}
+
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Editar Usuário' : 'Novo Usuário'}>
+        <div className="space-y-4">
+          <FormField label="Nome" error={errors.name}>
+            <input className={inputClass} value={form.name} onChange={(e) => setField('name', e.target.value)} />
+          </FormField>
+          <FormField label="Usuário" error={errors.username}>
+            <input className={inputClass} value={form.username} onChange={(e) => setField('username', e.target.value)} />
+          </FormField>
+          <FormField label="Senha (padrão)">
+            <input className={inputClass} type="password" value="1234" disabled />
+          </FormField>
+          <FormField label="Perfil">
+            <select className={inputClass} value={form.role} onChange={(e) => setField('role', e.target.value)}>
+              <option value="ADMIN">ADMIN</option>
+              <option value="FATURAMENTO">FATURAMENTO</option>
+              <option value="COMERCIAL">COMERCIAL</option>
+              <option value="PRODUCAO">PRODUÇÃO</option>
+              <option value="LOGISTICA">LOGÍSTICA</option>
+            </select>
+          </FormField>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-6">
+          <button className={btnSecondary} onClick={() => setModalOpen(false)}>
+            Cancelar
+          </button>
+          <button className={btnPrimary} onClick={save}>
+            Salvar
+          </button>
+        </div>
+      </Modal>
+
+      <Modal open={resetOpen} onClose={() => setResetOpen(false)} title="Redefinir senha">
+        <div className="space-y-4">
+          <FormField label="Nova senha" error={resetError || undefined}>
+            <input className={inputClass} type="password" value={resetPassword} onChange={(e) => setResetPassword(e.target.value)} />
+          </FormField>
+          <div className="flex justify-end gap-3">
+            <button className={btnSecondary} onClick={() => setResetOpen(false)}>
+              Cancelar
+            </button>
+            <button className={btnPrimary} onClick={confirmResetPassword}>
+              Salvar
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal open={confirmDeleteOpen} onClose={() => setConfirmDeleteOpen(false)} title="Confirmar exclusão">
+        <div className="space-y-4">
+          <p className="text-sm text-muted-foreground">
+            Deseja realmente excluir o usuário <span className="font-mono-data font-bold text-foreground">{deletingUser?.username}</span>?
+          </p>
+          {isDeletingSelf && (
+            <div className="p-3 rounded-lg bg-destructive/10 text-destructive text-sm font-medium">
+              Ao excluir seu próprio usuário, você será deslogado automaticamente.
+            </div>
+          )}
+          <div className="flex justify-end gap-3">
+            <button className={btnSecondary} onClick={() => setConfirmDeleteOpen(false)}>
+              Cancelar
+            </button>
+            <button className={btnDanger} onClick={confirmDelete}>
+              Excluir
+            </button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+};
+
+export default UsersPage;
