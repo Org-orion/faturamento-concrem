@@ -439,6 +439,7 @@ const PedidoSuporteLiberacao = () => {
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
+                <ColumnFilterRow columns={s1ColSlots} values={s1ColFilter.values} onChange={s1ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
                     <input
@@ -454,7 +455,6 @@ const PedidoSuporteLiberacao = () => {
                   <SortableHeader columnKey="emissao" sortState={s1Sort} onToggle={s1Toggle} className="text-left py-4 px-6">Emissão</SortableHeader>
                   <SortableHeader columnKey="validade" sortState={s1Sort} onToggle={s1Toggle} className="text-left py-4 px-6">Validade</SortableHeader>
                 </tr>
-                <ColumnFilterRow columns={s1ColSlots} values={s1ColFilter.values} onChange={s1ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s1Filtered.length === 0 ? (
@@ -517,6 +517,7 @@ const PedidoSuporteLiberacao = () => {
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
+                <ColumnFilterRow columns={s2ColSlots} values={s2ColFilter.values} onChange={s2ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <SortableHeader columnKey="pedido" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Pedido</SortableHeader>
                   <SortableHeader columnKey="cliente" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Cliente</SortableHeader>
@@ -526,7 +527,6 @@ const PedidoSuporteLiberacao = () => {
                   <SortableHeader columnKey="validade" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Validade</SortableHeader>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
-                <ColumnFilterRow columns={s2ColSlots} values={s2ColFilter.values} onChange={s2ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s2Filtered.length === 0 ? (
@@ -593,6 +593,7 @@ const PedidoSuporteLiberacao = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
+                <ColumnFilterRow columns={s3ColSlots} values={s3ColFilter.values} onChange={s3ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
                     <input
@@ -609,7 +610,6 @@ const PedidoSuporteLiberacao = () => {
                   <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
-                <ColumnFilterRow columns={s3ColSlots} values={s3ColFilter.values} onChange={s3ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s3Filtered.length === 0 ? (

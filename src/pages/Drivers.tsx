@@ -193,6 +193,7 @@ const DriversPage = () => {
       <div className="bg-card rounded-lg shadow-sm border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
+            <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             <tr className="border-b border-border bg-muted/30">
               <SortableHeader columnKey="name" sortState={sortState} onToggle={toggleSort}>Nome</SortableHeader>
               <SortableHeader columnKey="phone" sortState={sortState} onToggle={toggleSort}>Telefone</SortableHeader>
@@ -202,7 +203,6 @@ const DriversPage = () => {
               <SortableHeader columnKey="plate" sortState={sortState} onToggle={toggleSort}>Placa</SortableHeader>
               <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Ações</th>
             </tr>
-            <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
           </thead>
           <tbody>
             {filtered.map((d, i) => (

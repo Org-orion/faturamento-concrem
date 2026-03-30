@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowUp, ArrowDown, ArrowUpDown } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { SortState } from '@/hooks/useTableSort';
 
@@ -27,8 +27,9 @@ export function SortableHeader({
     >
       <span className="inline-flex items-center gap-1">
         {children}
-        {active && sortState.direction === 'asc' && <ArrowUp className="h-3 w-3" />}
-        {active && sortState.direction === 'desc' && <ArrowDown className="h-3 w-3" />}
+        {active && sortState.direction === 'asc' && <ArrowUp className="h-3 w-3 text-primary" />}
+        {active && sortState.direction === 'desc' && <ArrowDown className="h-3 w-3 text-primary" />}
+        {!active && <ArrowUpDown className="h-3 w-3 opacity-40" />}
       </span>
     </th>
   );

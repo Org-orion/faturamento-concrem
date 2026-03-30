@@ -403,6 +403,7 @@ const Financial = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              <ColumnFilterRow columns={pendingColSlots} values={colFilterPending.values} onChange={colFilterPending.setFilter} />
               <tr className="border-b border-border bg-muted/30">
                 <SortableHeader columnKey="orderId" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
                 <SortableHeader columnKey="representative" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Representante</SortableHeader>
@@ -415,7 +416,6 @@ const Financial = () => {
                 <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
-              <ColumnFilterRow columns={pendingColSlots} values={colFilterPending.values} onChange={colFilterPending.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {allPendingRows.map((r) => {
@@ -473,6 +473,7 @@ const Financial = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              <ColumnFilterRow columns={launchedColSlots} values={colFilterLaunched.values} onChange={colFilterLaunched.setFilter} />
               <tr className="border-b border-border bg-muted/30">
                 <SortableHeader columnKey="orderId" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
                 <SortableHeader columnKey="representative" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Representante</SortableHeader>
@@ -485,7 +486,6 @@ const Financial = () => {
                 <SortableHeader columnKey="status" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Status</SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
-              <ColumnFilterRow columns={launchedColSlots} values={colFilterLaunched.values} onChange={colFilterLaunched.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {allLaunchedRows.map((r) => {

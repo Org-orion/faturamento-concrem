@@ -294,13 +294,13 @@ const UsersPage = () => {
       <div className="bg-card rounded-lg shadow-sm border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
+            <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             <tr className="border-b border-border bg-muted/30">
               <SortableHeader columnKey="name" sortState={sortState} onToggle={toggleSort}>Nome</SortableHeader>
               <SortableHeader columnKey="username" sortState={sortState} onToggle={toggleSort}>Usuário</SortableHeader>
               <SortableHeader columnKey="role" sortState={sortState} onToggle={toggleSort}>Perfil</SortableHeader>
               <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Ações</th>
             </tr>
-            <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
           </thead>
           <tbody>
             {filtered.map((u, i) => (

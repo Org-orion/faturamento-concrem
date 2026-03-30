@@ -469,6 +469,7 @@ const ComercialConfirmacao = () => {
         <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
           <table className="w-full text-sm text-left">
             <thead>
+              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
               <tr className="border-b border-border bg-muted/30">
                 <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
                   <input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={toggleAll} />
@@ -480,7 +481,6 @@ const ComercialConfirmacao = () => {
                 <SortableHeader columnKey="emissao" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Emissão</SortableHeader>
                 <SortableHeader columnKey="validade" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
               </tr>
-              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {filtered.length === 0 ? (

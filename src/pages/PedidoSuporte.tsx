@@ -442,6 +442,7 @@ const PedidoSuporte = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
               <tr className="border-b border-border bg-muted/30">
                 <SortableHeader columnKey="id" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
                 <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
@@ -451,7 +452,6 @@ const PedidoSuporte = () => {
                 <SortableHeader columnKey="status" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Status</SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
-              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {loadingList ? (

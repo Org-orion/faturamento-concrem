@@ -230,6 +230,7 @@ const Dashboard = () => {
         <div className="overflow-x-auto mt-4">
           <table className="w-full text-sm">
             <thead>
+              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
               <tr className="border-b border-border">
                 <SortableHeader columnKey="pedido" sortState={sortState} onToggle={toggleSort} className="text-left py-3 px-4">Pedido</SortableHeader>
                 <SortableHeader columnKey="representante" sortState={sortState} onToggle={toggleSort} className="text-left py-3 px-4">Representante</SortableHeader>
@@ -237,7 +238,6 @@ const Dashboard = () => {
                 <SortableHeader columnKey="valor" sortState={sortState} onToggle={toggleSort} className="text-right py-3 px-4">Valor</SortableHeader>
                 <SortableHeader columnKey="status" sortState={sortState} onToggle={toggleSort} className="text-left py-3 px-4">Status</SortableHeader>
               </tr>
-              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             </thead>
             <tbody>
               {displayedOrders.map((o) => (

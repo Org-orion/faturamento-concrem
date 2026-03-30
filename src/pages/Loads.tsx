@@ -324,6 +324,7 @@ const LoadsPage = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
+              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
               <tr className="border-b border-border bg-muted/30">
                 <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
                   <input
@@ -352,7 +353,6 @@ const LoadsPage = () => {
                 </SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
-              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {filteredAndSorted.map((load, index) => {

@@ -350,6 +350,7 @@ const ComercialLiberacao = () => {
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
+                <ColumnFilterRow columns={s1ColSlots} values={s1ColFilter.values} onChange={s1ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <th className="py-4 px-6 text-center w-[56px]">
                     <input type="checkbox" checked={s1Selected.length === s1Processed.length && s1Processed.length > 0} onChange={() => toggleAll(s1Selected, setS1Selected, s1Processed.map(o => o.id))} />
@@ -359,7 +360,6 @@ const ComercialLiberacao = () => {
                   <SortableHeader columnKey="representante" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
                   <SortableHeader columnKey="validade" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
                 </tr>
-                <ColumnFilterRow columns={s1ColSlots} values={s1ColFilter.values} onChange={s1ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s1Processed.length === 0 ? (
@@ -401,6 +401,7 @@ const ComercialLiberacao = () => {
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
+                <ColumnFilterRow columns={s2ColSlots} values={s2ColFilter.values} onChange={s2ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <SortableHeader columnKey="pedido" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
                   <SortableHeader columnKey="cliente" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
@@ -409,7 +410,6 @@ const ComercialLiberacao = () => {
                   <SortableHeader columnKey="validade" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
-                <ColumnFilterRow columns={s2ColSlots} values={s2ColFilter.values} onChange={s2ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s2Processed.length === 0 ? (
@@ -458,6 +458,7 @@ const ComercialLiberacao = () => {
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
+                <ColumnFilterRow columns={s3ColSlots} values={s3ColFilter.values} onChange={s3ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <SortableHeader columnKey="pedido" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
                   <SortableHeader columnKey="cliente" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
@@ -466,7 +467,6 @@ const ComercialLiberacao = () => {
                   <SortableHeader columnKey="validade" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
-                <ColumnFilterRow columns={s3ColSlots} values={s3ColFilter.values} onChange={s3ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s3Processed.length === 0 ? (
