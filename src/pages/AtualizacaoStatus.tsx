@@ -1,6 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ClipboardCheck, ArrowLeft } from 'lucide-react';
-import { cn } from '@/lib/utils';
+import { ClipboardCheck } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
@@ -160,7 +159,7 @@ const AtualizacaoStatus = () => {
   };
 
   return (
-    <div className="max-w-7xl mx-auto space-y-6">
+    <div className="space-y-6">
       <div className="flex items-center gap-3">
         <div className="p-2 rounded-xl bg-primary/10 border border-primary/20">
           <ClipboardCheck className="h-5 w-5 text-primary" />
@@ -226,7 +225,7 @@ const AtualizacaoStatus = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className={cn('lg:col-span-6', selectedId ? 'hidden lg:block' : 'block')}>
+        <div className="lg:col-span-6">
           <AtualizacaoStatusList
             pedidos={sortedFiltered}
             statusByPedidoId={statusByPedidoId}
@@ -235,17 +234,7 @@ const AtualizacaoStatus = () => {
           />
         </div>
 
-        <div className={cn('lg:col-span-6', selectedId ? 'block' : 'hidden lg:block')}>
-          {selectedId && (
-            <button
-              type="button"
-              onClick={() => setSelectedId(null)}
-              className="lg:hidden flex items-center gap-2 text-sm font-semibold text-primary mb-3"
-            >
-              <ArrowLeft className="h-4 w-4" />
-              Voltar à lista
-            </button>
-          )}
+        <div className="lg:col-span-6">
           <AtualizacaoStatusDetails
             pedido={selected}
             statusAtual={selectedStatus}
