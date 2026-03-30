@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, ClipboardList } from 'lucide-react';
+import { RefreshCw, ClipboardList, ArrowLeft } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { PedidoStatusRow, PedidoStatusHistoricoRow, PedidoStatusValue } from '@/types';
@@ -188,7 +188,7 @@ const PainelPedidos = () => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-8 space-y-4">
+        <div className={cn('lg:col-span-8 space-y-4', selectedId ? 'hidden lg:block' : 'block')}>
           <div className="bg-card rounded-xl p-4 border border-border shadow-card space-y-3">
             <QuickFilterBar
               query={query}
@@ -250,7 +250,17 @@ const PainelPedidos = () => {
           <PainelPedidosList pedidos={sortedForPanel} statusByPedidoId={statusByPedidoId} selectedId={selectedId} onSelect={setSelectedId} />
         </div>
 
-        <div className="lg:col-span-4 space-y-4">
+        <div className={cn('lg:col-span-4 space-y-4', selectedId ? 'block' : 'hidden lg:block')}>
+          {selectedId && (
+            <button
+              type="button"
+              onClick={() => setSelectedId(null)}
+              className="lg:hidden flex items-center gap-2 text-sm font-semibold text-primary"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Voltar à lista
+            </button>
+          )}
           <PainelPedidosDetails pedido={selected} statusAtual={selectedStatus} history={history} historyLoading={historyLoading} />
         </div>
       </div>
