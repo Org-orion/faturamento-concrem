@@ -515,10 +515,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   
   // Auth State
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
-    return localStorage.getItem('auth_token') === 'true';
+    return sessionStorage.getItem('auth_token') === 'true';
   });
   const [user, setUser] = useState<{ name: string; username: string; role: UserRole } | null>(() => {
-    const savedUser = localStorage.getItem('auth_user');
+    const savedUser = sessionStorage.getItem('auth_user');
     if (!savedUser) return null;
     try {
       const parsed = JSON.parse(savedUser) as { name?: string; username?: string; role?: UserRole };
@@ -559,8 +559,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             const role = roleMap[data.perfil_acesso] || 'COMERCIAL';
             const newUser = { name: data.nome, username: data.email, role };
             setUser(newUser);
-            localStorage.setItem('auth_token', 'true');
-            localStorage.setItem('auth_user', JSON.stringify(newUser));
+            sessionStorage.setItem('auth_token', 'true');
+            sessionStorage.setItem('auth_user', JSON.stringify(newUser));
             return true;
           }
         }
@@ -575,16 +575,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setIsAuthenticated(true);
     const newUser = { name: found.name, username: found.username, role: found.role };
     setUser(newUser);
-    localStorage.setItem('auth_token', 'true');
-    localStorage.setItem('auth_user', JSON.stringify(newUser));
+    sessionStorage.setItem('auth_token', 'true');
+    sessionStorage.setItem('auth_user', JSON.stringify(newUser));
     return true;
   }, [users]);
 
   const logout = useCallback(() => {
     setIsAuthenticated(false);
     setUser(null);
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
+    sessionStorage.removeItem('auth_token');
+    sessionStorage.removeItem('auth_user');
   }, []);
 
   useEffect(() => {

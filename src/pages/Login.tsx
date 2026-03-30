@@ -34,7 +34,7 @@ const Login = () => {
 
     let role: UserRole = 'ADMIN';
     try {
-      const saved = localStorage.getItem('auth_user');
+      const saved = sessionStorage.getItem('auth_user');
       const parsed = saved ? (JSON.parse(saved) as { role?: UserRole }) : null;
       if (parsed?.role) role = parsed.role;
     } catch {
