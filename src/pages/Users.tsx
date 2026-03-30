@@ -6,6 +6,12 @@ import { FormField, inputClass, btnPrimary, btnDanger, btnSecondary } from '@/co
 import { UserRole, roleLabel } from '@/utils/access';
 import { deleteUsuario, insertUsuario, listUsuarios, updateUsuario, UsuarioPerfilAcesso } from '@/lib/cadastrosOps';
 import { hashPassword } from '@/lib/password';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters, ColDef } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
 
 type UserForm = {
   name: string;
@@ -25,7 +31,9 @@ const UsersPage = () => {
 
   const [items, setItems] = useState<{ id: string; name: string; username: string; role: UserRole; ativo: boolean }[]>([]);
   const [loading, setLoading] = useState(false);
-  const [search, setSearch] = useState('');
+  const { sortState, toggleSort, sortItems } = useTableSort();
+  const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<{ id: string; name: string; username: string; role: UserRole; ativo: boolean }>();
+  const colFilter = useColumnFilters();
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -83,17 +91,41 @@ const UsersPage = () => {
     };
   }, [showToast]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((u) => {
-      return (
-        u.name.toLowerCase().includes(q) ||
-        u.username.toLowerCase().includes(q) ||
-        u.role.toLowerCase().includes(q)
-      );
-    });
-  }, [items, search]);
+  type UserItem = typeof items[number];
+  const textGetters: Array<(u: UserItem) => unknown> = [
+    (u) => u.name, (u) => u.username, (u) => roleLabel[u.role],
+  ];
+  const sortGetters: Record<string, (u: UserItem) => unknown> = {
+    name: (u) => u.name, username: (u) => u.username, role: (u) => roleLabel[u.role],
+  };
+  const userStatusButtons = [
+    { value: 'ADMIN', label: 'Admin' },
+    { value: 'FATURAMENTO', label: 'Faturamento' },
+    { value: 'COMERCIAL', label: 'Comercial' },
+    { value: 'PRODUCAO', label: 'Produção' },
+    { value: 'LOGISTICA', label: 'Logística' },
+  ];
+  const colDefs: ColDef<UserItem>[] = [
+    { key: 'name', getter: (u) => u.name },
+    { key: 'username', getter: (u) => u.username },
+    { key: 'role', getter: (u) => u.role, match: 'exact' as const },
+  ];
+  const colFilterSlots: ColFilterSlot[] = [
+    { key: 'name', type: 'text', placeholder: 'Nome...' },
+    { key: 'username', type: 'text', placeholder: 'Usuário...' },
+    { key: 'role', type: 'select', options: [
+      { value: 'ADMIN', label: 'Admin' },
+      { value: 'FATURAMENTO', label: 'Faturamento' },
+      { value: 'COMERCIAL', label: 'Comercial' },
+      { value: 'PRODUCAO', label: 'Produção' },
+      { value: 'LOGISTICA', label: 'Logística' },
+    ]},
+    { type: 'none' },
+  ];
+  const filtered = useMemo(
+    () => sortItems(filterItems(colFilter.filterItems(items, colDefs), textGetters, (u) => u.role), sortGetters),
+    [items, filterItems, sortItems, colFilter.filterItems],
+  );
 
   const openNew = () => {
     setEditingId(null);
@@ -250,24 +282,25 @@ const UsersPage = () => {
         </button>
       </div>
 
-      <input
-        type="text"
+      <QuickFilterBar
+        query={query}
+        onQueryChange={setQuery}
         placeholder="Buscar por nome, usuário ou perfil..."
-        className={inputClass + ' max-w-sm'}
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
+        statuses={userStatusButtons}
+        activeStatus={activeStatus}
+        onStatusChange={setActiveStatus}
       />
 
       <div className="bg-card rounded-lg shadow-sm border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              {['Nome', 'Usuário', 'Perfil', 'Ações'].map((h) => (
-                <th key={h} className="text-left py-3 px-4 font-display font-medium text-muted-foreground">
-                  {h}
-                </th>
-              ))}
+              <SortableHeader columnKey="name" sortState={sortState} onToggle={toggleSort}>Nome</SortableHeader>
+              <SortableHeader columnKey="username" sortState={sortState} onToggle={toggleSort}>Usuário</SortableHeader>
+              <SortableHeader columnKey="role" sortState={sortState} onToggle={toggleSort}>Perfil</SortableHeader>
+              <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Ações</th>
             </tr>
+            <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
           </thead>
           <tbody>
             {filtered.map((u, i) => (

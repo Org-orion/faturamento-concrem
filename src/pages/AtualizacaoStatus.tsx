@@ -4,12 +4,28 @@ import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
 import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, listPedidosStatusHistorico, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
-import { logisticaManualStatuses, getAutoFollowUpStatus } from '@/lib/pedidoStatusFlow';
+import { logisticaManualStatuses, getAutoFollowUpStatus, pedidoStatusFlow } from '@/lib/pedidoStatusFlow';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useColumnFilters, ColDef } from '@/hooks/useColumnFilters';
+import { QuickFilterBar, StatusButton } from '@/components/table/QuickFilterBar';
 import { AtualizacaoStatusList } from '@/pages/atualizacaoStatus/AtualizacaoStatusList';
 import { AtualizacaoStatusDetails } from '@/pages/atualizacaoStatus/AtualizacaoStatusDetails';
 import { StatusUpdateDialog } from '@/pages/atualizacaoStatus/StatusUpdateDialog';
 import { useQueryParam } from '@/pages/atualizacaoStatus/useQueryParam';
 import type { UnifiedPedido } from '@/pages/atualizacaoStatus/types';
+
+const statusButtons: StatusButton[] = pedidoStatusFlow
+  .filter((s) => logisticaManualStatuses.includes(s.value))
+  .sort((a, b) => a.order - b.order)
+  .map((s) => ({ value: s.value, label: s.label }));
+
+const sortOptions = [
+  { value: 'numero', label: 'Numero' },
+  { value: 'cliente', label: 'Cliente' },
+  { value: 'representante', label: 'Representante' },
+  { value: 'atualizado_em', label: 'Atualização' },
+] as const;
 
 const AtualizacaoStatus = () => {
   const { orders, supportOrders, user } = useApp();
@@ -36,7 +52,10 @@ const AtualizacaoStatus = () => {
     return Array.from(map.values()).sort((a, b) => a.numero.localeCompare(b.numero));
   }, [orders, supportOrders]);
 
-  const [query, setQuery] = useState('');
+  const { query, setQuery, activeStatus, setActiveStatus, filterItems } = useQuickFilter<UnifiedPedido>();
+  const { sortState, setSortState, sortItems } = useTableSort();
+  const colFilter = useColumnFilters();
+
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
@@ -68,14 +87,29 @@ const AtualizacaoStatus = () => {
     });
   }, [pedidos, statusByPedidoId]);
 
+  const colDefs: ColDef<UnifiedPedido>[] = useMemo(() => [
+    { key: 'numero', getter: (p) => p.numero },
+    { key: 'cliente', getter: (p) => p.cliente },
+    { key: 'status', getter: (p) => statusByPedidoId.get(p.id)?.status_atual ?? '', match: 'exact' as const },
+  ], [statusByPedidoId]);
+
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    return logisticaPedidos.filter((p) => {
-      if (!q) return true;
-      const hay = `${p.numero} ${p.cliente} ${p.representante}`.toLowerCase();
-      return hay.includes(q);
+    const colFiltered = colFilter.filterItems(logisticaPedidos, colDefs);
+    return filterItems(
+      colFiltered,
+      [(p) => p.numero, (p) => p.cliente, (p) => p.representante],
+      (p) => statusByPedidoId.get(p.id)?.status_atual ?? null,
+    );
+  }, [logisticaPedidos, filterItems, statusByPedidoId, colFilter.filterItems, colDefs]);
+
+  const sortedFiltered = useMemo(() => {
+    return sortItems(filtered, {
+      numero: (p) => p.numero,
+      cliente: (p) => p.cliente,
+      representante: (p) => p.representante,
+      atualizado_em: (p) => statusByPedidoId.get(p.id)?.atualizado_em ?? '',
     });
-  }, [logisticaPedidos, query]);
+  }, [filtered, sortItems, statusByPedidoId]);
 
   const selected = useMemo(() => (selectedId ? pedidos.find((p) => p.id === selectedId) || null : null), [pedidos, selectedId]);
   const selectedStatus = (selectedId && statusByPedidoId.get(selectedId)?.status_atual) || null;
@@ -136,12 +170,64 @@ const AtualizacaoStatus = () => {
         </div>
       </div>
 
+      <div className="bg-card rounded-xl p-4 border border-border shadow-card">
+        <QuickFilterBar
+          query={query}
+          onQueryChange={setQuery}
+          placeholder="Filtrar por cliente, representante ou n. do pedido..."
+          statuses={statusButtons}
+          activeStatus={activeStatus}
+          onStatusChange={setActiveStatus}
+        >
+          {/* Sort dropdown */}
+          <select
+            value={sortState.key && sortState.direction ? `${sortState.key}:${sortState.direction}` : ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              if (!val) {
+                setSortState({ key: null, direction: null });
+                return;
+              }
+              const [key, dir] = val.split(':');
+              setSortState({ key, direction: dir as 'asc' | 'desc' });
+            }}
+            className="h-9 rounded-lg border border-input bg-muted text-foreground text-sm font-semibold px-2 focus:outline-none focus:ring-2 focus:ring-primary/30"
+          >
+            <option value="">Ordenar: Padrão</option>
+            {sortOptions.map((o) => (
+              <React.Fragment key={o.value}>
+                <option value={`${o.value}:asc`}>{o.label} ↑</option>
+                <option value={`${o.value}:desc`}>{o.label} ↓</option>
+              </React.Fragment>
+            ))}
+          </select>
+          <span className="text-xs font-bold text-muted-foreground whitespace-nowrap">{sortedFiltered.length} pedido(s)</span>
+        </QuickFilterBar>
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
+          <div>
+            <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Nº Pedido</label>
+            <input type="text" value={colFilter.values.numero || ''} onChange={e => colFilter.setFilter('numero', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Cliente</label>
+            <input type="text" value={colFilter.values.cliente || ''} onChange={e => colFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+          </div>
+          <div>
+            <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Status</label>
+            <select value={colFilter.values.status || ''} onChange={e => colFilter.setFilter('status', e.target.value, true)} className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors">
+              <option value="">Todos</option>
+              {pedidoStatusFlow.filter((s) => logisticaManualStatuses.includes(s.value)).map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-6">
           <AtualizacaoStatusList
-            query={query}
-            onQueryChange={setQuery}
-            pedidos={filtered}
+            pedidos={sortedFiltered}
             statusByPedidoId={statusByPedidoId}
             selectedId={selectedId}
             onSelect={setSelectedId}

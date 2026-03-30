@@ -5,15 +5,21 @@ import { btnPrimary, btnSecondary, inputClass } from '@/components/shared';
 import { cn } from '@/lib/utils';
 import { supabaseOps } from '@/lib/supabase';
 import { CheckCircle2, FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
-import { Order, PedidoStatusRow } from '@/types';
+import { Order } from '@/types';
 import { createBrandedWorkbook, downloadBuffer } from '@/lib/excelBranded';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { applyFilters } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
-import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
-import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
+import { updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
+import type { ColDef } from '@/hooks/useColumnFilters';
 
 const formatDateBR = (iso?: string) => {
   if (!iso) return '-';
@@ -24,31 +30,17 @@ const ComercialLiberacao = () => {
   const { orders, user } = useApp();
   const { showToast } = useToast();
 
-  // --- Status rows from pedidos_status ---
-  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
-  const statusByPedidoId = useMemo(() => new Map(statusRows.map(r => [r.pedido_id, r] as const)), [statusRows]);
+  // Track orders liberated to production (so they disappear from Sections 1/2 immediately)
+  const [liberatedIds, setLiberatedIds] = useState<Set<string>>(new Set());
 
-  const refreshStatuses = async () => {
-    const ids = orders.map(o => o.id);
-    if (!ids.length) return;
-    const rows = await listPedidosStatusByPedidoIds(ids);
-    setStatusRows(rows);
-  };
-
-  useEffect(() => {
-    void refreshStatuses();
-  }, [orders.length]);
-
-  // Pedidos with status confirmado_diretoria (ready for release to production)
+  // All venda orders awaiting evaluation, not yet liberated to production
   const aguardandoLiberacao = useMemo(() => {
-    return orders.filter(o => {
-      const st = statusByPedidoId.get(o.id)?.status_atual;
-      return st === 'confirmado_diretoria';
-    }).sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || String(a.id).localeCompare(String(b.id)));
-  }, [orders, statusByPedidoId]);
+    return orders
+      .filter(o => o.status === 'Aguardando Avaliação' && !liberatedIds.has(o.id))
+      .sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || String(a.id).localeCompare(String(b.id)));
+  }, [orders, liberatedIds]);
 
   // --- Section 1: Pedidos aguardando confirmação (not yet sent to diretoria) ---
-  const [sentToDiretoriaIds, setSentToDiretoriaIds] = useState<Set<string>>(new Set());
   const [confirmedByDiretoriaIds, setConfirmedByDiretoriaIds] = useState<Set<string>>(new Set());
   const [s1Selected, setS1Selected] = useState<string[]>([]);
 
@@ -57,7 +49,7 @@ const ComercialLiberacao = () => {
     let cancelled = false;
     const load = async () => {
       const ids = aguardandoLiberacao.map(o => o.id);
-      if (!ids.length) { setSentToDiretoriaIds(new Set()); setConfirmedByDiretoriaIds(new Set()); return; }
+      if (!ids.length) { setConfirmedByDiretoriaIds(new Set()); return; }
 
       const { data } = await supabaseOps
         .from('confirmacao_diretoria')
@@ -65,21 +57,18 @@ const ComercialLiberacao = () => {
         .in('pedido_id', ids);
       if (cancelled || !data) return;
 
-      const sent = new Set<string>();
       const confirmed = new Set<string>();
       for (const r of data as any[]) {
         const id = String(r.pedido_id);
-        sent.add(id);
         if (r.status === 'confirmado') confirmed.add(id);
       }
-      setSentToDiretoriaIds(sent);
       setConfirmedByDiretoriaIds(confirmed);
     };
     void load();
     return () => { cancelled = true; };
   }, [aguardandoLiberacao]);
 
-  const s1Orders = useMemo(() => aguardandoLiberacao.filter(o => !sentToDiretoriaIds.has(o.id)), [aguardandoLiberacao, sentToDiretoriaIds]);
+  const s1Orders = useMemo(() => aguardandoLiberacao.filter(o => !confirmedByDiretoriaIds.has(o.id)), [aguardandoLiberacao, confirmedByDiretoriaIds]);
   const s2Orders = useMemo(() => aguardandoLiberacao.filter(o => confirmedByDiretoriaIds.has(o.id)), [aguardandoLiberacao, confirmedByDiretoriaIds]);
 
   // --- Section 3: Carga atual ---
@@ -106,6 +95,106 @@ const ComercialLiberacao = () => {
 
   const s2Filtered = useMemo(() => applyFilters(s2Orders, filterFields, s2Conditions), [s2Orders, filterFields, s2Conditions]);
   const s3Filtered = useMemo(() => applyFilters(s3Orders, filterFields, s3Conditions), [s3Orders, filterFields, s3Conditions]);
+
+  // --- Sort & Quick Filter hooks ---
+  const s1Sort = useTableSort();
+  const s1Filter = useQuickFilter<Order>();
+  const s2Sort = useTableSort();
+  const s2Filter = useQuickFilter<Order>();
+  const s3Sort = useTableSort();
+  const s3Filter = useQuickFilter<Order>();
+
+  // --- Column filters ---
+  const s1ColFilter = useColumnFilters();
+  const s2ColFilter = useColumnFilters();
+  const s3ColFilter = useColumnFilters();
+
+  const s1ColDefs = useMemo<ColDef<Order>[]>(() => [
+    { key: 'pedido', getter: (o) => o.id },
+    { key: 'cliente', getter: (o) => `${o.clientCode || ''} ${o.clientName || ''}` },
+    { key: 'representante', getter: (o) => o.representativeName },
+    { key: 'validade', getter: (o) => o.expiryDate },
+  ], []);
+
+  const s2ColDefs = useMemo<ColDef<Order>[]>(() => [
+    { key: 'pedido', getter: (o) => o.id },
+    { key: 'cliente', getter: (o) => `${o.clientCode || ''} ${o.clientName || ''}` },
+    { key: 'representante', getter: (o) => o.representativeName },
+    { key: 'cidadeUf', getter: (o) => o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '' },
+    { key: 'validade', getter: (o) => o.expiryDate },
+  ], []);
+
+  const s3ColDefs = useMemo<ColDef<Order>[]>(() => [
+    { key: 'pedido', getter: (o) => o.id },
+    { key: 'cliente', getter: (o) => `${o.clientCode || ''} ${o.clientName || ''}` },
+    { key: 'representante', getter: (o) => o.representativeName },
+    { key: 'cidadeUf', getter: (o) => o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '' },
+    { key: 'validade', getter: (o) => o.expiryDate },
+  ], []);
+
+  const s1ColSlots = useMemo<ColFilterSlot[]>(() => [
+    { type: 'none' },
+    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
+    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
+    { key: 'validade', type: 'date' },
+  ], []);
+
+  const s2ColSlots = useMemo<ColFilterSlot[]>(() => [
+    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
+    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
+    { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar cidade/UF...' },
+    { key: 'validade', type: 'date' },
+    { type: 'none' },
+  ], []);
+
+  const s3ColSlots = useMemo<ColFilterSlot[]>(() => [
+    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
+    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
+    { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar cidade/UF...' },
+    { key: 'validade', type: 'date' },
+    { type: 'none' },
+  ], []);
+
+  // --- Text getters (for quick filter search) ---
+  const textGetters: Array<(o: Order) => unknown> = [
+    (o) => o.id,
+    (o) => o.clientCode,
+    (o) => o.clientName,
+    (o) => o.representativeName,
+    (o) => o.clientCity,
+    (o) => o.clientUF,
+  ];
+
+  // --- Sort getters ---
+  const sortGetters: Record<string, (o: Order) => unknown> = {
+    pedido: (o) => o.id,
+    cliente: (o) => (o.clientName || '').toLowerCase(),
+    representante: (o) => (o.representativeName || '').toLowerCase(),
+    cidadeUf: (o) => `${o.clientCity || ''} - ${o.clientUF || ''}`,
+    validade: (o) => o.expiryDate || '',
+  };
+
+  // --- Processed data for each section ---
+  const s1Processed = useMemo(() => {
+    const colFiltered = s1ColFilter.filterItems(s1Orders, s1ColDefs);
+    const filtered = s1Filter.filterItems(colFiltered, textGetters);
+    return s1Sort.sortItems(filtered, sortGetters);
+  }, [s1Orders, s1ColFilter.filterItems, s1ColDefs, s1Filter.filterItems, s1Sort.sortItems]);
+
+  const s2Processed = useMemo(() => {
+    const colFiltered = s2ColFilter.filterItems(s2Filtered, s2ColDefs);
+    const filtered = s2Filter.filterItems(colFiltered, textGetters);
+    return s2Sort.sortItems(filtered, sortGetters);
+  }, [s2Filtered, s2ColFilter.filterItems, s2ColDefs, s2Filter.filterItems, s2Sort.sortItems]);
+
+  const s3Processed = useMemo(() => {
+    const colFiltered = s3ColFilter.filterItems(s3Filtered, s3ColDefs);
+    const filtered = s3Filter.filterItems(colFiltered, textGetters);
+    return s3Sort.sortItems(filtered, sortGetters);
+  }, [s3Filtered, s3ColFilter.filterItems, s3ColDefs, s3Filter.filterItems, s3Sort.sortItems]);
 
   // --- Export ---
   const [showExportModal, setShowExportModal] = useState(false);
@@ -161,7 +250,7 @@ const ComercialLiberacao = () => {
 
     const rows = s1Selected.map(id => ({
       pedido_id: id,
-      status: 'pendente',
+      status: 'confirmado',
       enviado_em: now,
       enviado_por: username,
     }));
@@ -169,7 +258,7 @@ const ComercialLiberacao = () => {
     const { error } = await supabaseOps.from('confirmacao_diretoria').upsert(rows as any, { onConflict: 'pedido_id' });
     if (error) { console.error('[Supabase OPS] enviar diretoria:', error.message); showToast('Erro ao enviar para diretoria', 'error'); return; }
 
-    setSentToDiretoriaIds(prev => { const next = new Set(prev); s1Selected.forEach(id => next.add(id)); return next; });
+    setConfirmedByDiretoriaIds(prev => { const next = new Set(prev); s1Selected.forEach(id => next.add(id)); return next; });
     setS1Selected([]);
     showToast(`${rows.length} pedido(s) enviado(s) para a diretoria`);
   };
@@ -196,8 +285,9 @@ const ComercialLiberacao = () => {
       });
     }
 
+    setLiberatedIds(prev => { const next = new Set(prev); loadIds.forEach(id => next.add(id)); return next; });
+    setConfirmedByDiretoriaIds(prev => { const next = new Set(prev); loadIds.forEach(id => next.delete(id)); return next; });
     setLoadIds([]);
-    await refreshStatuses();
     showToast('Carga liberada para Produção');
   };
 
@@ -251,24 +341,30 @@ const ComercialLiberacao = () => {
             Enviar para Diretoria ({s1Selected.length})
           </button>
         </div>
+        <QuickFilterBar
+          query={s1Filter.query}
+          onQueryChange={s1Filter.setQuery}
+          placeholder="Buscar pedidos aguardando..."
+        />
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <th className="py-4 px-6 text-center w-[56px]">
-                    <input type="checkbox" checked={s1Selected.length === s1Orders.length && s1Orders.length > 0} onChange={() => toggleAll(s1Selected, setS1Selected, s1Orders.map(o => o.id))} />
+                    <input type="checkbox" checked={s1Selected.length === s1Processed.length && s1Processed.length > 0} onChange={() => toggleAll(s1Selected, setS1Selected, s1Processed.map(o => o.id))} />
                   </th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
+                  <SortableHeader columnKey="pedido" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <SortableHeader columnKey="cliente" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
+                  <SortableHeader columnKey="representante" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
+                  <SortableHeader columnKey="validade" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
                 </tr>
+                <ColumnFilterRow columns={s1ColSlots} values={s1ColFilter.values} onChange={s1ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
-                {s1Orders.length === 0 ? (
+                {s1Processed.length === 0 ? (
                   <tr><td colSpan={5} className="py-10 text-center text-muted-foreground italic">Nenhum pedido aguardando confirmação.</td></tr>
-                ) : s1Orders.map(o => (
+                ) : s1Processed.map(o => (
                   <tr key={o.id} className="hover:bg-muted/20 transition-colors">
                     <td className="py-4 px-6 text-center">
                       <input type="checkbox" checked={s1Selected.includes(o.id)} onChange={() => setS1Selected(prev => prev.includes(o.id) ? prev.filter(x => x !== o.id) : [...prev, o.id])} />
@@ -292,26 +388,33 @@ const ComercialLiberacao = () => {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Confirmados pela Diretoria — Aguardando Liberação</h2>
-          <FilterTriggerButton count={s2Conditions.length} onClick={() => setS2FiltersOpen(true)} />
         </div>
+        <QuickFilterBar
+          query={s2Filter.query}
+          onQueryChange={s2Filter.setQuery}
+          placeholder="Buscar pedidos confirmados..."
+        >
+          <FilterTriggerButton count={s2Conditions.length} onClick={() => setS2FiltersOpen(true)} />
+        </QuickFilterBar>
         <ActiveFiltersChips fields={filterFields} conditions={s2Conditions} onRemove={(id) => setS2Conditions(prev => prev.filter(c => c.id !== id))} onClear={() => setS2Conditions([])} />
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cidade / UF</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
+                  <SortableHeader columnKey="pedido" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <SortableHeader columnKey="cliente" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
+                  <SortableHeader columnKey="representante" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
+                  <SortableHeader columnKey="cidadeUf" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
+                  <SortableHeader columnKey="validade" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
+                <ColumnFilterRow columns={s2ColSlots} values={s2ColFilter.values} onChange={s2ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
-                {s2Filtered.length === 0 ? (
+                {s2Processed.length === 0 ? (
                   <tr><td colSpan={6} className="py-10 text-center text-muted-foreground italic">Nenhum pedido confirmado pela diretoria aguardando liberação.</td></tr>
-                ) : s2Filtered.map(o => (
+                ) : s2Processed.map(o => (
                   <tr key={o.id} className="hover:bg-muted/20 transition-colors">
                     <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
                     <td className="py-4 px-6">
@@ -338,32 +441,37 @@ const ComercialLiberacao = () => {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Carga Atual — Liberados para Produção</h2>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <FilterTriggerButton count={s3Conditions.length} onClick={() => setS3FiltersOpen(true)} />
-            <button className={btnPrimary} onClick={() => void liberarParaProducao()}>
-              <CheckCircle2 className="h-4 w-4" />
-              Confirmar Liberação
-            </button>
-          </div>
+          <button className={btnPrimary} onClick={() => void liberarParaProducao()}>
+            <CheckCircle2 className="h-4 w-4" />
+            Confirmar Liberação
+          </button>
         </div>
+        <QuickFilterBar
+          query={s3Filter.query}
+          onQueryChange={s3Filter.setQuery}
+          placeholder="Buscar na carga..."
+        >
+          <FilterTriggerButton count={s3Conditions.length} onClick={() => setS3FiltersOpen(true)} />
+        </QuickFilterBar>
         <ActiveFiltersChips fields={filterFields} conditions={s3Conditions} onRemove={(id) => setS3Conditions(prev => prev.filter(c => c.id !== id))} onClear={() => setS3Conditions([])} />
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cidade / UF</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
+                  <SortableHeader columnKey="pedido" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <SortableHeader columnKey="cliente" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
+                  <SortableHeader columnKey="representante" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
+                  <SortableHeader columnKey="cidadeUf" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
+                  <SortableHeader columnKey="validade" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
+                <ColumnFilterRow columns={s3ColSlots} values={s3ColFilter.values} onChange={s3ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
-                {s3Filtered.length === 0 ? (
+                {s3Processed.length === 0 ? (
                   <tr><td colSpan={6} className="py-10 text-center text-muted-foreground italic">Nenhum pedido na carga.</td></tr>
-                ) : s3Filtered.map(o => (
+                ) : s3Processed.map(o => (
                   <tr key={o.id} className="hover:bg-muted/20 transition-colors">
                     <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
                     <td className="py-4 px-6">

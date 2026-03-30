@@ -4,6 +4,12 @@ import Modal from '@/components/Modal';
 import { Client, Address } from '@/types';
 import { FormField, inputClass, btnPrimary, btnSecondary, btnDanger } from '@/components/shared';
 import { deleteRepresentante, insertRepresentante, listRepresentantes, normalizeCpf, safeJsonParse, updateRepresentante } from '@/lib/cadastrosOps';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 
 const emptyAddress: Address = { street: '', number: '', neighborhood: '', city: '', state: '', zip: '' };
 const emptyClient = { registryNumber: '', name: '', cpfCnpj: '', phone: '', email: '', address: { ...emptyAddress } };
@@ -21,7 +27,8 @@ const ClientsPage = ({
 } = {}) => {
   const { showToast } = useToast();
   const entityLabel = title.toLowerCase().includes('cliente') ? 'Cliente' : 'Representante';
-  const [search, setSearch] = useState('');
+  const { sortState, toggleSort, sortItems } = useTableSort();
+  const { query, setQuery, filterItems } = useQuickFilter<Client>();
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Client | null>(null);
   const [form, setForm] = useState<Omit<Client, 'id'>>(emptyClient);
@@ -61,15 +68,49 @@ const ClientsPage = ({
     };
   }, [showToast]);
 
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    if (!q) return items;
-    return items.filter((c) =>
-      c.name.toLowerCase().includes(q) ||
-      c.cpfCnpj.includes(search) ||
-      (c.registryNumber || '').toLowerCase().includes(q),
-    );
-  }, [items, search]);
+  const textGetters: Array<(c: Client) => unknown> = [
+    (c) => c.name,
+    (c) => c.cpfCnpj,
+    (c) => c.registryNumber,
+    (c) => c.phone,
+    (c) => c.address.city,
+    (c) => c.address.state,
+  ];
+
+  const sortGetters: Record<string, (c: Client) => unknown> = {
+    registryNumber: (c) => c.registryNumber,
+    name: (c) => c.name,
+    cpfCnpj: (c) => c.cpfCnpj,
+    phone: (c) => c.phone,
+    city: (c) => c.address.city,
+    state: (c) => c.address.state,
+  };
+
+  const colFilter = useColumnFilters();
+
+  const colFilterSlots: ColFilterSlot[] = useMemo(() => [
+    ...(entityLabel === 'Representante' ? [{ key: 'registryNumber', type: 'text' as const, placeholder: 'Nº Cadastro...' }] : []),
+    { key: 'name', type: 'text' as const, placeholder: 'Nome...' },
+    { key: 'cpfCnpj', type: 'text' as const, placeholder: 'CPF/CNPJ...' },
+    { key: 'phone', type: 'text' as const, placeholder: 'Telefone...' },
+    { key: 'city', type: 'text' as const, placeholder: 'Cidade...' },
+    { key: 'state', type: 'text' as const, placeholder: 'UF...' },
+    { type: 'none' as const },
+  ], [entityLabel]);
+
+  const colFilterDefs = useMemo(() => [
+    { key: 'registryNumber', getter: (c: Client) => c.registryNumber },
+    { key: 'name', getter: (c: Client) => c.name },
+    { key: 'cpfCnpj', getter: (c: Client) => c.cpfCnpj },
+    { key: 'phone', getter: (c: Client) => c.phone },
+    { key: 'city', getter: (c: Client) => c.address.city },
+    { key: 'state', getter: (c: Client) => c.address.state },
+  ], []);
+
+  const filtered = useMemo(
+    () => sortItems(filterItems(colFilter.filterItems(items, colFilterDefs), textGetters), sortGetters),
+    [items, filterItems, sortItems, colFilter.filterItems, colFilterDefs],
+  );
 
   const openNew = () => { setEditing(null); setForm(emptyClient); setErrors({}); setModalOpen(true); };
   const openEdit = (c: Client) => { setEditing(c); setForm({ registryNumber: c.registryNumber || '', name: c.name, cpfCnpj: c.cpfCnpj, phone: c.phone, email: c.email, address: { ...c.address } }); setErrors({}); setModalOpen(true); };
@@ -165,13 +206,7 @@ const ClientsPage = ({
         </button>
       </div>
 
-      <input
-        type="text"
-        placeholder="Buscar por nome ou documento..."
-        className={inputClass + ' max-w-sm'}
-        value={search}
-        onChange={e => setSearch(e.target.value)}
-      />
+      <QuickFilterBar query={query} onQueryChange={setQuery} placeholder="Buscar por nome, documento, telefone..." />
       {loading && (
         <div className="text-sm text-muted-foreground font-display">
           Carregando...
@@ -182,17 +217,15 @@ const ClientsPage = ({
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              {[
-                ...(entityLabel === 'Representante' ? ['Nº Cadastro'] : []),
-                'Nome',
-                'CPF/CNPJ',
-                'Telefone',
-                'Cidade',
-                'UF',
-                'Ações',
-              ].map(h => (
-                <th key={h} className="text-left py-3 px-4 font-display font-medium text-muted-foreground">{h}</th>
-              ))}
+              {entityLabel === 'Representante' && (
+                <SortableHeader columnKey="registryNumber" sortState={sortState} onToggle={toggleSort}>Nº Cadastro</SortableHeader>
+              )}
+              <SortableHeader columnKey="name" sortState={sortState} onToggle={toggleSort}>Nome</SortableHeader>
+              <SortableHeader columnKey="cpfCnpj" sortState={sortState} onToggle={toggleSort}>CPF/CNPJ</SortableHeader>
+              <SortableHeader columnKey="phone" sortState={sortState} onToggle={toggleSort}>Telefone</SortableHeader>
+              <SortableHeader columnKey="city" sortState={sortState} onToggle={toggleSort}>Cidade</SortableHeader>
+              <SortableHeader columnKey="state" sortState={sortState} onToggle={toggleSort}>UF</SortableHeader>
+              <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Ações</th>
             </tr>
           </thead>
           <tbody>

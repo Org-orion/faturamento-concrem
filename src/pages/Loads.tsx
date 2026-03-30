@@ -5,6 +5,13 @@ import { formatCurrency, getOrderTotal, loadStatusColors, StatusBadge, btnSecond
 import { Edit2, Plus, Package, FileText, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoSrc from '@/assets/logo.png';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters, ColDef } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
+import type { Load } from '@/types';
 
 type ReportRow = {
   driverName: string;
@@ -36,9 +43,21 @@ const getLogoDataUrl = async (): Promise<string> => {
   }
 };
 
+const shipmentStatuses = [
+  { value: 'Aguardando Despacho', label: 'Aguardando Despacho' },
+  { value: 'Despachado', label: 'Despachado' },
+  { value: 'Em Rota', label: 'Em Rota' },
+  { value: 'Entregue', label: 'Entregue' },
+  { value: 'Cancelado', label: 'Cancelado' },
+];
+
 const LoadsPage = () => {
   const { loads, drivers, orders, supportOrders } = useApp();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  const { sortState, toggleSort, sortItems } = useTableSort();
+  const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<Load>();
+  const colFilter = useColumnFilters();
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -47,6 +66,63 @@ const LoadsPage = () => {
   const toggleAll = () => {
     setSelectedIds((prev) => (prev.length === loads.length ? [] : loads.map((l) => l.id)));
   };
+
+  const textGetters: Array<(item: Load) => unknown> = useMemo(
+    () => [
+      (l: Load) => l.id,
+      (l: Load) => drivers.find((d) => d.id === l.driverId)?.name ?? '',
+      (l: Load) => l.plannedDate ? formatDateBR(l.plannedDate) : '',
+      (l: Load) => l.shipmentStatus,
+      (l: Load) => l.productionStatus,
+    ],
+    [drivers],
+  );
+
+  const sortGetters: Record<string, (item: Load) => unknown> = useMemo(
+    () => ({
+      id: (l: Load) => l.id,
+      driver: (l: Load) => drivers.find((d) => d.id === l.driverId)?.name ?? '',
+      date: (l: Load) => l.plannedDate,
+      orderValue: (l: Load) => {
+        const saleOrders = orders.filter((o) => l.orderIds.includes(o.id));
+        const supOrders = supportOrders.filter((o) => l.orderIds.includes(o.id));
+        return (
+          saleOrders.reduce((acc, o) => acc + getOrderTotal(o), 0) +
+          supOrders.reduce((acc, o) => acc + o.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0), 0)
+        );
+      },
+      freightValue: (l: Load) => l.freightValue || 0,
+      status: (l: Load) => l.shipmentStatus,
+    }),
+    [drivers, orders, supportOrders],
+  );
+
+  const colDefs: ColDef<Load>[] = useMemo(() => [
+    { key: 'id', getter: (l) => l.id },
+    { key: 'driver', getter: (l) => drivers.find((d) => d.id === l.driverId)?.name ?? '' },
+    { key: 'date', getter: (l) => l.plannedDate ? formatDateBR(l.plannedDate) : '' },
+    { key: 'shipmentStatus', getter: (l) => l.shipmentStatus, match: 'exact' as const },
+  ], [drivers]);
+  const colFilterSlots: ColFilterSlot[] = [
+    { type: 'none' },
+    { key: 'id', type: 'text', placeholder: 'Código...' },
+    { key: 'driver', type: 'text', placeholder: 'Motorista...' },
+    { key: 'date', type: 'text', placeholder: 'Data...' },
+    { type: 'none' },
+    { type: 'none' },
+    { key: 'shipmentStatus', type: 'select', options: shipmentStatuses },
+    { type: 'none' },
+  ];
+
+  const filteredAndSorted = useMemo(() => {
+    const colFiltered = colFilter.filterItems(loads, colDefs);
+    const filtered = filterItems(
+      colFiltered,
+      textGetters,
+      (l) => l.shipmentStatus,
+    );
+    return sortItems(filtered, sortGetters);
+  }, [loads, filterItems, textGetters, sortItems, sortGetters, colFilter.filterItems, colDefs]);
 
   const reportRows = useMemo((): ReportRow[] => {
     const selected = loads.filter((l) => selectedIds.includes(l.id));
@@ -235,6 +311,16 @@ const LoadsPage = () => {
       </div>
 
       <div className="bg-card rounded-xl shadow-card border border-border overflow-hidden">
+        <div className="p-4 border-b border-border">
+          <QuickFilterBar
+            query={query}
+            onQueryChange={setQuery}
+            placeholder="Buscar por motorista, carregamento, data..."
+            statuses={shipmentStatuses}
+            activeStatus={activeStatus}
+            onStatusChange={setActiveStatus}
+          />
+        </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -246,17 +332,30 @@ const LoadsPage = () => {
                     onChange={toggleAll}
                   />
                 </th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Carregamento</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Motorista</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor do Pedido</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor do Frete</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+                <SortableHeader columnKey="id" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
+                  Carregamento
+                </SortableHeader>
+                <SortableHeader columnKey="driver" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
+                  Motorista
+                </SortableHeader>
+                <SortableHeader columnKey="date" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
+                  Data
+                </SortableHeader>
+                <SortableHeader columnKey="orderValue" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
+                  Valor do Pedido
+                </SortableHeader>
+                <SortableHeader columnKey="freightValue" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
+                  Valor do Frete
+                </SortableHeader>
+                <SortableHeader columnKey="status" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
+                  Status
+                </SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
+              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
-              {loads.map((load, index) => {
+              {filteredAndSorted.map((load, index) => {
                 const driver = drivers.find((d) => d.id === load.driverId);
                 const saleOrders = orders.filter((o) => load.orderIds.includes(o.id));
                 const supOrders = supportOrders.filter((o) => load.orderIds.includes(o.id));
@@ -312,7 +411,7 @@ const LoadsPage = () => {
             </tbody>
           </table>
         </div>
-        {loads.length === 0 && (
+        {filteredAndSorted.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
             <Package className="h-12 w-12 mb-4 opacity-10" />
             <p className="font-display text-sm italic">Nenhuma programação criada até o momento.</p>

@@ -1,5 +1,4 @@
 import React from 'react';
-import { Search } from 'lucide-react';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { PedidoStatusValue } from '@/types';
 import { cn } from '@/lib/utils';
@@ -11,35 +10,18 @@ const fmtDateTime = (iso?: string | null) => {
 };
 
 export function AtualizacaoStatusList({
-  query,
-  onQueryChange,
   pedidos,
   statusByPedidoId,
   selectedId,
   onSelect,
 }: {
-  query: string;
-  onQueryChange: (v: string) => void;
   pedidos: UnifiedPedido[];
   statusByPedidoId: PedidoStatusById;
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
   return (
-    <div className="space-y-4">
-      <div className="bg-card rounded-xl p-4 border border-border shadow-card">
-        <div className="relative">
-          <Search className="h-4 w-4 text-muted-foreground absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            className="h-10 w-full pl-9 pr-3 rounded-lg border border-border bg-white focus:outline-none focus:ring-2 focus:ring-primary/30"
-            placeholder="Filtrar por cliente ou nº do pedido..."
-            value={query}
-            onChange={(e) => onQueryChange(e.target.value)}
-          />
-        </div>
-      </div>
-
-      <div className="space-y-3">
+    <div className="space-y-3">
         {pedidos.length === 0 ? (
           <div className="bg-card rounded-xl border border-border p-10 text-center text-muted-foreground">Nenhum pedido confirmado encontrado.</div>
         ) : (
@@ -74,7 +56,6 @@ export function AtualizacaoStatusList({
             );
           })
         )}
-      </div>
     </div>
   );
 }

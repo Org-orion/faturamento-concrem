@@ -6,6 +6,12 @@ import { btnDanger, btnPrimary, btnSecondary, formatCurrency, getOrderTotal, inp
 import { ExpenseType, FreightEntry, FreightEntryStatus, FreightExpenseLine, Order, PedidoStatusRow } from '@/types';
 import { CheckCircle2, Eye, Plus, Printer, Settings2, Edit, Trash2, AlertTriangle } from 'lucide-react';
 import { listPedidosStatusByPedidoIds } from '@/lib/pedidosStatusRepo';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
 
 function sumExpenses(lines: FreightExpenseLine[]) {
   return lines.reduce((s, l) => s + (Number(l.value) || 0), 0);
@@ -19,8 +25,13 @@ const Financial = () => {
   const { orders, drivers, freightEntries, expenseTypes, addExpenseType, updateExpenseType, addFreightEntry, updateFreightEntry, setFreightEntryStatus, deleteFreightEntry } = useApp();
   const { showToast } = useToast();
 
-  const [q, setQ] = useState('');
-  const [qLaunched, setQLaunched] = useState('');
+  const { sortState: sortPending, toggleSort: togglePending, sortItems: sortPendingItems } = useTableSort();
+  const { query: qPending, setQuery: setQPending, filterItems: filterPendingItems } = useQuickFilter();
+  const { sortState: sortLaunched, toggleSort: toggleLaunched, sortItems: sortLaunchedItems } = useTableSort();
+  const { query: qLaunched, setQuery: setQLaunched, filterItems: filterLaunchedItems, activeStatus: activeLaunchedStatus, setActiveStatus: setActiveLaunchedStatus } = useQuickFilter();
+  const colFilterPending = useColumnFilters();
+  const colFilterLaunched = useColumnFilters();
+
   const [openTypes, setOpenTypes] = useState(false);
   const [openNew, setOpenNew] = useState(false);
   const [openDetails, setOpenDetails] = useState(false);
@@ -62,37 +73,126 @@ const Financial = () => {
     [deliveredOrders, entryByOrderId],
   );
 
+  // --- Pending table: text getters, sort getters, data pipeline ---
+  type PendingRow = { kind: 'pending'; order: Order };
+
+  const pendingTextGetters: Array<(item: PendingRow) => unknown> = [
+    (r) => r.order.id,
+    (r) => r.order.representativeName,
+    (r) => {
+      const d = r.order.driverId ? drivers.find((x) => x.id === r.order.driverId) : undefined;
+      return d?.name;
+    },
+    (r) => r.order.freightValue,
+  ];
+
+  const pendingSortGetters: Record<string, (item: PendingRow) => unknown> = {
+    orderId: (r) => r.order.id,
+    representative: (r) => r.order.representativeName,
+    driver: (r) => {
+      const d = r.order.driverId ? drivers.find((x) => x.id === r.order.driverId) : undefined;
+      return d?.name;
+    },
+    date: (r) => r.order.date,
+    freightValue: (r) => Number(r.order.freightValue) || 0,
+  };
+
+  const pendingColDefs = useMemo(() => [
+    { key: 'orderId', getter: (r: PendingRow) => r.order.id },
+    { key: 'representative', getter: (r: PendingRow) => r.order.representativeName },
+    { key: 'driver', getter: (r: PendingRow) => {
+      const d = r.order.driverId ? drivers.find((x) => x.id === r.order.driverId) : undefined;
+      return d?.name ?? '';
+    }},
+  ], [drivers]);
+  const pendingColSlots: ColFilterSlot[] = [
+    { key: 'orderId', type: 'text', placeholder: 'Nº Pedido...' },
+    { key: 'representative', type: 'text', placeholder: 'Representante...' },
+    { key: 'driver', type: 'text', placeholder: 'Motorista...' },
+    { type: 'none' },
+    { type: 'none' },
+    { type: 'none' },
+    { type: 'none' },
+    { type: 'none' },
+    { type: 'none' },
+    { type: 'none' },
+  ];
+
   const allPendingRows = useMemo(() => {
-    const rows = pendingOrders.map(o => ({ kind: 'pending' as const, order: o }));
+    const rows: PendingRow[] = pendingOrders.map(o => ({ kind: 'pending' as const, order: o }));
+    const colFiltered = colFilterPending.filterItems(rows, pendingColDefs);
+    const filtered = filterPendingItems(colFiltered, pendingTextGetters);
+    return sortPendingItems(filtered, pendingSortGetters);
+  }, [pendingOrders, filterPendingItems, sortPendingItems, drivers, colFilterPending.filterItems, pendingColDefs]);
 
-    const query = q.trim().toLowerCase();
-    const filtered = query
-      ? rows.filter((r) => {
-          const rep = r.order.representativeName;
-          return `${r.order.id} ${rep || ''}`.toLowerCase().includes(query);
-        })
-      : rows;
+  // --- Launched table: text getters, sort getters, data pipeline ---
+  type LaunchedRow = { kind: 'entry'; entry: FreightEntry; order: Order | undefined };
 
-    return filtered.sort((a, b) => b.order.date.localeCompare(a.order.date));
-  }, [pendingOrders, q]);
+  const launchedTextGetters: Array<(item: LaunchedRow) => unknown> = [
+    (r) => r.entry.orderId,
+    (r) => r.order?.representativeName,
+    (r) => {
+      const d = drivers.find((x) => x.id === r.entry.driverId);
+      return d?.name;
+    },
+    (r) => r.entry.freightValue,
+    (r) => r.entry.driverValue,
+    (r) => r.entry.status,
+  ];
+
+  const launchedStatusGetter = (r: LaunchedRow) => r.entry.status;
+
+  const launchedSortGetters: Record<string, (item: LaunchedRow) => unknown> = {
+    orderId: (r) => r.entry.orderId,
+    representative: (r) => r.order?.representativeName,
+    driver: (r) => {
+      const d = drivers.find((x) => x.id === r.entry.driverId);
+      return d?.name;
+    },
+    date: (r) => r.entry.deliveryDate,
+    freightValue: (r) => Number(r.entry.freightValue) || 0,
+    driverValue: (r) => Number(r.entry.driverValue) || 0,
+    expenses: (r) => sumExpenses(r.entry.expenses),
+    saldo: (r) => (Number(r.entry.freightValue) || 0) - (Number(r.entry.driverValue) || 0) - sumExpenses(r.entry.expenses),
+    status: (r) => r.entry.status,
+  };
+
+  const launchedColDefs = useMemo(() => [
+    { key: 'orderId', getter: (r: LaunchedRow) => r.entry.orderId },
+    { key: 'representative', getter: (r: LaunchedRow) => r.order?.representativeName ?? '' },
+    { key: 'driver', getter: (r: LaunchedRow) => {
+      const d = drivers.find((x) => x.id === r.entry.driverId);
+      return d?.name ?? '';
+    }},
+    { key: 'status', getter: (r: LaunchedRow) => r.entry.status, match: 'exact' as const },
+  ], [drivers]);
+  const launchedColSlots: ColFilterSlot[] = [
+    { key: 'orderId', type: 'text', placeholder: 'Nº Pedido...' },
+    { key: 'representative', type: 'text', placeholder: 'Representante...' },
+    { key: 'driver', type: 'text', placeholder: 'Motorista...' },
+    { type: 'none' },
+    { type: 'none' },
+    { type: 'none' },
+    { type: 'none' },
+    { type: 'none' },
+    { key: 'status', type: 'select', options: [
+      { value: 'Pendente', label: 'Pendente' },
+      { value: 'Lançado', label: 'Lançado' },
+      { value: 'Conferido', label: 'Conferido' },
+    ]},
+    { type: 'none' },
+  ];
 
   const allLaunchedRows = useMemo(() => {
-    const rows = freightEntries.map(e => ({
+    const rows: LaunchedRow[] = freightEntries.map(e => ({
       kind: 'entry' as const,
       entry: e,
       order: orders.find((o) => o.id === e.orderId)
     }));
-
-    const query = qLaunched.trim().toLowerCase();
-    const filtered = query
-      ? rows.filter((r) => {
-          const rep = r.order?.representativeName;
-          return `${r.entry.orderId} ${rep || ''}`.toLowerCase().includes(query);
-        })
-      : rows;
-
-    return filtered.sort((a, b) => b.entry.createdAt.localeCompare(a.entry.createdAt));
-  }, [freightEntries, orders, qLaunched]);
+    const colFiltered = colFilterLaunched.filterItems(rows, launchedColDefs);
+    const filtered = filterLaunchedItems(colFiltered, launchedTextGetters, launchedStatusGetter);
+    return sortLaunchedItems(filtered, launchedSortGetters);
+  }, [freightEntries, orders, filterLaunchedItems, sortLaunchedItems, drivers, colFilterLaunched.filterItems, launchedColDefs]);
 
   const summary = useMemo(() => {
     const now = new Date();
@@ -215,7 +315,7 @@ const Financial = () => {
       });
       showToast('Lançamento salvo');
     }
-    
+
     setOpenNew(false);
     resetNew();
     setEditingId(null);
@@ -289,30 +389,33 @@ const Financial = () => {
       </div>
 
       <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden no-print">
-        <div className="p-5 border-b border-border flex items-center justify-between gap-4">
+        <div className="p-5 border-b border-border space-y-4">
           <div>
             <h2 className="text-sm font-bold text-foreground uppercase tracking-wider">Pendentes de Lançamento</h2>
             <p className="text-xs text-muted-foreground mt-1">Pedidos entregues aguardando lançamento de frete.</p>
           </div>
-          <div className="w-full max-w-sm relative">
-            <input className={inputClass} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar pedido ou representante" />
-          </div>
+          <QuickFilterBar
+            query={qPending}
+            onQueryChange={setQPending}
+            placeholder="Buscar pedido, representante ou motorista"
+          />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº Pedido</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Motorista</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Frete</th>
+                <SortableHeader columnKey="orderId" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
+                <SortableHeader columnKey="representative" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Representante</SortableHeader>
+                <SortableHeader columnKey="driver" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Motorista</SortableHeader>
+                <SortableHeader columnKey="date" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Data</SortableHeader>
+                <SortableHeader columnKey="freightValue" sortState={sortPending} onToggle={togglePending} className="text-right py-4 px-6">Valor Frete</SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Motorista</th>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Outras Despesas</th>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Saldo</th>
                 <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
+              <ColumnFilterRow columns={pendingColSlots} values={colFilterPending.values} onChange={colFilterPending.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {allPendingRows.map((r) => {
@@ -349,30 +452,40 @@ const Financial = () => {
       </div>
 
       <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden no-print">
-        <div className="p-5 border-b border-border flex items-center justify-between gap-4">
+        <div className="p-5 border-b border-border space-y-4">
           <div>
             <h2 className="text-sm font-bold text-foreground uppercase tracking-wider">Fretes Lançados</h2>
             <p className="text-xs text-muted-foreground mt-1">Pedidos entregues com distribuição de frete e despesas.</p>
           </div>
-          <div className="w-full max-w-sm relative">
-            <input className={inputClass} value={qLaunched} onChange={(e) => setQLaunched(e.target.value)} placeholder="Buscar pedido ou representante" />
-          </div>
+          <QuickFilterBar
+            query={qLaunched}
+            onQueryChange={setQLaunched}
+            placeholder="Buscar pedido, representante ou motorista"
+            statuses={[
+              { value: 'Pendente', label: 'Pendente' },
+              { value: 'Lançado', label: 'Lançado' },
+              { value: 'Conferido', label: 'Conferido' },
+            ]}
+            activeStatus={activeLaunchedStatus}
+            onStatusChange={setActiveLaunchedStatus}
+          />
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº Pedido</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Motorista</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Frete</th>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Motorista</th>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Outras Despesas</th>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Saldo</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+                <SortableHeader columnKey="orderId" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
+                <SortableHeader columnKey="representative" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Representante</SortableHeader>
+                <SortableHeader columnKey="driver" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Motorista</SortableHeader>
+                <SortableHeader columnKey="date" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Data</SortableHeader>
+                <SortableHeader columnKey="freightValue" sortState={sortLaunched} onToggle={toggleLaunched} className="text-right py-4 px-6">Valor Frete</SortableHeader>
+                <SortableHeader columnKey="driverValue" sortState={sortLaunched} onToggle={toggleLaunched} className="text-right py-4 px-6">Valor Motorista</SortableHeader>
+                <SortableHeader columnKey="expenses" sortState={sortLaunched} onToggle={toggleLaunched} className="text-right py-4 px-6">Outras Despesas</SortableHeader>
+                <SortableHeader columnKey="saldo" sortState={sortLaunched} onToggle={toggleLaunched} className="text-right py-4 px-6">Saldo</SortableHeader>
+                <SortableHeader columnKey="status" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Status</SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
+              <ColumnFilterRow columns={launchedColSlots} values={colFilterLaunched.values} onChange={colFilterLaunched.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {allLaunchedRows.map((r) => {
@@ -831,4 +944,3 @@ const Financial = () => {
 };
 
 export default Financial;
-

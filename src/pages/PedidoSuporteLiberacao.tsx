@@ -12,6 +12,13 @@ import { applyFilters } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
+import type { ColDef } from '@/hooks/useColumnFilters';
 
 type StatusOption = 'Aguardando liberação' | 'Liberado';
 
@@ -49,6 +56,127 @@ const PedidoSuporteLiberacao = () => {
 
   const [s3FiltersOpen, setS3FiltersOpen] = useState(false);
   const [s3Conditions, setS3Conditions] = useState<FilterCondition[]>([]);
+
+  const { sortState: s1Sort, toggleSort: s1Toggle, sortItems: s1SortItems } = useTableSort();
+  const { query: s1Query, setQuery: s1SetQuery, filterItems: s1QuickFilter } = useQuickFilter<SupportOrder>();
+
+  const { sortState: s2Sort, toggleSort: s2Toggle, sortItems: s2SortItems } = useTableSort();
+  const { query: s2Query, setQuery: s2SetQuery, filterItems: s2QuickFilter } = useQuickFilter<SupportOrder>();
+
+  const { sortState: s3Sort, toggleSort: s3Toggle, sortItems: s3SortItems } = useTableSort();
+  const { query: s3Query, setQuery: s3SetQuery, filterItems: s3QuickFilter } = useQuickFilter<SupportOrder>();
+
+  // --- Column filters ---
+  const s1ColFilter = useColumnFilters();
+  const s2ColFilter = useColumnFilters();
+  const s3ColFilter = useColumnFilters();
+
+  // S1 columns: checkbox, Pedido, Cliente, Representante, Cidade/UF, Emissao, Validade (7 cols)
+  const s1ColDefs = useMemo<ColDef<SupportOrder>[]>(() => [
+    { key: 'pedido', getter: (o) => o.id },
+    { key: 'cliente', getter: (o) => `${o.clientCode || ''} ${o.clientName || ''}` },
+    { key: 'representante', getter: (o) => o.representativeName },
+    { key: 'cidadeUf', getter: (o) => o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '' },
+    { key: 'emissao', getter: (o) => o.date },
+    { key: 'validade', getter: (o) => o.expiryDate },
+  ], []);
+
+  const s1ColSlots = useMemo<ColFilterSlot[]>(() => [
+    { type: 'none' },
+    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
+    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
+    { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar cidade/UF...' },
+    { key: 'emissao', type: 'date' },
+    { key: 'validade', type: 'date' },
+  ], []);
+
+  // S2 columns: Pedido, Cliente, Representante, Cidade/UF, Emissao, Validade, Acoes (7 cols)
+  const s2ColDefs = useMemo<ColDef<SupportOrder>[]>(() => [
+    { key: 'pedido', getter: (o) => o.id },
+    { key: 'cliente', getter: (o) => `${o.clientCode || ''} ${o.clientName || ''}` },
+    { key: 'representante', getter: (o) => o.representativeName },
+    { key: 'cidadeUf', getter: (o) => o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '' },
+    { key: 'emissao', getter: (o) => o.date },
+    { key: 'validade', getter: (o) => o.expiryDate },
+  ], []);
+
+  const s2ColSlots = useMemo<ColFilterSlot[]>(() => [
+    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
+    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
+    { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar cidade/UF...' },
+    { key: 'emissao', type: 'date' },
+    { key: 'validade', type: 'date' },
+    { type: 'none' },
+  ], []);
+
+  // S3 columns: checkbox, Pedido, Cliente, Representante, Cidade/UF, Validade, Status, Acoes (8 cols)
+  const s3ColDefs = useMemo<ColDef<SupportOrder>[]>(() => [
+    { key: 'pedido', getter: (o) => o.id },
+    { key: 'cliente', getter: (o) => `${o.clientCode || ''} ${o.clientName || ''}` },
+    { key: 'representante', getter: (o) => o.representativeName },
+    { key: 'cidadeUf', getter: (o) => o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '' },
+    { key: 'validade', getter: (o) => o.expiryDate },
+  ], []);
+
+  const s3ColSlots = useMemo<ColFilterSlot[]>(() => [
+    { type: 'none' },
+    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
+    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
+    { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar cidade/UF...' },
+    { key: 'validade', type: 'date' },
+    { type: 'none' },
+    { type: 'none' },
+  ], []);
+
+  const s12TextGetters: Array<(item: SupportOrder) => unknown> = useMemo(
+    () => [
+      (o: SupportOrder) => o.id,
+      (o: SupportOrder) => o.clientCode,
+      (o: SupportOrder) => o.clientName,
+      (o: SupportOrder) => o.representativeName,
+      (o: SupportOrder) => o.clientCity,
+      (o: SupportOrder) => o.clientUF,
+    ],
+    [],
+  );
+
+  const s12SortGetters: Record<string, (item: SupportOrder) => unknown> = useMemo(
+    () => ({
+      pedido: (o: SupportOrder) => o.id,
+      cliente: (o: SupportOrder) => o.clientName,
+      representante: (o: SupportOrder) => o.representativeName,
+      cidadeUf: (o: SupportOrder) => `${o.clientCity || ''} - ${o.clientUF || ''}`,
+      emissao: (o: SupportOrder) => o.date,
+      validade: (o: SupportOrder) => o.expiryDate,
+    }),
+    [],
+  );
+
+  const s3TextGetters: Array<(item: SupportOrder) => unknown> = useMemo(
+    () => [
+      (o: SupportOrder) => o.id,
+      (o: SupportOrder) => o.clientCode,
+      (o: SupportOrder) => o.clientName,
+      (o: SupportOrder) => o.representativeName,
+      (o: SupportOrder) => o.clientCity,
+      (o: SupportOrder) => o.clientUF,
+    ],
+    [],
+  );
+
+  const s3SortGetters: Record<string, (item: SupportOrder) => unknown> = useMemo(
+    () => ({
+      pedido: (o: SupportOrder) => o.id,
+      cliente: (o: SupportOrder) => o.clientName,
+      representante: (o: SupportOrder) => o.representativeName,
+      cidadeUf: (o: SupportOrder) => `${o.clientCity || ''} - ${o.clientUF || ''}`,
+      validade: (o: SupportOrder) => o.expiryDate,
+    }),
+    [],
+  );
 
   const s12FilterFields = useMemo(() => {
     return [
@@ -117,18 +245,18 @@ const PedidoSuporteLiberacao = () => {
   }, [loadIds, supportOrders]);
 
   const s1Filtered = useMemo(
-    () => applyFilters(s1Orders, s12FilterFields, s1Conditions),
-    [s1Orders, s12FilterFields, s1Conditions],
+    () => s1SortItems(s1QuickFilter(applyFilters(s1ColFilter.filterItems(s1Orders, s1ColDefs), s12FilterFields, s1Conditions), s12TextGetters), s12SortGetters),
+    [s1Orders, s1ColFilter.filterItems, s1ColDefs, s12FilterFields, s1Conditions, s1QuickFilter, s12TextGetters, s1SortItems, s12SortGetters],
   );
 
   const s2Filtered = useMemo(
-    () => applyFilters(s2Orders, s12FilterFields, s2Conditions),
-    [s2Orders, s12FilterFields, s2Conditions],
+    () => s2SortItems(s2QuickFilter(applyFilters(s2ColFilter.filterItems(s2Orders, s2ColDefs), s12FilterFields, s2Conditions), s12TextGetters), s12SortGetters),
+    [s2Orders, s2ColFilter.filterItems, s2ColDefs, s12FilterFields, s2Conditions, s2QuickFilter, s12TextGetters, s2SortItems, s12SortGetters],
   );
 
   const s3Filtered = useMemo(
-    () => applyFilters(s3Orders, s3FilterFields, s3Conditions),
-    [s3Orders, s3FilterFields, s3Conditions],
+    () => s3SortItems(s3QuickFilter(applyFilters(s3ColFilter.filterItems(s3Orders, s3ColDefs), s3FilterFields, s3Conditions), s3TextGetters), s3SortGetters),
+    [s3Orders, s3ColFilter.filterItems, s3ColDefs, s3FilterFields, s3Conditions, s3QuickFilter, s3TextGetters, s3SortItems, s3SortGetters],
   );
 
   const toggleAll = (current: string[], setter: (v: string[]) => void, ids: string[]) => {
@@ -286,14 +414,19 @@ const PedidoSuporteLiberacao = () => {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Aguardando Confirmação</h2>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <FilterTriggerButton count={s1Conditions.length} onClick={() => setS1FiltersOpen(true)} />
-            <button className={btnPrimary} disabled={session1Selected.length === 0} onClick={() => void confirmSelected()}>
-              <CheckCircle2 className="h-4 w-4" />
-              Confirmar Pedidos
-            </button>
-          </div>
+          <button className={btnPrimary} disabled={session1Selected.length === 0} onClick={() => void confirmSelected()}>
+            <CheckCircle2 className="h-4 w-4" />
+            Confirmar Pedidos
+          </button>
         </div>
+
+        <QuickFilterBar
+          query={s1Query}
+          onQueryChange={s1SetQuery}
+          placeholder="Buscar pedido, cliente, representante..."
+        >
+          <FilterTriggerButton count={s1Conditions.length} onClick={() => setS1FiltersOpen(true)} />
+        </QuickFilterBar>
 
         <ActiveFiltersChips
           fields={s12FilterFields}
@@ -314,13 +447,14 @@ const PedidoSuporteLiberacao = () => {
                       onChange={() => toggleAll(session1Selected, setSession1Selected, s1Filtered.map((o) => o.id))}
                     />
                   </th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cidade / UF</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Emissão</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
+                  <SortableHeader columnKey="pedido" sortState={s1Sort} onToggle={s1Toggle} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <SortableHeader columnKey="cliente" sortState={s1Sort} onToggle={s1Toggle} className="text-left py-4 px-6">Cliente</SortableHeader>
+                  <SortableHeader columnKey="representante" sortState={s1Sort} onToggle={s1Toggle} className="text-left py-4 px-6">Representante</SortableHeader>
+                  <SortableHeader columnKey="cidadeUf" sortState={s1Sort} onToggle={s1Toggle} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
+                  <SortableHeader columnKey="emissao" sortState={s1Sort} onToggle={s1Toggle} className="text-left py-4 px-6">Emissão</SortableHeader>
+                  <SortableHeader columnKey="validade" sortState={s1Sort} onToggle={s1Toggle} className="text-left py-4 px-6">Validade</SortableHeader>
                 </tr>
+                <ColumnFilterRow columns={s1ColSlots} values={s1ColFilter.values} onChange={s1ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s1Filtered.length === 0 ? (
@@ -362,8 +496,15 @@ const PedidoSuporteLiberacao = () => {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Pedidos Confirmados — Aguardando Liberação</h2>
-          <FilterTriggerButton count={s2Conditions.length} onClick={() => setS2FiltersOpen(true)} />
         </div>
+
+        <QuickFilterBar
+          query={s2Query}
+          onQueryChange={s2SetQuery}
+          placeholder="Buscar pedido, cliente, representante..."
+        >
+          <FilterTriggerButton count={s2Conditions.length} onClick={() => setS2FiltersOpen(true)} />
+        </QuickFilterBar>
 
         <ActiveFiltersChips
           fields={s12FilterFields}
@@ -377,14 +518,15 @@ const PedidoSuporteLiberacao = () => {
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cidade / UF</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Emissão</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
+                  <SortableHeader columnKey="pedido" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <SortableHeader columnKey="cliente" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Cliente</SortableHeader>
+                  <SortableHeader columnKey="representante" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Representante</SortableHeader>
+                  <SortableHeader columnKey="cidadeUf" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
+                  <SortableHeader columnKey="emissao" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Emissão</SortableHeader>
+                  <SortableHeader columnKey="validade" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Validade</SortableHeader>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
+                <ColumnFilterRow columns={s2ColSlots} values={s2ColFilter.values} onChange={s2ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s2Filtered.length === 0 ? (
@@ -426,14 +568,19 @@ const PedidoSuporteLiberacao = () => {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">LIBERADOS PARA PRODUÇÃO</h2>
-          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3">
-            <FilterTriggerButton count={s3Conditions.length} onClick={() => setS3FiltersOpen(true)} />
-            <button className={btnPrimary} onClick={() => void confirmarLiberacao()}>
-              <CheckCircle2 className="h-4 w-4" />
-              Confirmar Liberação
-            </button>
-          </div>
+          <button className={btnPrimary} onClick={() => void confirmarLiberacao()}>
+            <CheckCircle2 className="h-4 w-4" />
+            Confirmar Liberação
+          </button>
         </div>
+
+        <QuickFilterBar
+          query={s3Query}
+          onQueryChange={s3SetQuery}
+          placeholder="Buscar pedido, cliente, representante..."
+        >
+          <FilterTriggerButton count={s3Conditions.length} onClick={() => setS3FiltersOpen(true)} />
+        </QuickFilterBar>
 
         <ActiveFiltersChips
           fields={s3FilterFields}
@@ -454,14 +601,15 @@ const PedidoSuporteLiberacao = () => {
                       onChange={() => toggleAll(session3Selected, setSession3Selected, s3Filtered.map((o) => o.id))}
                     />
                   </th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cidade / UF</th>
-                  <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
+                  <SortableHeader columnKey="pedido" sortState={s3Sort} onToggle={s3Toggle} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <SortableHeader columnKey="cliente" sortState={s3Sort} onToggle={s3Toggle} className="text-left py-4 px-6">Cliente</SortableHeader>
+                  <SortableHeader columnKey="representante" sortState={s3Sort} onToggle={s3Toggle} className="text-left py-4 px-6">Representante</SortableHeader>
+                  <SortableHeader columnKey="cidadeUf" sortState={s3Sort} onToggle={s3Toggle} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
+                  <SortableHeader columnKey="validade" sortState={s3Sort} onToggle={s3Toggle} className="text-left py-4 px-6">Validade</SortableHeader>
                   <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
+                <ColumnFilterRow columns={s3ColSlots} values={s3ColFilter.values} onChange={s3ColFilter.setFilter} />
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s3Filtered.length === 0 ? (

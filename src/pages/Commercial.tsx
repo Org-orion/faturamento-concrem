@@ -17,6 +17,13 @@ import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { useColumnFilters } from '@/hooks/useColumnFilters';
+import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
+import { pedidoStatusFlow } from '@/lib/pedidoStatusFlow';
 
 type ScheduleCandidate = {
   id: string;
@@ -36,6 +43,10 @@ const Commercial = () => {
   const navigate = useNavigate();
 
   const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
+
+  const { sortState, toggleSort, sortItems } = useTableSort();
+  const { query, setQuery, filterItems } = useQuickFilter<Order>();
+  const colFilter = useColumnFilters();
 
   const [filterPedido, setFilterPedido] = useState<string>('');
   const [filterConf, setFilterConf] = useState<string>('');
@@ -76,6 +87,57 @@ const Commercial = () => {
       return !st || st === 'aguardando_confirmacao';
     });
   }, [serverOrders, statusByPedidoId]);
+
+  // Quick filter text getters
+  const textGetters = useMemo(() => [
+    (o: Order) => o.id,
+    (o: Order) => o.representativeName || '',
+    (o: Order) => o.representativePhone || '',
+    (o: Order) => o.idNotaConf != null ? String(o.idNotaConf) : '',
+    (o: Order) => o.clientName || '',
+    (o: Order) => o.date || '',
+    (o: Order) => o.expiryDate || '',
+    (o: Order) => String(getOrderTotal(o)),
+  ], []);
+
+  // Sort getters for sortable columns
+  const sortGetters = useMemo(() => ({
+    id: (o: Order) => o.id,
+    cliente: (o: Order) => (o.clientName || o.clientCode || '').toLowerCase(),
+    date: (o: Order) => o.date || '',
+    expiryDate: (o: Order) => o.expiryDate || '',
+    value: (o: Order) => getOrderTotal(o),
+    status: (o: Order) => statusByPedidoId.get(o.id)?.status_atual || 'aguardando_confirmacao',
+  }), [statusByPedidoId]);
+
+  // Column filter slots & definitions for main table
+  const pedidoStatusOptions = useMemo(() => pedidoStatusFlow.map(s => ({ value: s.value, label: s.label })), []);
+
+  const colFilterSlots = useMemo<ColFilterSlot[]>(() => [
+    { key: 'id', type: 'text', placeholder: 'Filtrar pedido...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
+    { key: 'date', type: 'date' },
+    { key: 'expiryDate', type: 'date' },
+    { key: 'value', type: 'number', placeholder: 'Filtrar...' },
+    { key: 'status', type: 'select', options: pedidoStatusOptions },
+    { type: 'none' },
+  ], [pedidoStatusOptions]);
+
+  const colDefs = useMemo(() => [
+    { key: 'id', getter: (o: Order) => o.id },
+    { key: 'cliente', getter: (o: Order) => o.clientName || o.clientCode },
+    { key: 'date', getter: (o: Order) => o.date },
+    { key: 'expiryDate', getter: (o: Order) => o.expiryDate },
+    { key: 'value', getter: (o: Order) => o.totalPedidoVenda ?? getOrderTotal(o) },
+    { key: 'status', getter: (o: Order) => statusByPedidoId.get(o.id)?.status_atual || 'aguardando_confirmacao', match: 'exact' as const },
+  ], [statusByPedidoId]);
+
+  // Data pipeline: awaitingConfirmation → column filters → quick filter → sort
+  const displayedOrders = useMemo(() => {
+    const colFiltered = colFilter.filterItems(awaitingConfirmation, colDefs);
+    const filtered = filterItems(colFiltered, textGetters);
+    return sortItems(filtered, sortGetters);
+  }, [awaitingConfirmation, colFilter, colDefs, filterItems, textGetters, sortItems, sortGetters]);
 
   // Pedidos aguardando envio/confirmação da diretoria — based on pedidos_status
   const awaitingEnvioDiretoria = useMemo(() => {
@@ -542,17 +604,20 @@ const Commercial = () => {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex flex-col gap-2">
-          <div className="text-sm font-semibold text-foreground">Filtros</div>
-          <ActiveFiltersChips
-            fields={filterFields}
-            conditions={conditions}
-            onRemove={(id) => setConditions((prev) => prev.filter((c) => c.id !== id))}
-            onClear={() => setConditions([])}
-          />
-        </div>
-        <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
+      <div className="space-y-3">
+        <QuickFilterBar
+          query={query}
+          onQueryChange={setQuery}
+          placeholder="Buscar pedido, representante, cliente, valor..."
+        >
+          <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
+        </QuickFilterBar>
+        <ActiveFiltersChips
+          fields={filterFields}
+          conditions={conditions}
+          onRemove={(id) => setConditions((prev) => prev.filter((c) => c.id !== id))}
+          onClear={() => setConditions([])}
+        />
       </div>
 
       <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
@@ -560,31 +625,31 @@ const Commercial = () => {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border bg-muted/30">
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº Pedido</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Conf.</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+                <SortableHeader columnKey="id" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
+                <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
+                <SortableHeader columnKey="date" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Data</SortableHeader>
+                <SortableHeader columnKey="expiryDate" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
+                <SortableHeader columnKey="value" sortState={sortState} onToggle={toggleSort} className="text-right py-4 px-6">Valor</SortableHeader>
+                <SortableHeader columnKey="status" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Status</SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
+              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {loadingList ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-muted-foreground font-display">
+                  <td colSpan={7} className="py-10 text-center text-muted-foreground font-display">
                     Carregando pedidos...
                   </td>
                 </tr>
-              ) : awaitingConfirmation.length === 0 ? (
+              ) : displayedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-10 text-center text-muted-foreground font-display">
+                  <td colSpan={7} className="py-10 text-center text-muted-foreground font-display">
                     Nenhum pedido aguardando confirmação encontrado.
                   </td>
                 </tr>
               ) : (
-                awaitingConfirmation.map((o) => {
+                displayedOrders.map((o) => {
                   return (
                     <tr key={o.id} className="hover:bg-muted/30 transition-colors">
                       <td className="py-4 px-6 font-mono-data font-bold text-primary">
@@ -593,8 +658,7 @@ const Commercial = () => {
                           Venda
                         </span>
                       </td>
-                      <td className="py-4 px-6 font-mono-data text-muted-foreground">{typeof o.idNotaConf === 'number' ? o.idNotaConf : '-'}</td>
-                      <td className="py-4 px-6 font-display font-semibold text-foreground">{o.representativeName || '-'}</td>
+                      <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
                       <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? new Date(o.date).toLocaleDateString('pt-BR') : '-'}</td>
                       <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? new Date(o.expiryDate).toLocaleDateString('pt-BR') : '-'}</td>
                       <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
@@ -620,7 +684,7 @@ const Commercial = () => {
         {!loadingList && serverOrders.length > 0 && (
           <div className="px-6 py-4 border-t border-border flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              Mostrando {awaitingConfirmation.length} de {totalCount} pedidos
+              Mostrando {displayedOrders.length} de {totalCount} pedidos
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -745,11 +809,9 @@ const Commercial = () => {
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-muted/20 border border-border rounded-lg p-4">
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Cliente</p>
-                <p className="mt-1 font-semibold text-foreground">{selectedOrderDetails.clientName || '-'}</p>
-                {selectedOrderDetails.clienteFantasia && <p className="text-xs text-muted-foreground">{selectedOrderDetails.clienteFantasia}</p>}
-                <p className="text-xs text-muted-foreground mt-1">Código: {selectedOrderDetails.clientCode || '-'}</p>
-                {selectedOrderDetails.pedCompraCliente && <p className="text-xs text-muted-foreground mt-1">Ped. Compra Cliente: <span className="font-medium text-foreground">{selectedOrderDetails.pedCompraCliente}</span></p>}
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Representante</p>
+                <p className="mt-1 font-semibold text-foreground">{selectedOrderDetails.representativeName || '-'}</p>
+                <p className="text-xs text-muted-foreground mt-1">Código: {selectedOrderDetails.representativeId || '-'}</p>
                 <p className="text-xs text-muted-foreground mt-2">Data Emissão: {selectedOrderDetails.date ? new Date(selectedOrderDetails.date).toLocaleDateString('pt-BR') : '-'}</p>
                 <p className="text-xs text-muted-foreground">Validade: {selectedOrderDetails.expiryDate ? new Date(selectedOrderDetails.expiryDate).toLocaleDateString('pt-BR') : '-'}</p>
               </div>
@@ -799,25 +861,6 @@ const Commercial = () => {
                     )}
                   </tbody>
                 </table>
-              </div>
-            </div>
-
-            <div>
-              <label className="text-sm font-semibold font-display text-foreground">Observações (Comercial)</label>
-              <textarea
-                className={`${inputClass} mt-2 min-h-[96px]`}
-                value={tempNotes}
-                onChange={(e) => setTempNotes(e.target.value)}
-                placeholder="Anotações internas para análise..."
-              />
-              <div className="mt-3 flex items-center justify-between">
-                <p className="text-xs text-muted-foreground">Última atualização registrada no histórico.</p>
-                <button
-                  onClick={handleSaveNotes}
-                  className="px-4 py-2 rounded-lg bg-secondary text-secondary-foreground hover:bg-border transition-colors font-semibold"
-                >
-                  Salvar observações
-                </button>
               </div>
             </div>
 

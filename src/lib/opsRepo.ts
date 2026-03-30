@@ -142,9 +142,11 @@ export async function upsertEntregasDetalhes(programacaoId: string, rows: Array<
   }
 }
 
-export async function upsertEntregasDetalhesSafe(programacaoId: string, rows: Array<{ pedido_id: string; status: 'pendente' | 'entregue'; entregue_em?: string | null; numero_nota?: string | null; ordem_entrega?: number | null; }>) {
+export async function upsertEntregasDetalhesSafe(programacaoId: string, rows: Array<{ pedido_id: string; status: 'pendente' | 'entregue'; entregue_em?: string | null; numero_nota?: string | null; ordem_entrega?: number | null; qtd_kits?: number | null; qtd_pallets?: number | null; qtd_volumes?: number | null; }>) {
   if (!supabaseOps) return;
-  const payload = rows.map((r) => ({
+
+  // 1. Salva os campos garantidamente existentes (status nunca fica para trás)
+  const core = rows.map((r) => ({
     programacao_id: programacaoId,
     pedido_id: r.pedido_id,
     status: r.status,
@@ -152,23 +154,55 @@ export async function upsertEntregasDetalhesSafe(programacaoId: string, rows: Ar
     numero_nota: r.numero_nota ?? null,
     ordem_entrega: r.ordem_entrega ?? null,
   }));
-  const { error } = await supabaseOps.from('entregas').upsert(payload as any, { onConflict: 'programacao_id,pedido_id' });
-  if (!error) return;
-  const msg = String(error.message || '');
-  if (msg.includes('numero_nota') || msg.includes('ordem_entrega')) {
-    const basic = rows.map((r) => ({
+  const { error: coreErr } = await supabaseOps
+    .from('entregas')
+    .upsert(core as any, { onConflict: 'programacao_id,pedido_id' });
+  if (coreErr) {
+    console.error('[Supabase OPS] upsert entregas (core):', coreErr.message);
+  }
+
+  // 2. Tenta salvar campos extras (qtd_*) — ignora se as colunas ainda não existirem
+  const hasExtra = rows.some((r) => r.qtd_kits != null || r.qtd_pallets != null || r.qtd_volumes != null);
+  if (hasExtra) {
+    const extended = rows.map((r) => ({
       programacao_id: programacaoId,
       pedido_id: r.pedido_id,
       status: r.status,
       entregue_em: r.entregue_em ?? (r.status === 'entregue' ? new Date().toISOString() : null),
+      numero_nota: r.numero_nota ?? null,
+      ordem_entrega: r.ordem_entrega ?? null,
+      qtd_kits: r.qtd_kits ?? null,
+      qtd_pallets: r.qtd_pallets ?? null,
+      qtd_volumes: r.qtd_volumes ?? null,
     }));
-    const { error: basicError } = await supabaseOps.from('entregas').upsert(basic as any, { onConflict: 'programacao_id,pedido_id' });
-    if (basicError) {
-      console.error('[Supabase OPS] upsert entregas (fallback):', basicError.message);
+    const { error: extErr } = await supabaseOps
+      .from('entregas')
+      .upsert(extended as any, { onConflict: 'programacao_id,pedido_id' });
+    if (extErr) {
+      console.warn('[Supabase OPS] upsert entregas (qtd extras):', extErr.message);
     }
-    return;
   }
-  console.error('[Supabase OPS] upsert entregas (detalhes):', error.message);
+}
+
+export async function listEntregas(programacaoId: string) {
+  if (!supabaseOps) return [];
+  const { data, error } = await supabaseOps
+    .from('entregas')
+    .select('*')
+    .eq('programacao_id', programacaoId);
+  if (error) {
+    console.error('[Supabase OPS] list entregas:', error.message);
+    return [];
+  }
+  return (data || []) as Array<{
+    pedido_id: string;
+    status: string;
+    numero_nota: string | null;
+    ordem_entrega: number | null;
+    qtd_kits: number | null;
+    qtd_pallets: number | null;
+    qtd_volumes: number | null;
+  }>;
 }
 
 export async function findRepresentanteContato(representanteIdOrName: string) {
@@ -433,4 +467,50 @@ export async function deleteLancamentoFinanceiro(id: string) {
   if (error) {
     console.error('[Supabase OPS] delete lancamentos_financeiros:', error.message);
   }
+}
+
+// ==============================================================================
+// Relatório de Entrega — Anexos
+// ==============================================================================
+
+export type RelatorioEntregaAnexo = {
+  id: string;
+  carregamento_id: string;
+  pedido_id: string;
+  tipo: string; // 'boleto' | 'nf' | 'comprovante'
+  arquivo_nome: string;
+  arquivo_url: string;
+  criado_em: string;
+  criado_por: string | null;
+};
+
+export async function upsertRelatorioEntregaAnexo(row: {
+  carregamento_id: string;
+  pedido_id: string;
+  tipo: string;
+  arquivo_nome: string;
+  arquivo_url: string;
+  criado_por: string | null;
+}) {
+  if (!supabaseOps) return;
+  const { error } = await supabaseOps.from('relatorio_entrega_anexos').upsert(
+    { ...row, criado_em: new Date().toISOString() },
+    { onConflict: 'carregamento_id,pedido_id,tipo' },
+  );
+  if (error) {
+    console.error('[Supabase OPS] upsert relatorio_entrega_anexos:', error.message);
+  }
+}
+
+export async function listRelatorioEntregaAnexos(carregamentoId: string): Promise<RelatorioEntregaAnexo[]> {
+  if (!supabaseOps) return [];
+  const { data, error } = await supabaseOps
+    .from('relatorio_entrega_anexos')
+    .select('*')
+    .eq('carregamento_id', carregamentoId);
+  if (error) {
+    console.error('[Supabase OPS] list relatorio_entrega_anexos:', error.message);
+    return [];
+  }
+  return (data || []) as RelatorioEntregaAnexo[];
 }

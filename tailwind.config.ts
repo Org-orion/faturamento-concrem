@@ -15,6 +15,7 @@ export default {
       fontFamily: {
         sans: ["Manrope", "sans-serif"],
         display: ["Manrope", "sans-serif"],
+        mono: ["Manrope", "sans-serif"],
       },
       colors: {
         border: "hsl(var(--border))",
@@ -86,8 +87,8 @@ export default {
         sm: "6px",
       },
       boxShadow: {
-        card: "0 1px 3px rgba(0, 0, 0, 0.08)",
-        "card-hover": "0 4px 12px rgba(0, 0, 0, 0.12)",
+        card: "0 1px 3px rgba(0,0,0,0.08)",
+        "card-hover": "0 4px 12px rgba(0,0,0,0.12)",
       },
       keyframes: {
         "accordion-down": {

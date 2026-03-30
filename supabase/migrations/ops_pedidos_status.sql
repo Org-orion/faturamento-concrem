@@ -24,73 +24,20 @@ create table if not exists public.pedidos_status_historico (
   notificacao_erro text
 );
 
+-- Drop status check constraints (validation is handled at the application layer)
 do $$
 begin
   if exists (
-    select 1
-    from pg_constraint
-    where conname = 'pedidos_status_status_atual_check'
+    select 1 from pg_constraint where conname = 'pedidos_status_status_atual_check'
   ) then
-    alter table public.pedidos_status
-      drop constraint pedidos_status_status_atual_check;
+    alter table public.pedidos_status drop constraint pedidos_status_status_atual_check;
   end if;
-
-  alter table public.pedidos_status
-    add constraint pedidos_status_status_atual_check
-    check (status_atual in (
-      'aguardando_confirmacao',
-      'aguardando_envio_diretoria',
-      'aguardando_confirmacao_diretoria',
-      'confirmado_diretoria',
-      'liberado_producao',
-      'aguardando_mapeamento',
-      'mapeamento_andamento',
-      'mapeamento_concluido',
-      'aguardando_ferragem',
-      'ferragem_recebida',
-      'em_producao',
-      'producao_finalizada',
-      'aguardando_liberacao',
-      'faturado',
-      'em_entrega',
-      'parcialmente_entregue',
-      'entregue',
-      'aguardando_pagamento',
-      'finalizado'
-    ));
 
   if exists (
-    select 1
-    from pg_constraint
-    where conname = 'pedidos_status_historico_status_novo_check'
+    select 1 from pg_constraint where conname = 'pedidos_status_historico_status_novo_check'
   ) then
-    alter table public.pedidos_status_historico
-      drop constraint pedidos_status_historico_status_novo_check;
+    alter table public.pedidos_status_historico drop constraint pedidos_status_historico_status_novo_check;
   end if;
-
-  alter table public.pedidos_status_historico
-    add constraint pedidos_status_historico_status_novo_check
-    check (status_novo in (
-      'aguardando_confirmacao',
-      'aguardando_envio_diretoria',
-      'aguardando_confirmacao_diretoria',
-      'confirmado_diretoria',
-      'liberado_producao',
-      'aguardando_mapeamento',
-      'mapeamento_andamento',
-      'mapeamento_concluido',
-      'aguardando_ferragem',
-      'ferragem_recebida',
-      'em_producao',
-      'producao_finalizada',
-      'aguardando_liberacao',
-      'faturado',
-      'em_entrega',
-      'parcialmente_entregue',
-      'entregue',
-      'aguardando_pagamento',
-      'finalizado'
-    ));
 end $$;
 
 create index if not exists pedidos_status_idx_numero_pedido on public.pedidos_status (numero_pedido);

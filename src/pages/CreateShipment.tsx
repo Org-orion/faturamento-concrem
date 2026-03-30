@@ -1,24 +1,31 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
+import { tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { Order } from '@/types';
-import { 
-  FormField, 
-  inputClass, 
-  btnPrimary, 
-  btnDanger, 
-  formatCurrency, 
-  getOrderTotal 
+import { supabasePedidos, supabaseOps } from '@/lib/supabase';
+import { rowToOrder } from '@/lib/pedidoMapper';
+import {
+  FormField,
+  inputClass,
+  btnPrimary,
+  btnDanger,
+  formatCurrency,
+  getOrderTotal
 } from '@/components/shared';
 import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle, Printer } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe } from '@/lib/opsRepo';
-import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas } from '@/lib/opsRepo';
+import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164 } from '@/lib/pedidosStatusRepo';
+import { sendEvolutionText } from '@/lib/evolutionApi';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,7 +50,10 @@ const CreateShipment = () => {
   const [shipmentDate, setShipmentStatusDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [deliveredOrderIds, setDeliveredOrderIds] = useState<string[]>([]);
-  const [orderAttachments, setOrderAttachments] = useState<Record<string, { proof?: File; invoice?: File }>>({});
+
+  type AttachmentType = 'boleto' | 'nf' | 'comprovante';
+  type PendingAttachment = { url: string; nome: string; saved: boolean };
+  const [orderAttachments, setOrderAttachments] = useState<Record<string, Partial<Record<AttachmentType, PendingAttachment>>>>({});
   const [reportPage, setReportPage] = useState(0);
   const [filters, setFilters] = useState({
     id: '',
@@ -55,6 +65,34 @@ const CreateShipment = () => {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [conditions, setConditions] = useState<FilterCondition[]>([]);
+
+  const { sortState, toggleSort, sortItems } = useTableSort();
+  const { query: quickQuery, setQuery: setQuickQuery, filterItems: quickFilterItems } = useQuickFilter<Order>();
+
+  const quickTextGetters: Array<(item: Order) => unknown> = useMemo(() => [
+    (o: Order) => o.id,
+    (o: Order) => o.representativeName || '',
+    (o: Order) => o.representativePhone || '',
+    (o: Order) => o.clientName || '',
+    (o: Order) => o.clientCode || '',
+    (o: Order) => {
+      const client = clients.find((c) => c.id === o.clientId);
+      return `${client?.address.city || ''} ${client?.address.state || ''}`;
+    },
+    (o: Order) => o.expiryDate || '',
+  ], [clients]);
+
+  const sortGetters: Record<string, (item: Order) => unknown> = useMemo(() => ({
+    id: (o: Order) => o.id,
+    representative: (o: Order) => o.representativeName || '',
+    phone: (o: Order) => o.representativePhone || '',
+    city: (o: Order) => {
+      const client = clients.find((c) => c.id === o.clientId);
+      return `${client?.address.city || ''}/${client?.address.state || ''}`;
+    },
+    expiry: (o: Order) => o.expiryDate || '',
+    value: (o: Order) => o.totalPedidoVenda || getOrderTotal(o),
+  }), [clients]);
 
   const filterFields = useMemo(() => {
     return [
@@ -127,29 +165,129 @@ const CreateShipment = () => {
     }
   }, [isEditing, id, loads, navigate, showToast, location.state]);
 
+  // Carregar dados do relatório de entrega (ordem, NF, entregues, kits, pallets, volumes)
+  useEffect(() => {
+    if (!id) return;
+    void listEntregas(id).then((rows) => {
+      const seq: Record<string, number> = {};
+      const nf: Record<string, string> = {};
+      const delivered: string[] = [];
+      const kits: Record<string, number> = {};
+      const pallets: Record<string, number> = {};
+      const volumes: Record<string, number> = {};
+      for (const row of rows) {
+        if (row.ordem_entrega != null) seq[row.pedido_id] = row.ordem_entrega;
+        if (row.numero_nota) nf[row.pedido_id] = row.numero_nota;
+        if (row.status === 'entregue') delivered.push(row.pedido_id);
+        if (row.qtd_kits != null) kits[row.pedido_id] = row.qtd_kits;
+        if (row.qtd_pallets != null) pallets[row.pedido_id] = row.qtd_pallets;
+        if (row.qtd_volumes != null) volumes[row.pedido_id] = row.qtd_volumes;
+      }
+      setOrderSequence(seq);
+      setInvoiceNumbers(nf);
+      setDeliveredOrderIds(delivered);
+      setQtdKits(kits);
+      setQtdPallets(pallets);
+      setQtdVolumes(volumes);
+    });
+  }, [id]);
+
+  // Carregar anexos salvos ao editar um carregamento existente
+  useEffect(() => {
+    if (!id) return;
+    void listRelatorioEntregaAnexos(id).then((rows) => {
+      const grouped: Record<string, Partial<Record<AttachmentType, PendingAttachment>>> = {};
+      for (const row of rows) {
+        if (!grouped[row.pedido_id]) grouped[row.pedido_id] = {};
+        grouped[row.pedido_id][row.tipo as AttachmentType] = {
+          url: row.arquivo_url,
+          nome: row.arquivo_nome,
+          saved: true,
+        };
+      }
+      setOrderAttachments(grouped);
+    });
+  }, [id]);
+
+  // --- Pedidos disponíveis para carregamento (query direta, sem filtro de id_nota_conf) ---
+  const CARREGAMENTO_ALLOWED_STATUSES: import('@/types').PedidoStatusValue[] = [
+    'liberado_producao',
+    'aguardando_mapeamento',
+    'mapeamento_andamento',
+    'mapeamento_concluido',
+    'aguardando_ferragem',
+    'ferragem_recebida',
+    'em_producao',
+    'producao_finalizada',
+    'aguardando_liberacao',
+  ];
+
+  const [directPedidos, setDirectPedidos] = useState<Order[]>([]);
+
   useEffect(() => {
     const totalFreight = selectedOrderIds.reduce((acc, orderId) => {
-      const order = orders.find(o => o.id === orderId);
+      const order = orders.find(o => o.id === orderId)
+        ?? (supportOrders as unknown as Order[]).find(o => o.id === orderId)
+        ?? directPedidos.find(o => o.id === orderId);
       return acc + (order?.freightValue || 0);
     }, 0);
     setFreightValue(totalFreight);
-  }, [selectedOrderIds, orders]);
+  }, [selectedOrderIds, orders, supportOrders, directPedidos]);
 
   const selectedDriver = drivers.find(d => d.id === driverId);
-
-  // --- Pedido status tracking for new flow ---
   const [pedidoStatusRows, setPedidoStatusRows] = useState<import('@/types').PedidoStatusRow[]>([]);
   const pedidoStatusMap = useMemo(() => new Map(pedidoStatusRows.map(r => [r.pedido_id, r] as const)), [pedidoStatusRows]);
 
   useEffect(() => {
-    const ids = orders.map(o => o.id);
-    if (!ids.length) return;
-    void listPedidosStatusByPedidoIds(ids).then(setPedidoStatusRows);
-  }, [orders.length]);
+    if (!supabasePedidos || !supabaseOps) return;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
-  const availableOrders = orders.filter(o => {
+    const load = async () => {
+      const { data: statusData, error: statusError } = await supabaseOps
+        .from('pedidos_status')
+        .select('*')
+        .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES);
+      if (statusError || !statusData?.length) return;
+
+      setPedidoStatusRows(statusData as any);
+
+      const ids = (statusData as any[]).map((r: any) => r.pedido_id);
+      const { data: pedidosData } = await supabasePedidos
+        .from(table)
+        .select(tableColumns)
+        .in('numero_pedido', ids);
+
+      const mapped = (pedidosData || []).map((row: any) => rowToOrder(row, 'CLI-001'));
+      setDirectPedidos(mapped);
+    };
+    void load();
+  }, []);
+
+  // Also keep context orders' status tracked for editing existing carregamentos
+  useEffect(() => {
+    const ids = [...orders.map(o => o.id), ...supportOrders.map(o => o.id)];
+    if (!ids.length) return;
+    void listPedidosStatusByPedidoIds(ids).then(rows =>
+      setPedidoStatusRows(prev => {
+        const map = new Map(prev.map(r => [r.pedido_id, r] as const));
+        for (const r of rows) map.set(r.pedido_id, r);
+        return Array.from(map.values());
+      })
+    );
+  }, [orders.length, supportOrders.length]);
+
+  // Merge: directPedidos (sem filtro) + context orders (para edição), sem duplicatas
+  const allCandidates = useMemo(() => {
+    const map = new Map<string, Order>();
+    for (const o of directPedidos) map.set(o.id, o);
+    for (const o of orders) if (!map.has(o.id)) map.set(o.id, o);
+    for (const o of supportOrders as unknown as Order[]) if (!map.has(o.id)) map.set(o.id, o);
+    return Array.from(map.values());
+  }, [directPedidos, orders, supportOrders]);
+
+  const availableOrders = allCandidates.filter(o => {
     const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
-    const isAllowedStatus = pedidoStatus === 'liberado_producao' && !o.carregamentoId;
+    const isAllowedStatus = pedidoStatus ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !o.carregamentoId : false;
     const isCurrentInEdit = isEditing && selectedOrderIds.includes(o.id);
 
     if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
@@ -165,6 +303,11 @@ const CreateShipment = () => {
 
     return matchesId && matchesClient && matchesRep && matchesCity && matchesExpiry;
   });
+
+  const displayedOrders = useMemo(() => {
+    const afterQuick = quickFilterItems(availableOrders, quickTextGetters);
+    return sortItems(afterQuick, sortGetters);
+  }, [availableOrders, quickFilterItems, quickTextGetters, sortItems, sortGetters]);
 
   const toggleOrder = (orderId: string) => {
     setSelectedOrderIds(prev => 
@@ -207,7 +350,7 @@ const CreateShipment = () => {
     const vehicleType = driver?.vehicleType || '-';
 
     const totalGeral = selectedOrderIds.reduce((acc, orderId) => {
-      const order = orders.find((o) => o.id === orderId);
+      const order = allCandidates.find((o) => o.id === orderId);
       return acc + (order ? (order.totalPedidoVenda || getOrderTotal(order)) : 0);
     }, 0);
 
@@ -262,7 +405,7 @@ const CreateShipment = () => {
             <tbody>
               ${selectedOrderIds
                 .map((orderId) => {
-                  const order = orders.find((o) => o.id === orderId);
+                  const order = allCandidates.find((o) => o.id === orderId);
                   const client = order ? clients.find((c) => c.id === order.clientId) : undefined;
                   const total = order ? (order.totalPedidoVenda || getOrderTotal(order)) : 0;
                   const company = client ? `${client.id} - ${client.name}` : '-';
@@ -305,21 +448,25 @@ const CreateShipment = () => {
   };
 
   const sendReportWhatsapp = async () => {
-    const deliveredOrders = deliveredOrderIds
-      .map((id) => orders.find((o) => o.id === id))
+    const reportOrders = selectedOrderIds
+      .map((oid) => allCandidates.find((o) => o.id === oid))
       .filter(Boolean) as Order[];
 
-    if (deliveredOrders.length === 0) {
-      showToast('Selecione pedidos como Entregue para enviar no WhatsApp', 'error');
+    if (reportOrders.length === 0) {
+      showToast('Nenhum pedido selecionado no relatório.', 'error');
       return;
     }
 
     const driver = drivers.find((d) => d.id === driverId);
     const driverName = driver?.name || '-';
     const driverPhone = driver?.phone || '-';
+    const dataEmbarque = new Date(shipmentDate).toLocaleDateString('pt-BR');
+    const hora = new Date().getHours();
+    const saudacao = hora < 12 ? 'Bom dia!' : hora < 18 ? 'Boa tarde!' : 'Boa noite!';
 
+    // Agrupar pedidos por representante
     const byRep = new Map<string, Order[]>();
-    for (const o of deliveredOrders) {
+    for (const o of reportOrders) {
       const repKey = String(o.representativeId || o.representativeName || '').trim();
       const list = byRep.get(repKey) || [];
       list.push(o);
@@ -335,25 +482,59 @@ const CreateShipment = () => {
       const repName = repInfo?.nome || repOrders[0]?.representativeName || 'Desconhecido';
       const repPhoneRaw = repInfo?.telefone || repOrders[0]?.representativePhone || '';
 
-      let message = `Boa tarde\nCarregamento Referente ao dia ${new Date(shipmentDate).toLocaleDateString('pt-BR')}\n\n`;
-
+      // Montar mensagem conforme modelo
+      let message = `${saudacao}\nCarregamento referente ao dia ${dataEmbarque}\n\n`;
       for (const order of repOrders) {
         const client = clients.find((c) => c.id === order.clientId);
         const nf = invoiceNumbers[order.id] || 'S/N';
-        message += `· ${nf} - ${client?.name || 'Cliente'}\n`;
+        message += `· ${nf} - ${client?.name || order.clientName || 'Cliente'}\n`;
+      }
+      message += `\nPrevisão de entrega a partir do dia ${dataEmbarque}.\n\n`;
+      message += `Gentileza contatar o motorista para informações sobre o local de entrega.\n`;
+      message += `Lembrando a importância do representante sempre acompanhar a descarga.\n\n`;
+      message += `MOTORISTA / CONTATO\n${driverName} - ${driverPhone}`;
+
+      // Incluir links de documentos (apenas de pedidos deste representante)
+      const docLines: string[] = [];
+      for (const order of repOrders) {
+        const attachs = orderAttachments[order.id] || {};
+        if (attachs.boleto?.url) docLines.push(`Boleto (${order.id}): ${attachs.boleto.url}`);
+        if (attachs.nf?.url) docLines.push(`Nota Fiscal (${order.id}): ${attachs.nf.url}`);
+        if (attachs.comprovante?.url) docLines.push(`Comprovante (${order.id}): ${attachs.comprovante.url}`);
+      }
+      if (docLines.length > 0) {
+        message += `\n\nDocumentos:\n${docLines.join('\n')}`;
       }
 
-      message += `\nPrevisão de entrega a partir do dia ${new Date(shipmentDate).toLocaleDateString('pt-BR')}.\n\n`;
-      message += `Gentileza contatar o motorista para informações sobre o local de entrega.\nLembrando a importância do representante sempre acompanhar a descarga.\n\n`;
-      message += `MOTORISTA / CONTATO\n${driverName} - ${driverPhone}\n`;
-
+      // Enviar via Evolution API
       if (repPhoneRaw) {
-        const digits = String(repPhoneRaw).replace(/\D/g, '');
-        const phoneE164 = digits.startsWith('55') ? digits : `55${digits}`;
-        const whatsappUrl = `https://wa.me/${phoneE164}?text=${encodeURIComponent(message)}`;
-        window.open(whatsappUrl, '_blank');
+        const phoneE164 = normalizePhoneToE164(repPhoneRaw);
+        if (phoneE164) {
+          const result = await sendEvolutionText(phoneE164, message);
+          if (result.ok) {
+            showToast(`Mensagem enviada para ${repName}.`);
+          } else {
+            showToast(`Falha ao enviar para ${repName}: ${result.error}`, 'error');
+          }
+        } else {
+          showToast(`Número inválido para ${repName}: ${repPhoneRaw}`, 'error');
+        }
       } else {
         showToast(`Representante ${repName} sem telefone cadastrado.`, 'error');
+      }
+
+      // Atualizar status de cada pedido conforme regra:
+      // com boleto → faturado | sem boleto → aguardando_pagamento
+      for (const order of repOrders) {
+        const hasBoleto = Boolean(orderAttachments[order.id]?.boleto?.url);
+        const novoStatus = hasBoleto ? 'faturado' : 'aguardando_pagamento';
+        void updatePedidoStatus({
+          pedidoId: order.id,
+          numeroPedido: order.id,
+          statusNovo: novoStatus,
+          alteradoPor: user?.username || null,
+          observacao: `Relatório enviado via WhatsApp${hasBoleto ? ' com boleto' : ''}`,
+        });
       }
 
       if (id) {
@@ -379,45 +560,56 @@ const CreateShipment = () => {
   const volumePercentage = selectedDriver?.vehicleVolume ? Math.round((totals.volume / selectedDriver.vehicleVolume) * 100) : 0;
   const weightPercentage = selectedDriver?.vehicleWeight ? Math.round((totals.weight / selectedDriver.vehicleWeight) * 100) : 0;
 
-  const handleFileUpload = (orderId: string, type: 'proof' | 'invoice') => {
-    // In a real app, this would trigger a file picker and upload
+  const handleFileUpload = (orderId: string, type: AttachmentType) => {
+    if (!id) {
+      showToast('Salve a programação antes de anexar documentos.', 'error');
+      return;
+    }
+    if (!supabaseOps) {
+      showToast('Conexão com o banco não disponível.', 'error');
+      return;
+    }
+    const label = type === 'boleto' ? 'Boleto' : type === 'nf' ? 'Nota Fiscal' : 'Comprovante de Entrega';
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = type === 'proof' ? 'image/*,application/pdf' : '.xml,.pdf';
-    input.onchange = (e) => {
+    input.accept = 'image/*,application/pdf,.xml';
+    input.onchange = async (e) => {
       const file = (e.target as HTMLInputElement).files?.[0];
-      if (file) {
-        setOrderAttachments((prev) => ({
-          ...prev,
-          [orderId]: { ...(prev[orderId] || {}), [type]: file },
-        }));
-        showToast(`${type === 'proof' ? 'Comprovante' : 'Nota Fiscal'} anexada: ${file.name}`);
-        const order = orders.find((o) => o.id === orderId);
-        if (order) {
-          const repId = String(order.representativeId || '').trim();
-          const repName = String(order.representativeName || '').trim();
-          const repContact = repContacts[repId] || repContacts[repName];
-          const repPhone = repContact?.telefone || order.representativePhone || null;
-          const clienteNome = order.clientName || order.clientCode || 'Cliente';
-          const statusNovo = type === 'invoice' ? 'faturado' : 'aguardando_pagamento';
-          void setPedidoStatusWithOptionalNotify({
-            pedidoId: orderId,
-            numeroPedido: orderId,
-            statusNovo,
-            alteradoPor: user?.username || null,
-            observacao: null,
-            notifyRepresentante: true,
-            representantePhoneRaw: repPhone,
-            clienteNome,
-          });
-        }
+      if (!file) return;
+
+      const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${id}/${orderId}/${type}/${sanitizedName}`;
+
+      const { error: uploadErr } = await supabaseOps.storage
+        .from('relatorio-entrega')
+        .upload(path, file, { upsert: true });
+
+      if (uploadErr) {
+        showToast(`Erro ao carregar ${label}: ${uploadErr.message}`, 'error');
+        return;
       }
+
+      const { data: urlData } = supabaseOps.storage
+        .from('relatorio-entrega')
+        .getPublicUrl(path);
+
+      setOrderAttachments((prev) => ({
+        ...prev,
+        [orderId]: {
+          ...(prev[orderId] || {}),
+          [type]: { url: urlData.publicUrl, nome: file.name, saved: false },
+        },
+      }));
+      showToast(`${label} carregado: ${file.name} — clique em Salvar para confirmar.`);
     };
     input.click();
   };
 
   const [orderSequence, setOrderSequence] = useState<Record<string, number>>({});
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({});
+  const [qtdKits, setQtdKits] = useState<Record<string, number>>({});
+  const [qtdPallets, setQtdPallets] = useState<Record<string, number>>({});
+  const [qtdVolumes, setQtdVolumes] = useState<Record<string, number>>({});
   const [repContacts, setRepContacts] = useState<Record<string, { nome: string | null; telefone: string | null; endereco: string | null }>>({});
 
   useEffect(() => {
@@ -426,7 +618,7 @@ const CreateShipment = () => {
       const repKeys = Array.from(
         new Set(
           selectedOrderIds
-            .map((oid) => orders.find((o) => o.id === oid))
+            .map((oid) => allCandidates.find((o) => o.id === oid))
             .filter(Boolean)
             .flatMap((o) => {
               const id = String((o as any).representativeId || '').trim();
@@ -458,7 +650,7 @@ const CreateShipment = () => {
     return () => {
       cancelled = true;
     };
-  }, [orders, selectedOrderIds]);
+  }, [allCandidates, selectedOrderIds]);
 
   const saveReport = async () => {
     // Sort selectedOrderIds based on the orderSequence
@@ -487,12 +679,15 @@ const CreateShipment = () => {
           entregue_em: deliveredOrderIds.includes(pedidoId) ? new Date().toISOString() : null,
           numero_nota: invoiceNumbers[pedidoId] || null,
           ordem_entrega: orderSequence[pedidoId] ?? null,
+          qtd_kits: qtdKits[pedidoId] ?? null,
+          qtd_pallets: qtdPallets[pedidoId] ?? null,
+          qtd_volumes: qtdVolumes[pedidoId] ?? null,
         })),
       );
 
       await Promise.all(
         sortedOrderIds.map(async (pedidoId) => {
-          const order = orders.find((o) => o.id === pedidoId);
+          const order = allCandidates.find((o) => o.id === pedidoId);
           if (!order) return;
           const repId = String(order.representativeId || '').trim();
           const repName = String(order.representativeName || '').trim();
@@ -508,6 +703,28 @@ const CreateShipment = () => {
           });
         }),
       );
+
+      // Salvar anexos pendentes na tabela relatorio_entrega_anexos
+      const pendingEntries = Object.entries(orderAttachments).flatMap(([pedidoId, attachments]) =>
+        Object.entries(attachments || {})
+          .filter(([, info]) => info && !info.saved)
+          .map(([tipo, info]) => ({ pedidoId, tipo, info: info! })),
+      );
+
+      for (const { pedidoId, tipo, info } of pendingEntries) {
+        await upsertRelatorioEntregaAnexo({
+          carregamento_id: id,
+          pedido_id: pedidoId,
+          tipo,
+          arquivo_nome: info.nome,
+          arquivo_url: info.url,
+          criado_por: user?.username || null,
+        });
+        setOrderAttachments((prev) => ({
+          ...prev,
+          [pedidoId]: { ...(prev[pedidoId] || {}), [tipo]: { ...info, saved: true } },
+        }));
+      }
     }
     showToast('Alterações salvas com sucesso!');
   };
@@ -716,13 +933,16 @@ const CreateShipment = () => {
               <Package className="h-5 w-5 text-primary" />
               <h3 className="text-lg font-semibold font-sans">Lista de Pedidos</h3>
             </div>
-            <div className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-              <Search className="h-3 w-3" />
-              Use o botão para filtrar
-            </div>
           </div>
 
-          <div className="flex items-start justify-between gap-4 mb-4 px-3">
+          <div className="mb-4 px-3 space-y-3">
+            <QuickFilterBar
+              query={quickQuery}
+              onQueryChange={setQuickQuery}
+              placeholder="Buscar pedido, representante, cidade..."
+            >
+              <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
+            </QuickFilterBar>
             <ActiveFiltersChips
               fields={filterFields}
               conditions={conditions}
@@ -730,7 +950,6 @@ const CreateShipment = () => {
               onClear={() => setConditions([])}
               className="flex-1"
             />
-            <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
           </div>
 
           <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4 pb-2">
@@ -740,7 +959,7 @@ const CreateShipment = () => {
                 <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] px-1 mb-3">Pedidos Selecionados ({selectedOrderIds.length})</h4>
                 <div className="grid grid-cols-1 gap-2">
                   {selectedOrderIds.map(id => {
-                    const order = orders.find(o => o.id === id);
+                    const order = allCandidates.find(o => o.id === id);
                     if (!order) return null;
                     const client = clients.find(c => c.id === order.clientId);
                     return (
@@ -794,15 +1013,30 @@ const CreateShipment = () => {
 
             {/* Seção de Disponíveis (Vertical) */}
             <div className="space-y-2">
-              <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-1 mb-3">Disponíveis para Adicionar</h4>
-              {availableOrders.length === 0 ? (
+              <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-1 mb-3">Disponíveis para Adicionar ({displayedOrders.length})</h4>
+              {/* Sortable column headers */}
+              <div className="hidden md:grid grid-cols-[20px_1fr_1fr_1fr_1fr_1fr_100px] gap-4 items-center px-4 py-1">
+                <span />
+                {(['id','representative','phone','city','expiry','value'] as const).map((col, i) => {
+                  const labels: Record<string, string> = { id: 'Nº Pedido', representative: 'Representante', phone: 'Tel. Rep.', city: 'Cidade/UF', expiry: 'Previsão', value: 'Valor' };
+                  const active = sortState.key === col;
+                  return (
+                    <span key={col} onClick={() => toggleSort(col)} className={`inline-flex items-center gap-1 cursor-pointer select-none text-[10px] font-bold font-display uppercase tracking-wider transition-colors ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'} ${col === 'value' ? 'justify-end' : ''}`}>
+                      {labels[col]}
+                      {active && sortState.direction === 'asc' && <ArrowUp className="h-2.5 w-2.5" />}
+                      {active && sortState.direction === 'desc' && <ArrowDown className="h-2.5 w-2.5" />}
+                    </span>
+                  );
+                })}
+              </div>
+              {displayedOrders.length === 0 ? (
                 <div className="flex flex-col items-center justify-center py-10 text-muted-foreground bg-muted/10 rounded-xl border border-dashed border-border">
                   <Package className="h-8 w-8 mb-2 opacity-20" />
                   <p className="italic text-sm">Nenhum pedido disponível no momento.</p>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2">
-                  {availableOrders.map(order => {
+                  {displayedOrders.map(order => {
                     const client = clients.find(c => c.id === order.clientId);
                     return (
                       <div 
@@ -913,8 +1147,8 @@ const CreateShipment = () => {
                   )}
                   {reportPage === 2 && (
                     <>
-                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Contato</th>
+                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
+                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">CNPJ</th>
                       <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-right">Valor Total</th>
                     </>
                   )}
@@ -938,7 +1172,7 @@ const CreateShipment = () => {
                   </tr>
                 ) : (
                   selectedOrderIds.map((id, index) => {
-                    const order = orders.find(o => o.id === id);
+                    const order = allCandidates.find(o => o.id === id);
                     if (!order) return null;
                     const client = clients.find(c => c.id === order.clientId);
                     // Find invoice that contains this order
@@ -1011,13 +1245,13 @@ const CreateShipment = () => {
                               {reportPage === 2 && (
                                 <>
                                   <td
-                                    className="py-3 px-4 font-medium truncate max-w-[150px]"
-                                    title={repContact?.nome || order?.representativeName}
+                                    className="py-3 px-4 font-medium truncate max-w-[200px]"
+                                    title={order?.clientName || client?.name}
                                   >
-                                    {repContact?.nome || order?.representativeName || '-'}
+                                    {order?.clientName || client?.name || '-'}
                                   </td>
                                   <td className="py-3 px-4 font-mono-data text-xs">
-                                    {repContact?.telefone || order?.representativePhone || '-'}
+                                    {client?.cpfCnpj || order?.clientCode || '-'}
                                   </td>
                                   <td className="py-3 px-4 font-mono-data font-bold text-right text-[#1E3A5F]">
                                     {formatCurrency(order?.totalPedidoVenda || getOrderTotal(order))}
@@ -1029,77 +1263,112 @@ const CreateShipment = () => {
                                 <>
                                   <td className="py-3 px-4 text-center">
                                     <div className="flex justify-center">
-                                      <button 
-                                        onClick={() => toggleDelivered(id)}
+                                      <button
+                                        onClick={() => toggleDelivered(order.id)}
                                         className={`w-5 h-5 rounded border flex items-center justify-center transition-all ${
-                                          deliveredOrderIds.includes(id) 
-                                            ? 'bg-primary border-primary text-primary-foreground' 
+                                          deliveredOrderIds.includes(order.id)
+                                            ? 'bg-primary border-primary text-primary-foreground'
                                             : 'border-muted-foreground/30 hover:border-primary/50'
                                         }`}
                                       >
-                                        {deliveredOrderIds.includes(id) && <Check className="h-3.5 w-3.5" />}
+                                        {deliveredOrderIds.includes(order.id) && <Check className="h-3.5 w-3.5" />}
                                       </button>
                                     </div>
                                   </td>
                                   <td className="py-3 px-4 text-center">
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm no-spinner"
                                       placeholder="0"
+                                      value={qtdKits[order.id] ?? ''}
+                                      onChange={(e) => setQtdKits((prev) => ({ ...prev, [order.id]: parseInt(e.target.value, 10) || 0 }))}
                                     />
                                   </td>
                                   <td className="py-3 px-4 text-center">
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm no-spinner"
                                       placeholder="0"
+                                      value={qtdPallets[order.id] ?? ''}
+                                      onChange={(e) => setQtdPallets((prev) => ({ ...prev, [order.id]: parseInt(e.target.value, 10) || 0 }))}
                                     />
                                   </td>
                                   <td className="py-3 px-4 text-center">
-                                    <input 
-                                      type="number" 
+                                    <input
+                                      type="number"
                                       className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm no-spinner"
                                       placeholder="0"
+                                      value={qtdVolumes[order.id] ?? ''}
+                                      onChange={(e) => setQtdVolumes((prev) => ({ ...prev, [order.id]: parseInt(e.target.value, 10) || 0 }))}
                                     />
                                   </td>
                                 </>
                               )}
 
                               <td className="py-3 px-4 text-center sticky right-0 bg-card group-hover:bg-muted/30 z-10 border-l border-border/50">
-                                <DropdownMenu>
-                                  <DropdownMenuTrigger asChild>
-                                    <button className="p-1 hover:bg-muted rounded-full transition-colors">
-                                      <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                                    </button>
-                                  </DropdownMenuTrigger>
-                                  <DropdownMenuContent align="end">
-                                    <DropdownMenuLabel>Ações</DropdownMenuLabel>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem className="cursor-pointer">
-                                      <FileText className="mr-2 h-4 w-4" /> Gerar formulário
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'proof')}>
-                                      <Upload className="mr-2 h-4 w-4" /> Anexar comprovante
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="cursor-pointer">
-                                      <Eye className="mr-2 h-4 w-4" /> Ver comprovante
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'invoice')}>
-                                      <Upload className="mr-2 h-4 w-4" /> Anexar Nota Fiscal
-                                    </DropdownMenuItem>
-                                    <DropdownMenuItem className="cursor-pointer">
-                                      <FileCheck className="mr-2 h-4 w-4" /> Ver Nota Fiscal
-                                    </DropdownMenuItem>
-                                    <DropdownMenuSeparator />
-                                    <DropdownMenuItem 
-                                      className="text-destructive focus:text-destructive cursor-pointer"
-                                      onClick={() => removeOrder(id)}
-                                    >
-                                      <Trash className="mr-2 h-4 w-4" /> Remover Pedido
-                                    </DropdownMenuItem>
-                                  </DropdownMenuContent>
-                                </DropdownMenu>
+                                <div className="flex items-center justify-center gap-1">
+                                  {/* Indicadores de anexo pendente */}
+                                  {orderAttachments[id]?.boleto && (
+                                    <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.boleto?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.boleto?.saved ? 'Boleto salvo' : 'Boleto pendente'}>B</span>
+                                  )}
+                                  {orderAttachments[id]?.nf && (
+                                    <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.nf?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.nf?.saved ? 'NF salva' : 'NF pendente'}>NF</span>
+                                  )}
+                                  {orderAttachments[id]?.comprovante && (
+                                    <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.comprovante?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.comprovante?.saved ? 'Comprovante salvo' : 'Comprovante pendente'}>C</span>
+                                  )}
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <button className="p-1 hover:bg-muted rounded-full transition-colors">
+                                        <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                                      </button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuLabel>Ações</DropdownMenuLabel>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem className="cursor-pointer">
+                                        <FileText className="mr-2 h-4 w-4" /> Gerar formulário
+                                      </DropdownMenuItem>
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'boleto')}>
+                                        <Upload className="mr-2 h-4 w-4" />
+                                        {orderAttachments[id]?.boleto ? 'Substituir Boleto' : 'Anexar Boleto'}
+                                      </DropdownMenuItem>
+                                      {orderAttachments[id]?.boleto && (
+                                        <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(orderAttachments[id]?.boleto?.url, '_blank')}>
+                                          <Eye className="mr-2 h-4 w-4" /> Ver Boleto
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'nf')}>
+                                        <Upload className="mr-2 h-4 w-4" />
+                                        {orderAttachments[id]?.nf ? 'Substituir Nota Fiscal' : 'Anexar Nota Fiscal'}
+                                      </DropdownMenuItem>
+                                      {orderAttachments[id]?.nf && (
+                                        <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(orderAttachments[id]?.nf?.url, '_blank')}>
+                                          <FileCheck className="mr-2 h-4 w-4" /> Ver Nota Fiscal
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'comprovante')}>
+                                        <Upload className="mr-2 h-4 w-4" />
+                                        {orderAttachments[id]?.comprovante ? 'Substituir Comprovante' : 'Anexar Comprovante de Entrega'}
+                                      </DropdownMenuItem>
+                                      {orderAttachments[id]?.comprovante && (
+                                        <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(orderAttachments[id]?.comprovante?.url, '_blank')}>
+                                          <Eye className="mr-2 h-4 w-4" /> Ver Comprovante
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem
+                                        className="text-destructive focus:text-destructive cursor-pointer"
+                                        onClick={() => removeOrder(id)}
+                                      >
+                                        <Trash className="mr-2 h-4 w-4" /> Remover Pedido
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
                               </td>
                             </>
                           );

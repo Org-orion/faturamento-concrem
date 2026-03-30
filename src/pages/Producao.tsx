@@ -9,6 +9,12 @@ import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 
 function calcItemsTotal(items: { quantity: number; unitPrice: number }[]) {
   return items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
@@ -36,6 +42,12 @@ type ConcluidoRow = {
   data_conclusao?: string | null;
   motorista_id?: string | null;
 } & Record<string, unknown>;
+
+type ConcludedItem = {
+  carregamentoId: string;
+  schedule: ProductionSchedule | null;
+  row: ConcluidoRow | null;
+};
 
 const Producao = () => {
   const {
@@ -78,6 +90,19 @@ const Producao = () => {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [conditions, setConditions] = useState<FilterCondition[]>([]);
+
+  // --- Sort & quick-filter hooks for PENDING table ---
+  const pendingSort = useTableSort();
+  const pendingFilter = useQuickFilter<ProductionSchedule>();
+
+  // --- Sort & quick-filter hooks for CONCLUDED table ---
+  const concludedSort = useTableSort();
+  const concludedFilter = useQuickFilter<ConcludedItem>();
+
+  const pendingStatusButtons = useMemo(() => [
+    { value: 'Aguardando Início', label: 'Aguardando Início' },
+    { value: 'Em Produção', label: 'Em Produção' },
+  ], []);
 
   const filterFields = useMemo(() => {
     return [
@@ -202,6 +227,57 @@ const Producao = () => {
     return list;
   }, [concluidosCarregamentoIds, concluidos, productionSchedules, qConcluidoPedido, qConcluidoMotorista, dateFrom, dateTo, loads, drivers]);
 
+  // --- Pending table: text getters, sort getters, pipeline ---
+  const pendingTextGetters = useMemo(() => [
+    (s: ProductionSchedule) => s.num,
+    (s: ProductionSchedule) => s.plannedDate,
+    (s: ProductionSchedule) => s.createdBy,
+    (s: ProductionSchedule) => s.status,
+  ], []);
+
+  const pendingSortGetters = useMemo(() => ({
+    num: (s: ProductionSchedule) => s.num,
+    plannedDate: (s: ProductionSchedule) => s.plannedDate,
+    qtdPedidos: (s: ProductionSchedule) => s.orderIds?.length || 0,
+    valorTotal: (s: ProductionSchedule) => scheduleTotal(orders, supportOrders, s.orderIds),
+    createdBy: (s: ProductionSchedule) => s.createdBy,
+    status: (s: ProductionSchedule) => s.status,
+  }), [orders, supportOrders]);
+
+  const visiblePending = useMemo(() => {
+    const filtered = pendingFilter.filterItems(
+      pendingSchedules,
+      pendingTextGetters,
+      (s) => s.status,
+    );
+    return pendingSort.sortItems(filtered, pendingSortGetters);
+  }, [pendingSchedules, pendingFilter, pendingTextGetters, pendingSort, pendingSortGetters]);
+
+  // --- Concluded table: text getters, sort getters, pipeline ---
+  const concludedTextGetters = useMemo(() => [
+    (x: ConcludedItem) => x.schedule?.num || x.carregamentoId,
+    (x: ConcludedItem) => x.schedule?.plannedDate || (x.row?.data_conclusao ? String(x.row.data_conclusao).slice(0, 10) : ''),
+    (x: ConcludedItem) => x.schedule?.createdBy || (x.row?.criado_por ? String(x.row.criado_por) : ''),
+    (x: ConcludedItem) => x.schedule?.status || 'Concluído',
+  ], []);
+
+  const concludedSortGetters = useMemo(() => ({
+    num: (x: ConcludedItem) => x.schedule?.num || x.carregamentoId,
+    plannedDate: (x: ConcludedItem) => x.schedule?.plannedDate || (x.row?.data_conclusao ? String(x.row.data_conclusao).slice(0, 10) : ''),
+    qtdPedidos: (x: ConcludedItem) => x.schedule?.orderIds?.length || 0,
+    valorTotal: (x: ConcludedItem) => x.schedule ? scheduleTotal(orders, supportOrders, x.schedule.orderIds) : 0,
+    createdBy: (x: ConcludedItem) => x.schedule?.createdBy || (x.row?.criado_por ? String(x.row.criado_por) : ''),
+    status: (x: ConcludedItem) => x.schedule?.status || 'Concluído',
+  }), [orders, supportOrders]);
+
+  const visibleConcluded = useMemo(() => {
+    const filtered = concludedFilter.filterItems(
+      concludedSchedules,
+      concludedTextGetters,
+    );
+    return concludedSort.sortItems(filtered, concludedSortGetters);
+  }, [concludedSchedules, concludedFilter, concludedTextGetters, concludedSort, concludedSortGetters]);
+
   const details = useMemo(
     () => productionSchedules.find((s) => s.id === detailsId) || null,
     [detailsId, productionSchedules],
@@ -324,23 +400,31 @@ const Producao = () => {
       </div>
 
       <div className="bg-card rounded-xl border border-border overflow-x-auto no-print">
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border space-y-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-foreground">Carregamentos Pendentes</h2>
+          <QuickFilterBar
+            query={pendingFilter.query}
+            onQueryChange={pendingFilter.setQuery}
+            placeholder="Buscar pendentes..."
+            statuses={pendingStatusButtons}
+            activeStatus={pendingFilter.activeStatus}
+            onStatusChange={pendingFilter.setActiveStatus}
+          />
         </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data Prevista</th>
-              <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Qtd Pedidos</th>
-              <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Total</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Enviado por</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+              <SortableHeader columnKey="num" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-left">Nº</SortableHeader>
+              <SortableHeader columnKey="plannedDate" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-left">Data Prevista</SortableHeader>
+              <SortableHeader columnKey="qtdPedidos" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-right">Qtd Pedidos</SortableHeader>
+              <SortableHeader columnKey="valorTotal" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-right">Valor Total</SortableHeader>
+              <SortableHeader columnKey="createdBy" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-left">Enviado por</SortableHeader>
+              <SortableHeader columnKey="status" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-left">Status</SortableHeader>
               <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {pendingSchedules.map((s) => {
+            {visiblePending.map((s) => {
               const overdue = isOverdue(s.plannedDate, s.status);
               const total = scheduleTotal(orders, supportOrders, s.orderIds);
               return (
@@ -430,7 +514,7 @@ const Producao = () => {
                 </tr>
               );
             })}
-            {pendingSchedules.length === 0 && (
+            {visiblePending.length === 0 && (
               <tr>
                 <td colSpan={7} className="py-10 text-center text-muted-foreground">Nenhum carregamento pendente.</td>
               </tr>
@@ -440,9 +524,13 @@ const Producao = () => {
       </div>
 
       <div className="bg-card rounded-xl border border-border overflow-x-auto no-print">
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border space-y-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-foreground">Carregamentos Concluídos</h2>
-          <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <QuickFilterBar
+            query={concludedFilter.query}
+            onQueryChange={concludedFilter.setQuery}
+            placeholder="Buscar concluídos..."
+          >
             <ActiveFiltersChips
               fields={filterFields}
               conditions={conditions}
@@ -451,17 +539,17 @@ const Producao = () => {
               className="flex-1"
             />
             <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
-          </div>
+          </QuickFilterBar>
         </div>
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
-              <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Qtd Pedidos</th>
-              <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Total</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Enviado por</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+              <SortableHeader columnKey="num" sortState={concludedSort.sortState} onToggle={concludedSort.toggleSort} className="text-left">Nº</SortableHeader>
+              <SortableHeader columnKey="plannedDate" sortState={concludedSort.sortState} onToggle={concludedSort.toggleSort} className="text-left">Data</SortableHeader>
+              <SortableHeader columnKey="qtdPedidos" sortState={concludedSort.sortState} onToggle={concludedSort.toggleSort} className="text-right">Qtd Pedidos</SortableHeader>
+              <SortableHeader columnKey="valorTotal" sortState={concludedSort.sortState} onToggle={concludedSort.toggleSort} className="text-right">Valor Total</SortableHeader>
+              <SortableHeader columnKey="createdBy" sortState={concludedSort.sortState} onToggle={concludedSort.toggleSort} className="text-left">Enviado por</SortableHeader>
+              <SortableHeader columnKey="status" sortState={concludedSort.sortState} onToggle={concludedSort.toggleSort} className="text-left">Status</SortableHeader>
               <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
             </tr>
           </thead>
@@ -471,7 +559,7 @@ const Producao = () => {
                 <td colSpan={7} className="py-10 text-center text-muted-foreground">Carregando...</td>
               </tr>
             )}
-            {!loadingConcluidos && concludedSchedules.map((x) => {
+            {!loadingConcluidos && visibleConcluded.map((x) => {
               const s = x.schedule;
               const total = s ? scheduleTotal(orders, supportOrders, s.orderIds) : 0;
               const planned = s?.plannedDate || (x.row?.data_conclusao ? String(x.row.data_conclusao).slice(0, 10) : new Date().toISOString().slice(0, 10));
@@ -526,7 +614,7 @@ const Producao = () => {
                 </tr>
               );
             })}
-            {!loadingConcluidos && concludedSchedules.length === 0 && (
+            {!loadingConcluidos && visibleConcluded.length === 0 && (
               <tr>
                 <td colSpan={7} className="py-10 text-center text-muted-foreground">Nenhum carregamento concluído encontrado.</td>
               </tr>
@@ -662,7 +750,7 @@ const Producao = () => {
               <p className="text-sm font-semibold text-foreground">Pedidos incluídos</p>
               <p className="text-xs text-muted-foreground mt-1">
                 {canEditOrders
-                  ? 'Você pode incluir/remover pedidos enquanto o cronograma estiver em “Aguardando Início”.'
+                  ? 'Você pode incluir/remover pedidos enquanto o cronograma estiver em "Aguardando Início".'
                   : 'Após iniciar ou concluir, a lista de pedidos fica bloqueada (apenas data/observações podem ser ajustadas).'}
               </p>
             </div>
@@ -717,94 +805,6 @@ const Producao = () => {
           </div>
         )}
       </Modal>
-
-      <div className="bg-card rounded-xl border border-border overflow-x-auto no-print">
-        <div className="p-4 border-b border-border">
-          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-foreground">Carregamentos Concluídos</h2>
-          <div className="mt-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-            <ActiveFiltersChips
-              fields={filterFields}
-              conditions={conditions}
-              onRemove={(id) => setConditions((prev) => prev.filter((c) => c.id !== id))}
-              onClear={() => setConditions([])}
-              className="flex-1"
-            />
-            <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
-          </div>
-        </div>
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-border bg-muted/30">
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data Prevista</th>
-              <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Qtd Pedidos</th>
-              <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Total</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Enviado por</th>
-              <th className="text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
-              <th className="text-right py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-border/50">
-            {concludedSchedules.map((x) => {
-              const s = x.schedule;
-              const total = s ? scheduleTotal(orders, supportOrders, s.orderIds) : 0;
-              const planned = s?.plannedDate || (x.row?.data_conclusao ? String(x.row.data_conclusao).slice(0, 10) : new Date().toISOString().slice(0, 10));
-              return (
-                <tr key={s?.id || x.carregamentoId} className="hover:bg-muted/20 transition-colors">
-                  <td className="py-3 px-4 font-mono-data font-bold text-primary">{s?.num || x.carregamentoId}</td>
-                  <td className="py-3 px-4 font-mono-data text-muted-foreground">
-                    <span className="inline-flex items-center gap-2">
-                      <Calendar className="h-4 w-4" />
-                      {new Date(planned).toLocaleDateString('pt-BR')}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right font-mono-data">{s?.orderIds?.length || 0}</td>
-                  <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(total)}</td>
-                  <td className="py-3 px-4 font-mono-data">{s?.createdBy || (x.row?.criado_por ? String(x.row.criado_por) : '-')}</td>
-                  <td className="py-3 px-4">
-                    <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-status-success/15 text-status-success">
-                      {s?.status || 'Concluído'}
-                    </span>
-                  </td>
-                  <td className="py-3 px-4 text-right">
-                    <div className="inline-flex items-center gap-2">
-                      <button
-                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                        onClick={() => {
-                          setDetailsId(s?.id || x.carregamentoId);
-                          setOpenDetails(true);
-                        }}
-                        title="Ver detalhes"
-                      >
-                        <Eye className="h-4 w-4" />
-                      </button>
-                      <button
-                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-orange-600"
-                        onClick={() => s && updateProductionSchedule(s.id, { status: 'Em Produção' })}
-                        title="Desfazer OK"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </button>
-                      <button
-                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                        onClick={() => setPrintId(s?.id || x.carregamentoId)}
-                        title="Imprimir"
-                      >
-                        <Printer className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-            {concludedSchedules.length === 0 && (
-              <tr>
-                <td colSpan={7} className="py-10 text-center text-muted-foreground">Nenhum carregamento concluído encontrado.</td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
 
       <Modal open={openCreate} onClose={() => setOpenCreate(false)} title="Montar Produção Avulsa" wide>
         <div className="space-y-5">

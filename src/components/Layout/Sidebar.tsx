@@ -1,23 +1,23 @@
 import React, { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  Users, 
-  Truck, 
-  FileText, 
-  Package, 
-  CreditCard, 
-  ChevronDown, 
+import {
+  LayoutDashboard,
+  Users,
+  Truck,
+  FileText,
+  Package,
+  CreditCard,
+  ChevronDown,
   User,
   LogOut
 } from 'lucide-react';
 import { useSidebar } from './MainLayout';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { 
-  Tooltip, 
-  TooltipContent, 
-  TooltipProvider, 
-  TooltipTrigger 
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger
 } from '@/components/ui/tooltip';
 import { Link, useLocation } from 'react-router-dom';
 import logo from '@/assets/logo-sidebar.png';
@@ -46,7 +46,6 @@ const asMenuItems = (role: UserRole | undefined): SidebarNavItem[] => {
     if (it.type === 'link') {
       return { title: it.label, href: it.href, icon: iconMap[it.icon] };
     }
-
     return {
       title: it.label,
       icon: iconMap[it.icon],
@@ -64,7 +63,7 @@ export const Sidebar: React.FC = () => {
     'Cadastro': true,
     'Operacional': true
   });
-  
+
   const isActive = (href: string) => location.pathname === href;
   const toggleSection = (title: string) => {
     if (isCollapsed) return;
@@ -75,34 +74,40 @@ export const Sidebar: React.FC = () => {
     if ('children' in item) {
       const isOpen = openSections[item.title];
       const hasActiveChild = item.children.some((child) => isActive(child.href));
-      
+
       if (isCollapsed) {
         return (
           <TooltipProvider delayDuration={0}>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button
-                  variant="sidebar"
+                <button
                   className={cn(
-                    "transition-all duration-200 justify-center px-0 w-full",
-                    hasActiveChild && "bg-white/10 border border-white/20"
+                    "w-full flex items-center justify-center h-10 rounded-md transition-all duration-150",
+                    hasActiveChild
+                      ? "bg-white/15 text-white"
+                      : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-white/5"
                   )}
                 >
-                  <item.icon className="h-5 w-5 shrink-0" />
-                </Button>
+                  <item.icon className="h-[18px] w-[18px] shrink-0" />
+                </button>
               </TooltipTrigger>
-              <TooltipContent side="right" className="bg-primary text-white border-none font-sans text-xs p-0 overflow-hidden">
-                <div className="px-3 py-2 border-b border-white/10 font-bold bg-white/5">
+              <TooltipContent
+                side="right"
+                className="bg-[hsl(220_18%_9%)] text-foreground border border-border font-sans text-xs p-0 overflow-hidden rounded-lg shadow-xl"
+              >
+                <div className="px-3 py-2 border-b border-border font-display font-semibold text-primary text-[11px] uppercase tracking-widest">
                   {item.title}
                 </div>
-                <div className="flex flex-col">
+                <div className="flex flex-col py-1">
                   {item.children.map((child) => (
-                    <Link 
-                      key={child.href} 
+                    <Link
+                      key={child.href}
                       to={child.href}
                       className={cn(
-                        "px-3 py-2 hover:bg-white/10 transition-colors flex items-center gap-2",
-                        isActive(child.href) && "bg-white/10"
+                        "px-3 py-2 text-sm transition-colors",
+                        isActive(child.href)
+                          ? "text-primary bg-primary/10"
+                          : "text-foreground/70 hover:text-foreground hover:bg-white/5"
                       )}
                     >
                       {child.title}
@@ -116,69 +121,75 @@ export const Sidebar: React.FC = () => {
       }
 
       return (
-        <div className="mb-1">
-          <Button
-            variant="sidebar"
+        <div className="mb-0.5">
+          <button
             onClick={() => toggleSection(item.title)}
             className={cn(
-              "w-full justify-between transition-all duration-200 group",
-              hasActiveChild && !isOpen && "bg-white/5"
+              "w-full flex items-center justify-between h-10 px-3 rounded-md transition-all duration-150 group",
+              hasActiveChild && !isOpen
+                ? "text-primary"
+                : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-white/5"
             )}
           >
-            <div className="flex items-center">
-              <item.icon className="h-5 w-5 shrink-0" />
-              <span className="ml-3 truncate font-semibold">{item.title}</span>
+            <div className="flex items-center gap-3">
+              <item.icon className="h-[18px] w-[18px] shrink-0" />
+              <span className="text-sm font-display font-semibold truncate">{item.title}</span>
             </div>
-            <ChevronDown 
+            <ChevronDown
               className={cn(
-                "h-4 w-4 transition-transform duration-200 opacity-50 group-hover:opacity-100",
+                "h-3.5 w-3.5 transition-transform duration-200 opacity-40 group-hover:opacity-70",
                 !isOpen && "-rotate-90"
-              )} 
+              )}
             />
-          </Button>
-          <div 
+          </button>
+          <div
             className={cn(
-              "overflow-hidden transition-all duration-300 ease-in-out space-y-1 pl-4 border-l border-white/10 ml-6",
-              isOpen ? "max-h-[500px] opacity-100 mt-1" : "max-h-0 opacity-0"
+              "overflow-hidden transition-all duration-300 ease-in-out",
+              isOpen ? "max-h-[500px] opacity-100 mt-0.5" : "max-h-0 opacity-0"
             )}
           >
-            {item.children.map((child) => {
-              const active = isActive(child.href);
-              return (
-                <Link key={child.href} to={child.href}>
-                  <Button
-                    variant="sidebar"
-                    className={cn(
-                      "w-full justify-start h-9 text-sm font-normal",
-                      active ? "bg-white/10 text-white font-medium" : "text-primary-foreground/70 hover:text-white hover:bg-white/5"
-                    )}
-                  >
-                    <span className="truncate">{child.title}</span>
-                  </Button>
-                </Link>
-              );
-            })}
+            <div className="ml-3 pl-3 border-l border-white/8 space-y-0.5">
+              {item.children.map((child) => {
+                const active = isActive(child.href);
+                return (
+                  <Link key={child.href} to={child.href}>
+                    <button
+                      className={cn(
+                        "w-full text-left h-9 px-3 rounded-md text-sm transition-all duration-150",
+                        active
+                          ? "text-white font-semibold bg-white/15"
+                          : "text-sidebar-foreground/55 hover:text-sidebar-foreground hover:bg-white/5 font-normal"
+                      )}
+                    >
+                      <span className="truncate font-sans">{child.title}</span>
+                    </button>
+                  </Link>
+                );
+              })}
+            </div>
           </div>
         </div>
       );
     }
 
     const active = isActive(item.href);
-    
+
     const content = (
       <Link to={item.href || '#'}>
-        <Button
-          variant="sidebar"
+        <button
           className={cn(
-            "transition-all duration-200",
-            active && "bg-white/10 border border-white/20",
-            !active && "hover:bg-white/5",
-            isCollapsed && "justify-center px-0",
+            "w-full flex items-center h-10 rounded-md transition-all duration-150",
+            isCollapsed ? "justify-center px-0" : "gap-3 px-3",
+            active
+              ? "bg-white/15 text-white font-semibold border-l-2 border-white pl-[10px]"
+              : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-white/5 font-normal border-l-2 border-transparent pl-[10px]"
           )}
         >
-          <item.icon className="h-5 w-5 shrink-0" />
-          {!isCollapsed && <span className="ml-3 truncate">{item.title}</span>}
-        </Button>
+          <item.icon className={cn("shrink-0", isCollapsed ? "h-[18px] w-[18px]" : "h-[17px] w-[17px]")} />
+          {!isCollapsed && (
+            <span className="truncate text-sm font-sans">{item.title}</span>
+          )}
+        </button>
       </Link>
     );
 
@@ -186,10 +197,11 @@ export const Sidebar: React.FC = () => {
       return (
         <TooltipProvider delayDuration={0}>
           <Tooltip>
-            <TooltipTrigger asChild>
-              {content}
-            </TooltipTrigger>
-            <TooltipContent side="right" className="bg-primary text-white border-none font-sans text-xs">
+            <TooltipTrigger asChild>{content}</TooltipTrigger>
+            <TooltipContent
+              side="right"
+              className="bg-[hsl(220_18%_9%)] text-foreground border border-border font-sans text-xs rounded-lg"
+            >
               {item.title}
             </TooltipContent>
           </Tooltip>
@@ -203,67 +215,85 @@ export const Sidebar: React.FC = () => {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 h-screen bg-primary text-primary-foreground z-40 transition-all duration-300 ease-in-out flex flex-col no-print shadow-xl",
+        "fixed left-0 top-0 h-screen z-40 transition-all duration-300 ease-in-out flex flex-col no-print",
         isCollapsed ? "w-16" : "w-64"
       )}
+      style={{ background: 'hsl(var(--sidebar-background))', borderRight: '1px solid hsl(var(--sidebar-border))' }}
     >
-      {/* Logo Section */}
-      <div 
-        className="h-24 flex items-center px-4 cursor-pointer overflow-hidden transition-all duration-300"
+      {/* Logo */}
+      <div
+        className="h-16 flex items-center px-3 cursor-pointer overflow-hidden shrink-0"
         onClick={toggleSidebar}
       >
         {isCollapsed ? (
-          <div className="w-12 h-12 flex items-center justify-center mx-auto transition-all duration-300">
-            <img src={logoMini} alt="Logo Mini" className="w-10 h-10 object-contain" />
+          <div className="w-10 h-10 flex items-center justify-center mx-auto">
+            <img src={logoMini} alt="Logo" className="w-8 h-8 object-contain" />
           </div>
         ) : (
-          <div className="flex items-center gap-3 w-full justify-center transition-all duration-300 px-2">
-            <img src={logo} alt="Logo" className="h-16 w-auto object-contain max-w-full" />
+          <div className="flex items-center justify-center w-full px-2">
+            <img src={logo} alt="Logo" className="h-10 w-auto object-contain max-w-full" />
           </div>
         )}
       </div>
 
+      {/* Divider */}
+      <div className="h-px mx-3 bg-white/5 shrink-0" />
+
       {/* Navigation */}
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto custom-scrollbar">
+      <nav className={cn("flex-1 py-3 overflow-y-auto", isCollapsed ? "px-2 space-y-1" : "px-3 space-y-0.5")}>
+        {!isCollapsed && (
+          <div className="px-3 pb-2">
+            <span className="text-[10px] font-display font-bold uppercase tracking-[0.15em] text-sidebar-foreground/30">
+              Navegação
+            </span>
+          </div>
+        )}
         {menuItems.map((item) => (
           <SidebarItem key={'href' in item ? item.href : item.title} item={item} />
         ))}
       </nav>
 
-      {/* Profile Section */}
-      <div className="p-3 border-t border-white/10">
+      {/* Divider */}
+      <div className="h-px mx-3 bg-white/5 shrink-0" />
+
+      {/* Profile */}
+      <div className={cn("shrink-0 py-3", isCollapsed ? "px-2" : "px-3")}>
         <div className={cn(
           "flex",
-          isCollapsed ? "flex-col items-center gap-2" : "items-center justify-between"
+          isCollapsed ? "flex-col items-center gap-2" : "items-center justify-between gap-2"
         )}>
           <div className={cn(
-            "flex items-center gap-3 rounded-lg p-2 transition-all hover:bg-white/5 cursor-pointer",
-            isCollapsed ? "justify-center w-full" : "justify-start flex-1"
+            "flex items-center gap-3 rounded-md p-2 transition-all hover:bg-white/5 cursor-pointer min-w-0",
+            isCollapsed ? "justify-center" : "flex-1"
           )}>
-            <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center shrink-0 border border-white/20">
-              <User className="h-4 w-4" />
+            <div className="w-7 h-7 rounded-md bg-white/15 border border-white/20 flex items-center justify-center shrink-0">
+              <User className="h-3.5 w-3.5 text-white/80" />
             </div>
             {!isCollapsed && (
-              <div className="overflow-hidden">
-                <p className="text-sm font-medium truncate">{user?.name || 'Admin User'}</p>
-                <p className="text-xs text-primary-foreground/60 truncate">{user?.username || 'admin'}</p>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold text-sidebar-foreground/90 truncate font-display">
+                  {user?.name || 'Usuário'}
+                </p>
+                <p className="text-[10px] text-sidebar-foreground/40 truncate font-mono-data">
+                  {user?.username || 'admin'}
+                </p>
               </div>
             )}
           </div>
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button 
+                <button
                   onClick={logout}
                   className={cn(
-                    "p-2 rounded-lg hover:bg-white/10 text-primary-foreground/60 hover:text-primary-foreground transition-colors",
+                    "p-2 rounded-md hover:bg-white/8 text-sidebar-foreground/35 hover:text-destructive transition-colors shrink-0",
                     isCollapsed && "w-full flex items-center justify-center"
                   )}
                 >
-                  <LogOut className="h-4 w-4" />
+                  <LogOut className="h-3.5 w-3.5" />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>Sair</TooltipContent>
+              <TooltipContent side="right" className="font-sans text-xs">Sair</TooltipContent>
             </Tooltip>
           </TooltipProvider>
         </div>

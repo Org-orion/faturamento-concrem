@@ -1,10 +1,16 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useToast } from '@/components/ToastProvider';
 import { useApp } from '@/contexts/AppContext';
 import Modal from '@/components/Modal';
 import { Driver } from '@/types';
 import { FormField, inputClass, btnPrimary, btnDanger, driverStatusColors, StatusBadge } from '@/components/shared';
 import { deleteMotorista, insertMotorista, listMotoristas, updateMotorista } from '@/lib/cadastrosOps';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters, ColDef } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
 
 const emptyDriver = { name: '', cnh: '', cnhCategory: 'B', phone: '', vehicleType: 'Carreta Bau', vehicleVolume: 0, vehicleWeight: 0, plate: '', status: 'Disponível' as const };
 
@@ -16,6 +22,9 @@ const DriversPage = () => {
   const [form, setForm] = useState<Omit<Driver, 'id'>>(emptyDriver);
   const [items, setItems] = useState<Driver[]>([]);
   const [loading, setLoading] = useState(false);
+  const { sortState, toggleSort, sortItems } = useTableSort();
+  const { query, setQuery, filterItems } = useQuickFilter<Driver>();
+  const colFilter = useColumnFilters();
 
   useEffect(() => {
     let cancelled = false;
@@ -49,7 +58,32 @@ const DriversPage = () => {
     };
   }, [showToast]);
 
-  const filtered = items;
+  const textGetters: Array<(d: Driver) => unknown> = [
+    (d) => d.name, (d) => d.phone, (d) => d.vehicleType, (d) => d.plate,
+  ];
+  const sortGetters: Record<string, (d: Driver) => unknown> = {
+    name: (d) => d.name, phone: (d) => d.phone, vehicleType: (d) => d.vehicleType,
+    vehicleVolume: (d) => d.vehicleVolume, vehicleWeight: (d) => d.vehicleWeight, plate: (d) => d.plate,
+  };
+  const colDefs: ColDef<Driver>[] = [
+    { key: 'name', getter: (d) => d.name },
+    { key: 'phone', getter: (d) => d.phone },
+    { key: 'vehicleType', getter: (d) => d.vehicleType },
+    { key: 'plate', getter: (d) => d.plate },
+  ];
+  const colFilterSlots: ColFilterSlot[] = [
+    { key: 'name', type: 'text', placeholder: 'Nome...' },
+    { key: 'phone', type: 'text', placeholder: 'Telefone...' },
+    { key: 'vehicleType', type: 'text', placeholder: 'Veículo...' },
+    { type: 'none' },
+    { type: 'none' },
+    { key: 'plate', type: 'text', placeholder: 'Placa...' },
+    { type: 'none' },
+  ];
+  const filtered = useMemo(
+    () => sortItems(filterItems(colFilter.filterItems(items, colDefs), textGetters), sortGetters),
+    [items, filterItems, sortItems, colFilter.filterItems],
+  );
 
   const openNew = () => { setEditing(null); setForm(emptyDriver); setModalOpen(true); };
   const openEdit = (d: Driver) => { 
@@ -154,14 +188,21 @@ const DriversPage = () => {
         </button>
       </div>
 
+      <QuickFilterBar query={query} onQueryChange={setQuery} placeholder="Buscar por nome, telefone, placa..." />
+
       <div className="bg-card rounded-lg shadow-sm border border-border overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
-              {['Nome', 'Telefone', 'Veículo', 'Volume (m³)', 'Peso (Kg)', 'Placa', 'Ações'].map(h => (
-                <th key={h} className="text-left py-3 px-4 font-display font-medium text-muted-foreground">{h}</th>
-              ))}
+              <SortableHeader columnKey="name" sortState={sortState} onToggle={toggleSort}>Nome</SortableHeader>
+              <SortableHeader columnKey="phone" sortState={sortState} onToggle={toggleSort}>Telefone</SortableHeader>
+              <SortableHeader columnKey="vehicleType" sortState={sortState} onToggle={toggleSort}>Veículo</SortableHeader>
+              <SortableHeader columnKey="vehicleVolume" sortState={sortState} onToggle={toggleSort}>Volume (m³)</SortableHeader>
+              <SortableHeader columnKey="vehicleWeight" sortState={sortState} onToggle={toggleSort}>Peso (Kg)</SortableHeader>
+              <SortableHeader columnKey="plate" sortState={sortState} onToggle={toggleSort}>Placa</SortableHeader>
+              <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Ações</th>
             </tr>
+            <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
           </thead>
           <tbody>
             {filtered.map((d, i) => (

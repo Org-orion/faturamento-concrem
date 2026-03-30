@@ -17,7 +17,7 @@ export function FilterTriggerButton({
       )}
     >
       <Filter className="h-4 w-4" />
-      Filtros
+      Filtros avançados
       {hasCount && (
         <span className="ml-1 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/10 text-primary text-[10px] font-black">
           {count}

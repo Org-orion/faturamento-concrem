@@ -96,6 +96,9 @@
   .font-display {
     font-family: 'Manrope', sans-serif;
   }
+  .font-mono-data {
+    font-family: 'Manrope', sans-serif;
+  }
   .shadow-card {
     box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   }

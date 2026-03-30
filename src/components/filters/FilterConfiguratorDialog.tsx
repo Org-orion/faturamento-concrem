@@ -87,14 +87,6 @@ export function FilterConfiguratorDialog<T>({
               <DialogTitle className="text-lg font-bold text-foreground">{title}</DialogTitle>
               <DialogDescription className="text-sm text-muted-foreground">{subtitle}</DialogDescription>
             </DialogHeader>
-            <button
-              type="button"
-              onClick={() => onOpenChange(false)}
-              className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground"
-              aria-label="Fechar"
-            >
-              <X className="h-4 w-4" />
-            </button>
           </div>
         </div>
 

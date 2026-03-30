@@ -3,6 +3,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { btnPrimary, btnSecondary, inputClass } from '@/components/shared';
 import { supabaseOps } from '@/lib/supabase';
+import { updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 import { createBrandedWorkbook, createBrandedBase64, downloadBuffer } from '@/lib/excelBranded';
 import type { BrandedColumn } from '@/lib/excelBranded';
 import { ArrowLeft, CheckCircle2, Download, Mail, X } from 'lucide-react';
@@ -12,6 +13,12 @@ import { applyFilters } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import type { Order } from '@/types';
 
 const formatDateBR = (iso?: string) => {
@@ -47,6 +54,53 @@ const ComercialConfirmacao = () => {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [conditions, setConditions] = useState<FilterCondition[]>([]);
+
+  const { sortState, toggleSort, sortItems } = useTableSort();
+  const { query, setQuery, filterItems: quickFilter } = useQuickFilter<Order>();
+  const colFilter = useColumnFilters();
+
+  const colFilterSlots: ColFilterSlot[] = useMemo(() => [
+    { type: 'none' },
+    { key: 'pedido', type: 'text', placeholder: 'Filtrar...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar...' },
+    { key: 'representante', type: 'text', placeholder: 'Filtrar...' },
+    { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar...' },
+    { key: 'emissao', type: 'date' },
+    { key: 'validade', type: 'date' },
+  ], []);
+
+  const colFilterDefs = useMemo(() => [
+    { key: 'pedido', getter: (o: Order) => o.id },
+    { key: 'cliente', getter: (o: Order) => `${o.clientCode || ''} ${o.clientName || ''}` },
+    { key: 'representante', getter: (o: Order) => o.representativeName },
+    { key: 'cidadeUf', getter: (o: Order) => `${o.clientCity || ''} - ${o.clientUF || ''}` },
+    { key: 'emissao', getter: (o: Order) => o.date },
+    { key: 'validade', getter: (o: Order) => o.expiryDate },
+  ], []);
+
+  const textGetters: Array<(item: Order) => unknown> = useMemo(
+    () => [
+      (o: Order) => o.id,
+      (o: Order) => o.clientCode,
+      (o: Order) => o.clientName,
+      (o: Order) => o.representativeName,
+      (o: Order) => o.clientCity,
+      (o: Order) => o.clientUF,
+    ],
+    [],
+  );
+
+  const sortGetters: Record<string, (item: Order) => unknown> = useMemo(
+    () => ({
+      pedido: (o: Order) => o.id,
+      cliente: (o: Order) => o.clientName,
+      representante: (o: Order) => o.representativeName,
+      cidadeUf: (o: Order) => `${o.clientCity || ''} - ${o.clientUF || ''}`,
+      emissao: (o: Order) => o.date,
+      validade: (o: Order) => o.expiryDate,
+    }),
+    [],
+  );
 
   // --- Email modal ---
   const [showEmailModal, setShowEmailModal] = useState(false);
@@ -122,8 +176,8 @@ const ComercialConfirmacao = () => {
   }, [hasGrupoCliente]);
 
   const filtered = useMemo(
-    () => applyFilters(pendingOrders, filterFields, conditions),
-    [pendingOrders, filterFields, conditions],
+    () => sortItems(quickFilter(colFilter.filterItems(applyFilters(pendingOrders, filterFields, conditions), colFilterDefs), textGetters), sortGetters),
+    [pendingOrders, filterFields, conditions, colFilter, colFilterDefs, quickFilter, textGetters, sortItems, sortGetters],
   );
 
   const toggleAll = () => {
@@ -147,17 +201,35 @@ const ComercialConfirmacao = () => {
   // --- Confirm selected orders ---
   const confirmSelected = async () => {
     if (!selected.length) return;
-    const username = user?.username;
-    setConfirmedIds((prev) => Array.from(new Set([...prev, ...selected])));
+    const username = user?.username || null;
+    const toConfirm = [...selected];
+    setConfirmedIds((prev) => Array.from(new Set([...prev, ...toConfirm])));
     setSelected([]);
-    if (!supabaseOps || !username) return;
-    const rows = selected.map((pedidoId) => ({
-      pedido_id: pedidoId, acao: 'confirmar_diretoria',
-      criado_em: new Date().toISOString(), criado_por: username, payload: null,
-    }));
-    const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert(rows as any);
-    if (error) console.error('[Supabase OPS] confirmar_diretoria:', error.message);
-    else showToast('Pedidos confirmados e enviados para liberação!');
+
+    // Update pedidos_status FIRST — this is the critical operation for the Liberação page
+    await Promise.all(
+      toConfirm.map((id) =>
+        updatePedidoStatus({
+          pedidoId: id,
+          numeroPedido: id,
+          statusNovo: 'confirmado_diretoria',
+          alteradoPor: username,
+          observacao: 'Confirmado pelo comercial',
+        }),
+      ),
+    );
+
+    // Log the action (non-critical)
+    if (supabaseOps) {
+      const rows = toConfirm.map((pedidoId) => ({
+        pedido_id: pedidoId, acao: 'confirmar_diretoria',
+        criado_em: new Date().toISOString(), criado_por: username, payload: null,
+      }));
+      const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert(rows as any);
+      if (error) console.error('[Supabase OPS] confirmar_diretoria:', error.message);
+    }
+
+    showToast('Pedidos confirmados e enviados para liberação!');
   };
 
   // ============================================================
@@ -375,8 +447,15 @@ const ComercialConfirmacao = () => {
             </span>
           )}
         </div>
-        <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
       </div>
+
+      <QuickFilterBar
+        query={query}
+        onQueryChange={setQuery}
+        placeholder="Buscar pedido, cliente, representante..."
+      >
+        <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
+      </QuickFilterBar>
 
       <ActiveFiltersChips
         fields={filterFields}
@@ -394,13 +473,14 @@ const ComercialConfirmacao = () => {
                 <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
                   <input type="checkbox" checked={selected.length === filtered.length && filtered.length > 0} onChange={toggleAll} />
                 </th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cidade / UF</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Emissão</th>
-                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Validade</th>
+                <SortableHeader columnKey="pedido" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
+                <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
+                <SortableHeader columnKey="representante" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
+                <SortableHeader columnKey="cidadeUf" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
+                <SortableHeader columnKey="emissao" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Emissão</SortableHeader>
+                <SortableHeader columnKey="validade" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
               </tr>
+              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             </thead>
             <tbody className="divide-y divide-border/50">
               {filtered.length === 0 ? (

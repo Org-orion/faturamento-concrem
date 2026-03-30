@@ -1,7 +1,14 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { formatCurrency, getOrderTotal, statusColors, StatusBadge } from '@/components/shared';
 import { roleLabel } from '@/utils/access';
+import { useTableSort } from '@/hooks/useTableSort';
+import { useQuickFilter } from '@/hooks/useQuickFilter';
+import { useColumnFilters } from '@/hooks/useColumnFilters';
+import { SortableHeader } from '@/components/table/SortableHeader';
+import { QuickFilterBar } from '@/components/table/QuickFilterBar';
+import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
+import type { Order } from '@/types';
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
   const [display, setDisplay] = useState(0);
@@ -69,6 +76,61 @@ const Dashboard = () => {
   chartData[5] = { label: 'Mar', value: totalInvoiced || 2300 };
 
   const lastOrders = [...visibleOrders].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 5);
+
+  const { sortState, toggleSort, sortItems } = useTableSort();
+  const { query, setQuery, filterItems } = useQuickFilter<Order>();
+
+  const textGetters: Array<(item: Order) => unknown> = useMemo(
+    () => [
+      (o: Order) => o.id,
+      (o: Order) => o.representativeName,
+      (o: Order) => o.status,
+    ],
+    [],
+  );
+
+  const sortGetters: Record<string, (item: Order) => unknown> = useMemo(
+    () => ({
+      pedido: (o: Order) => o.id,
+      representante: (o: Order) => o.representativeName,
+      data: (o: Order) => o.date,
+      valor: (o: Order) => getOrderTotal(o),
+      status: (o: Order) => o.status,
+    }),
+    [],
+  );
+
+  const colFilter = useColumnFilters();
+
+  const colFilterSlots: ColFilterSlot[] = useMemo(() => [
+    { key: 'pedido', type: 'text', placeholder: 'Pedido...' },
+    { key: 'representante', type: 'text', placeholder: 'Representante...' },
+    { key: 'data', type: 'date' },
+    { key: 'valor', type: 'number', placeholder: 'Valor...' },
+    { key: 'status', type: 'select', options: [
+      { value: 'Aguardando Avaliação', label: 'Aguardando Avaliação' },
+      { value: 'Liberado p/ Produção', label: 'Liberado p/ Produção' },
+      { value: 'Em Carregamento', label: 'Em Carregamento' },
+      { value: 'Produção Concluída', label: 'Produção Concluída' },
+      { value: 'Despachado', label: 'Despachado' },
+      { value: 'Em Rota', label: 'Em Rota' },
+      { value: 'Entregue', label: 'Entregue' },
+      { value: 'Cancelado', label: 'Cancelado' },
+    ]},
+  ], []);
+
+  const colFilterDefs = useMemo(() => [
+    { key: 'pedido', getter: (o: Order) => o.id },
+    { key: 'representante', getter: (o: Order) => o.representativeName },
+    { key: 'data', getter: (o: Order) => o.date },
+    { key: 'valor', getter: (o: Order) => String(getOrderTotal(o)) },
+    { key: 'status', getter: (o: Order) => o.status, match: 'exact' as const },
+  ], []);
+
+  const displayedOrders = useMemo(
+    () => sortItems(filterItems(colFilter.filterItems(lastOrders, colFilterDefs), textGetters), sortGetters),
+    [lastOrders, filterItems, textGetters, sortItems, sortGetters, colFilter.filterItems, colFilterDefs],
+  );
 
   const representativeVolume = (() => {
     const acc = new Map<string, number>();
@@ -160,19 +222,25 @@ const Dashboard = () => {
           <h3 className="text-lg font-semibold font-sans text-foreground">Últimos Pedidos</h3>
           <button className="text-sm font-medium text-primary hover:text-primary-hover transition-colors">Ver todos</button>
         </div>
-        <div className="overflow-x-auto">
+        <QuickFilterBar
+          query={query}
+          onQueryChange={setQuery}
+          placeholder="Buscar pedido, representante, status..."
+        />
+        <div className="overflow-x-auto mt-4">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border">
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Data</th>
-                <th className="text-right py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
-                <th className="text-left py-3 px-4 font-medium text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
+                <SortableHeader columnKey="pedido" sortState={sortState} onToggle={toggleSort} className="text-left py-3 px-4">Pedido</SortableHeader>
+                <SortableHeader columnKey="representante" sortState={sortState} onToggle={toggleSort} className="text-left py-3 px-4">Representante</SortableHeader>
+                <SortableHeader columnKey="data" sortState={sortState} onToggle={toggleSort} className="text-left py-3 px-4">Data</SortableHeader>
+                <SortableHeader columnKey="valor" sortState={sortState} onToggle={toggleSort} className="text-right py-3 px-4">Valor</SortableHeader>
+                <SortableHeader columnKey="status" sortState={sortState} onToggle={toggleSort} className="text-left py-3 px-4">Status</SortableHeader>
               </tr>
+              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
             </thead>
             <tbody>
-              {lastOrders.map((o) => (
+              {displayedOrders.map((o) => (
                 <tr key={o.id} className="border-b border-border/50 hover:bg-muted transition-colors">
                   <td className="py-4 px-4 font-medium text-foreground">{o.id}</td>
                   <td className="py-4 px-4 text-foreground">{o.representativeName || '-'}</td>
