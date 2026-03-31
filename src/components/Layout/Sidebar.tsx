@@ -85,7 +85,7 @@ export const Sidebar: React.FC = () => {
                     "w-full flex items-center justify-center h-10 rounded-md transition-all duration-150",
                     hasActiveChild
                       ? "bg-white/15 text-white"
-                      : "text-white/70 hover:text-white hover:bg-white/5"
+                      : "text-white hover:bg-white/5"
                   )}
                 >
                   <item.icon className="h-[18px] w-[18px] shrink-0" />
@@ -128,7 +128,7 @@ export const Sidebar: React.FC = () => {
               "w-full flex items-center justify-between h-10 px-3 rounded-md transition-all duration-150 group",
               hasActiveChild && !isOpen
                 ? "text-white"
-                : "text-white/70 hover:text-white hover:bg-white/5"
+                : "text-white hover:bg-white/5"
             )}
           >
             <div className="flex items-center gap-3">
@@ -158,7 +158,7 @@ export const Sidebar: React.FC = () => {
                         "w-full text-left h-9 px-3 rounded-md text-sm transition-all duration-150",
                         active
                           ? "text-white font-semibold bg-white/15"
-                          : "text-white/70 hover:text-white hover:bg-white/5 font-normal"
+                          : "text-white font-normal hover:bg-white/5"
                       )}
                     >
                       <span className="truncate font-sans">{child.title}</span>
@@ -182,7 +182,7 @@ export const Sidebar: React.FC = () => {
             isCollapsed ? "justify-center px-0" : "gap-3 px-3",
             active
               ? "bg-white/15 text-white font-semibold pl-3"
-              : "text-white/70 hover:text-white hover:bg-white/5 font-normal pl-3"
+              : "text-white font-normal pl-3 hover:bg-white/5"
           )}
         >
           <item.icon className={cn("shrink-0", isCollapsed ? "h-[18px] w-[18px]" : "h-[17px] w-[17px]")} />
