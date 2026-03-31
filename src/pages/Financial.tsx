@@ -3,9 +3,8 @@ import { useApp } from '@/contexts/AppContext';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/ToastProvider';
 import { btnDanger, btnPrimary, btnSecondary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
-import { ExpenseType, FreightEntry, FreightEntryStatus, FreightExpenseLine, Order, PedidoStatusRow } from '@/types';
+import { ExpenseType, FreightEntry, FreightEntryStatus, FreightExpenseLine, Order } from '@/types';
 import { CheckCircle2, Eye, Plus, Printer, Settings2, Edit, Trash2, AlertTriangle } from 'lucide-react';
-import { listPedidosStatusByPedidoIds } from '@/lib/pedidosStatusRepo';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useColumnFilters } from '@/hooks/useColumnFilters';
@@ -22,7 +21,7 @@ function monthKey(iso: string) {
 }
 
 const Financial = () => {
-  const { orders, drivers, freightEntries, expenseTypes, addExpenseType, updateExpenseType, addFreightEntry, updateFreightEntry, setFreightEntryStatus, deleteFreightEntry } = useApp();
+  const { orders, loads, drivers, freightEntries, expenseTypes, addExpenseType, updateExpenseType, addFreightEntry, updateFreightEntry, setFreightEntryStatus, deleteFreightEntry } = useApp();
   const { showToast } = useToast();
 
   const { sortState: sortPending, toggleSort: togglePending, sortItems: sortPendingItems } = useTableSort();
@@ -44,22 +43,20 @@ const Financial = () => {
   const [newTypeDesc, setNewTypeDesc] = useState('');
   const [newTypeActive, setNewTypeActive] = useState(true);
 
-  // Load pedido statuses to filter by entregue/finalizado
-  const [pedidoStatusRows, setPedidoStatusRows] = useState<PedidoStatusRow[]>([]);
-  const pedidoStatusMap = useMemo(() => new Map(pedidoStatusRows.map(r => [r.pedido_id, r] as const)), [pedidoStatusRows]);
-
-  useEffect(() => {
-    const ids = orders.map(o => o.id);
-    if (!ids.length) return;
-    void listPedidosStatusByPedidoIds(ids).then(setPedidoStatusRows);
-  }, [orders.length]);
+  // Filter orders by load shipmentStatus === 'Entregue'
+  const deliveredOrOrderIds = useMemo(() => {
+    const ids = new Set<string>();
+    for (const l of loads) {
+      if (l.shipmentStatus === 'Entregue') {
+        for (const id of l.orderIds) ids.add(id);
+      }
+    }
+    return ids;
+  }, [loads]);
 
   const deliveredOrders = useMemo(
-    () => orders.filter((o) => {
-      const st = pedidoStatusMap.get(o.id)?.status_atual;
-      return st === 'entregue' || st === 'finalizado' || st === 'faturado' || st === 'aguardando_pagamento';
-    }),
-    [orders, pedidoStatusMap],
+    () => orders.filter((o) => deliveredOrOrderIds.has(o.id)),
+    [orders, deliveredOrOrderIds],
   );
 
   const entryByOrderId = useMemo(() => {

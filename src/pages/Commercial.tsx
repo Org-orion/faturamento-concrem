@@ -80,11 +80,11 @@ const Commercial = () => {
     if (ids.length) void refreshStatusRows(ids);
   }, [serverOrders]);
 
-  // Pedidos aguardando confirmação (status = aguardando_confirmacao)
+  // Pedidos aguardando avaliação (status = aguardando_avaliacao ou sem status)
   const awaitingConfirmation = useMemo(() => {
     return serverOrders.filter(o => {
       const st = statusByPedidoId.get(o.id)?.status_atual;
-      return !st || st === 'aguardando_confirmacao';
+      return !st || st === 'aguardando_avaliacao';
     });
   }, [serverOrders, statusByPedidoId]);
 
@@ -107,7 +107,7 @@ const Commercial = () => {
     date: (o: Order) => o.date || '',
     expiryDate: (o: Order) => o.expiryDate || '',
     value: (o: Order) => getOrderTotal(o),
-    status: (o: Order) => statusByPedidoId.get(o.id)?.status_atual || 'aguardando_confirmacao',
+    status: (o: Order) => statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao',
   }), [statusByPedidoId]);
 
   // Column filter slots & definitions for main table
@@ -129,7 +129,7 @@ const Commercial = () => {
     { key: 'date', getter: (o: Order) => o.date },
     { key: 'expiryDate', getter: (o: Order) => o.expiryDate },
     { key: 'value', getter: (o: Order) => o.totalPedidoVenda ?? getOrderTotal(o) },
-    { key: 'status', getter: (o: Order) => statusByPedidoId.get(o.id)?.status_atual || 'aguardando_confirmacao', match: 'exact' as const },
+    { key: 'status', getter: (o: Order) => statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao', match: 'exact' as const },
   ], [statusByPedidoId]);
 
   // Data pipeline: awaitingConfirmation → column filters → quick filter → sort
@@ -138,47 +138,6 @@ const Commercial = () => {
     const filtered = filterItems(colFiltered, textGetters);
     return sortItems(filtered, sortGetters);
   }, [awaitingConfirmation, colFilter, colDefs, filterItems, textGetters, sortItems, sortGetters]);
-
-  // Pedidos aguardando envio/confirmação da diretoria — based on pedidos_status
-  const awaitingEnvioDiretoria = useMemo(() => {
-    return serverOrders.filter(o => {
-      const st = statusByPedidoId.get(o.id)?.status_atual;
-      return st === 'aguardando_envio_diretoria' || st === 'aguardando_confirmacao_diretoria';
-    });
-  }, [serverOrders, statusByPedidoId]);
-
-  // Pedidos confirmados pela diretoria — prontos para liberação
-  const confirmedByDiretoria = useMemo(() => {
-    return serverOrders.filter(o => {
-      const st = statusByPedidoId.get(o.id)?.status_atual;
-      return st === 'confirmado_diretoria';
-    });
-  }, [serverOrders, statusByPedidoId]);
-
-  // Track sent-at dates from confirmacao_diretoria table for display
-  const [diretoriaSentAtById, setDiretoriaSentAtById] = useState<Record<string, string>>({});
-
-  useEffect(() => {
-    if (!supabaseOps) return;
-    let cancelled = false;
-    const loadDiretoria = async () => {
-      const ids = serverOrders.map(o => o.id);
-      if (!ids.length) return;
-      const { data } = await supabaseOps
-        .from('confirmacao_diretoria')
-        .select('pedido_id, status, enviado_em')
-        .in('pedido_id', ids);
-      if (cancelled || !data) return;
-      const sentAt: Record<string, string> = {};
-      for (const r of data as any[]) {
-        const id = String(r.pedido_id);
-        if (r.enviado_em) sentAt[id] = String(r.enviado_em);
-      }
-      setDiretoriaSentAtById(sentAt);
-    };
-    void loadDiretoria();
-    return () => { cancelled = true; };
-  }, [serverOrders]);
 
   useEffect(() => {
     if (!supabaseOps) return;
@@ -200,20 +159,6 @@ const Commercial = () => {
             next[idx] = row as PedidoStatusRow;
             return next;
           });
-        },
-      )
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'confirmacao_diretoria' },
-        (payload) => {
-          const row = (payload as any)?.new as any;
-          const pedidoId = String(row?.pedido_id || '');
-          if (!pedidoId) return;
-
-          if (row?.enviado_em) {
-            const sentAt = String(row.enviado_em);
-            setDiretoriaSentAtById((prev: Record<string, string>) => ({ ...prev, [pedidoId]: sentAt }));
-          }
         },
       )
       .subscribe();
@@ -470,9 +415,9 @@ const Commercial = () => {
     }
   };
 
-  const canDecide = user?.role === 'COMERCIAL' || user?.role === 'ADMIN';
+  const canDecide = user?.role === 'LOGISTICA' || user?.role === 'ADMIN';
 
-  const canCreateSchedule = user?.role === 'COMERCIAL' || user?.role === 'ADMIN';
+  const canCreateSchedule = user?.role === 'LOGISTICA' || user?.role === 'ADMIN';
 
   const saveSchedule = () => {
     if (scheduleSelected.length === 0) return;
@@ -497,59 +442,23 @@ const Commercial = () => {
   const confirmRelease = async () => {
     if (!selectedOrderDetails) return;
 
-    // New flow: confirm pedido → set status to aguardando_envio_diretoria
     const res = await updatePedidoStatus({
       pedidoId: selectedOrderDetails.id,
       numeroPedido: selectedOrderDetails.id,
-      statusNovo: 'aguardando_envio_diretoria',
+      statusNovo: 'liberado_comercial',
       alteradoPor: user?.username || null,
-      observacao: decisionNote || 'Pedido confirmado — aguardando envio para diretoria',
+      observacao: decisionNote || 'Pedido liberado pela logística',
     });
 
     if (!res.ok) {
-      showToast('Erro ao confirmar pedido', 'error');
+      showToast('Erro ao liberar pedido', 'error');
       return;
     }
 
     // Refresh status rows
     await refreshStatusRows(serverOrders.map(o => o.id));
 
-    const username = user?.username;
-    if (supabaseOps && username) {
-      const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert([
-        {
-          pedido_id: selectedOrderDetails.id,
-          acao: 'confirmar_pedido',
-          criado_em: new Date().toISOString(),
-          criado_por: username,
-          payload: { note: decisionNote },
-        },
-      ] as any);
-      if (error) console.error('[Supabase OPS] confirmar_pedido:', error.message);
-    }
-
-    if (supabaseOps) {
-      const now = new Date().toISOString();
-      const { error } = await supabaseOps
-        .from('confirmacao_diretoria')
-        .upsert(
-          [
-            {
-              pedido_id: selectedOrderDetails.id,
-              status: 'pendente',
-              enviado_em: now,
-              enviado_por: username || null,
-            },
-          ] as any,
-          { onConflict: 'pedido_id' },
-        );
-      if (error) console.error('[Supabase OPS] confirmacao_diretoria upsert:', error.message);
-      else {
-        setDiretoriaSentAtById((prev) => ({ ...prev, [selectedOrderDetails.id]: now }));
-      }
-    }
-
-    showToast(`Pedido ${selectedOrderDetails.id} confirmado — aguardando envio para diretoria`);
+    showToast(`Pedido ${selectedOrderDetails.id} liberado para o comercial`);
     setOpenConfirm(null);
     setOpenDetail(false);
   };
@@ -579,7 +488,7 @@ const Commercial = () => {
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
           <h1 className="text-2xl font-bold font-display text-foreground">Pedidos de Venda</h1>
-          <p className="text-sm text-muted-foreground">Confirme pedidos de venda para enviar ao mapeamento</p>
+          <p className="text-sm text-muted-foreground">Libere pedidos de venda para o comercial</p>
         </div>
         {canCreateSchedule && (
           <button className={btnPrimary} onClick={() => navigate('/comercial/liberacao')}>
@@ -645,7 +554,7 @@ const Commercial = () => {
               ) : displayedOrders.length === 0 ? (
                 <tr>
                   <td colSpan={7} className="py-10 text-center text-muted-foreground font-display">
-                    Nenhum pedido aguardando confirmação encontrado.
+                    Nenhum pedido aguardando avaliação encontrado.
                   </td>
                 </tr>
               ) : (
@@ -663,7 +572,7 @@ const Commercial = () => {
                       <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? new Date(o.expiryDate).toLocaleDateString('pt-BR') : '-'}</td>
                       <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
                       <td className="py-4 px-6">
-                        <PedidoStatusBadge value={statusByPedidoId.get(o.id)?.status_atual || 'aguardando_confirmacao'} />
+                        <PedidoStatusBadge value={statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao'} />
                       </td>
                       <td className="py-4 px-6 text-right">
                         <button
@@ -706,101 +615,7 @@ const Commercial = () => {
         )}
       </div>
 
-      {/* Seção 2: Aguardando Confirmação da Diretoria */}
-      {awaitingEnvioDiretoria.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Aguardando Confirmação da Diretoria</h2>
-          <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº Pedido</th>
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Data de Envio</th>
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {awaitingEnvioDiretoria.map((o: Order) => (
-                    <tr key={o.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
-                      <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || '-'}</td>
-                      <td className="py-4 px-6">{o.representativeName || '-'}</td>
-                      <td className="py-4 px-6 font-mono-data text-muted-foreground">
-                        {diretoriaSentAtById[o.id] ? new Date(diretoriaSentAtById[o.id]).toLocaleDateString('pt-BR') : '-'}
-                      </td>
-                      <td className="py-4 px-6">
-                        <PedidoStatusBadge value={statusByPedidoId.get(o.id)?.status_atual || 'aguardando_envio_diretoria'} />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
 
-      {/* Seção 3: Confirmados pela Diretoria — Aguardando Liberação */}
-      {confirmedByDiretoria.length > 0 && (
-        <div className="space-y-3">
-          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Confirmados pela Diretoria — Aguardando Liberação</h2>
-          <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border bg-muted/30">
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Nº Pedido</th>
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                    <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
-                    <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
-                    <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border/50">
-                  {confirmedByDiretoria.map((o: Order) => (
-                    <tr key={o.id} className="hover:bg-muted/30 transition-colors">
-                      <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
-                      <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || '-'}</td>
-                      <td className="py-4 px-6">{o.representativeName || '-'}</td>
-                      <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
-                      <td className="py-4 px-6">
-                        <PedidoStatusBadge value="confirmado_diretoria" />
-                      </td>
-                      <td className="py-4 px-6 text-right">
-                        <button
-                          onClick={async () => {
-                            const res = await updatePedidoStatus({
-                              pedidoId: o.id,
-                              numeroPedido: o.id,
-                              statusNovo: 'liberado_producao',
-                              alteradoPor: user?.username || null,
-                              observacao: 'Liberado para produção pelo comercial',
-                            });
-                            if (res.ok) {
-                              await refreshStatusRows(serverOrders.map(x => x.id));
-                              showToast(`Pedido ${o.id} liberado para produção`);
-                            } else {
-                              showToast('Erro ao liberar pedido', 'error');
-                            }
-                          }}
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
-                        >
-                          <CheckCircle2 className="h-3 w-3" />
-                          Liberar p/ Produção
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </div>
-      )}
 
       <Modal open={openDetail} onClose={() => setOpenDetail(false)} title={selectedOrderDetails ? `Pedido ${selectedOrderDetails.id}` : 'Pedido'} wide>
         {!selectedOrderDetails ? (
@@ -904,7 +719,7 @@ const Commercial = () => {
                 }`}
               >
                 <CheckCircle2 className="h-4 w-4" />
-                Confirmar Pedido
+                Liberar Pedido
               </button>
             </div>
           </div>
@@ -914,11 +729,11 @@ const Commercial = () => {
       <Modal
         open={Boolean(openConfirm)}
         onClose={() => setOpenConfirm(null)}
-        title="Confirmar Pedido"
+        title="Liberar Pedido"
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Confirme o pedido para enviar para mapeamento (Logística).
+            Libere o pedido para o comercial iniciar o processo de aprovação.
           </p>
 
           <div>

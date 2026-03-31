@@ -16,7 +16,7 @@ import { PainelPedidosDetails } from '@/pages/painelPedidos/PainelPedidosDetails
 import type { UnifiedPedido } from '@/pages/painelPedidos/types';
 
 const statusButtons: StatusButton[] = pedidoStatusFlow
-  .filter((s) => ['aguardando_confirmacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
+  .filter((s) => ['aguardando_avaliacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
   .sort((a, b) => a.order - b.order)
   .map((s) => ({ value: s.value, label: s.label }));
 
@@ -159,8 +159,8 @@ const PainelPedidos = () => {
     return filtered
       .slice()
       .sort((a, b) => {
-        const sa = statusByPedidoId.get(a.id)?.status_atual || 'aguardando_confirmacao';
-        const sb = statusByPedidoId.get(b.id)?.status_atual || 'aguardando_confirmacao';
+        const sa = statusByPedidoId.get(a.id)?.status_atual || 'aguardando_avaliacao';
+        const sb = statusByPedidoId.get(b.id)?.status_atual || 'aguardando_avaliacao';
         return comparePedidoStatus(sa, sb) || a.numero.localeCompare(b.numero);
       });
   }, [filtered, statusByPedidoId, sortState, sortItems]);

@@ -38,7 +38,7 @@ export function PainelPedidosList({
   return (
     <div className="space-y-3">
       {pedidos.map((p) => {
-        const st: PedidoStatusValue = statusByPedidoId.get(p.id)?.status_atual || 'aguardando_confirmacao';
+        const st: PedidoStatusValue = statusByPedidoId.get(p.id)?.status_atual || 'aguardando_avaliacao';
         const selected = selectedId === p.id;
         return (
           <button

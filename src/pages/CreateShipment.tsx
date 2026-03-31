@@ -219,7 +219,6 @@ const CreateShipment = () => {
     'ferragem_recebida',
     'em_producao',
     'producao_finalizada',
-    'aguardando_liberacao',
   ];
 
   const [directPedidos, setDirectPedidos] = useState<Order[]>([]);
@@ -523,11 +522,9 @@ const CreateShipment = () => {
         showToast(`Representante ${repName} sem telefone cadastrado.`, 'error');
       }
 
-      // Atualizar status de cada pedido conforme regra:
-      // com boleto → faturado | sem boleto → aguardando_pagamento
+      // Atualizar status de cada pedido para faturado
       for (const order of repOrders) {
-        const hasBoleto = Boolean(orderAttachments[order.id]?.boleto?.url);
-        const novoStatus = hasBoleto ? 'faturado' : 'aguardando_pagamento';
+        const novoStatus = 'faturado';
         void updatePedidoStatus({
           pedidoId: order.id,
           numeroPedido: order.id,

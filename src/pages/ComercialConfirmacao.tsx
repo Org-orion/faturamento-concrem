@@ -212,7 +212,7 @@ const ComercialConfirmacao = () => {
         updatePedidoStatus({
           pedidoId: id,
           numeroPedido: id,
-          statusNovo: 'confirmado_diretoria',
+          statusNovo: 'confirmado_gerencia',
           alteradoPor: username,
           observacao: 'Confirmado pelo comercial',
         }),
@@ -302,7 +302,7 @@ const ComercialConfirmacao = () => {
       };
     }
 
-    // Diretoria Janderson — larguras exatas, obs individual em vermelho negrito
+    // Gerência Janderson — larguras exatas, obs individual em vermelho negrito
     const columns: BrandedColumn[] = [
       { header: 'Mês de Referência', key: 'mes', width: 27.14 },
       { header: 'Nº Pedido', key: 'pedido', width: 13.29 },
@@ -317,7 +317,7 @@ const ComercialConfirmacao = () => {
     }));
     const totalRow = { mes: '', pedido: 'TOTAL', cliente: `${toExport.length} pedido(s)`, obs: '' };
     return {
-      sheetName: 'Diretoria Janderson',
+      sheetName: 'Gerência Janderson',
       columns,
       rows,
       totalRow,
@@ -341,7 +341,7 @@ const ComercialConfirmacao = () => {
         } — Validade: ${formatDateBR(o.expiryDate)}`,
       )
       .join('\n');
-    const body = `Prezados,\n\nSegue a lista de pedidos aguardando confirmação da diretoria:\n\n${orderLines}\n\nEnviado por: ${user?.username || '-'}\nData: ${formatDateTimeBR(now)}`;
+    const body = `Prezados,\n\nSegue a lista de pedidos aguardando confirmação da gerência:\n\n${orderLines}\n\nEnviado por: ${user?.username || '-'}\nData: ${formatDateTimeBR(now)}`;
     setEmailSubject(`Pedidos Aguardando Confirmação — ${dateStr}`);
     setEmailBody(body);
     setSheetType('engenharia');
@@ -367,7 +367,7 @@ const ComercialConfirmacao = () => {
       const excelBase64 = await createBrandedBase64(opts);
       const filename = sheetType === 'engenharia'
         ? `planilha-engenharia-${sanitizeFilename(mesReferencia)}.xlsx`
-        : `planilha-diretoria-janderson-${sanitizeFilename(mesReferencia)}.xlsx`;
+        : `planilha-gerencia-janderson-${sanitizeFilename(mesReferencia)}.xlsx`;
 
       const { Resend } = await import('resend');
       const resend = new Resend(apiKey);
@@ -399,7 +399,7 @@ const ComercialConfirmacao = () => {
       const buffer = await createBrandedWorkbook(opts);
       const filename = sheetType === 'engenharia'
         ? `planilha-engenharia-${sanitizeFilename(mesReferencia)}.xlsx`
-        : `planilha-diretoria-janderson-${sanitizeFilename(mesReferencia)}.xlsx`;
+        : `planilha-gerencia-janderson-${sanitizeFilename(mesReferencia)}.xlsx`;
       downloadBuffer(buffer, filename);
     } catch (err: any) {
       showToast(`Erro ao gerar planilha: ${err?.message || 'desconhecido'}`, 'error');
@@ -420,13 +420,13 @@ const ComercialConfirmacao = () => {
             </button>
             <h1 className="text-2xl font-bold font-display text-foreground">Aguardando Confirmação</h1>
           </div>
-          <p className="text-sm text-muted-foreground ml-11">Pedidos aguardando avaliação da diretoria</p>
+          <p className="text-sm text-muted-foreground ml-11">Pedidos aguardando avaliação da gerência</p>
         </div>
 
         <div className="flex items-center gap-2 flex-wrap justify-end">
           <button onClick={openEmailModal} disabled={selected.length === 0} className={btnSecondary}>
             <Mail className="h-4 w-4" />
-            Enviar para Diretoria
+            Enviar para Gerência
           </button>
 
           <button className={btnPrimary} disabled={selected.length === 0} onClick={() => void confirmSelected()}>
@@ -515,7 +515,7 @@ const ComercialConfirmacao = () => {
           <div className="bg-card border border-border rounded-xl shadow-xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
             {/* Modal header */}
             <div className="flex items-center justify-between p-6 border-b border-border">
-              <h2 className="text-lg font-bold font-display text-foreground">Enviar para Diretoria</h2>
+              <h2 className="text-lg font-bold font-display text-foreground">Enviar para Gerência</h2>
               <button onClick={() => setShowEmailModal(false)} className="p-2 hover:bg-muted rounded-full transition-colors">
                 <X className="h-5 w-5 text-muted-foreground" />
               </button>
@@ -556,7 +556,7 @@ const ComercialConfirmacao = () => {
                 <label className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Tipo de planilha *</label>
                 <select className={inputClass} value={sheetType} onChange={(e) => setSheetType(e.target.value as SheetType)}>
                   <option value="engenharia">Engenharia</option>
-                  <option value="diretoria">Diretoria Janderson</option>
+                  <option value="diretoria">Gerência Janderson</option>
                 </select>
               </div>
 
@@ -607,7 +607,7 @@ const ComercialConfirmacao = () => {
               <div className="flex items-center gap-2 text-xs text-muted-foreground bg-muted/40 rounded-lg px-4 py-3">
                 <Download className="h-4 w-4 shrink-0" />
                 <span>
-                  Planilha <strong>{sheetType === 'engenharia' ? 'Engenharia' : 'Diretoria Janderson'}</strong> com{' '}
+                  Planilha <strong>{sheetType === 'engenharia' ? 'Engenharia' : 'Gerência Janderson'}</strong> com{' '}
                   {selected.length} pedido(s) será enviada como anexo.
                 </span>
               </div>

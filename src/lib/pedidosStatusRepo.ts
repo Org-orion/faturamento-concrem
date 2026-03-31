@@ -58,7 +58,7 @@ export async function ensurePedidoStatusInitialized(pedidoId: string, numeroPedi
   const existing = await getPedidoStatus(pedidoId);
   if (existing) return;
   const now = new Date().toISOString();
-  const statusNovo: PedidoStatusValue = 'aguardando_confirmacao';
+  const statusNovo: PedidoStatusValue = 'aguardando_avaliacao';
 
   let upsertErr: { message: string } | null = null;
   try {
@@ -135,7 +135,7 @@ export async function ensurePedidosStatusInitializedBatch(
   if (!missing.length) return;
 
   const now = new Date().toISOString();
-  const statusNovo: PedidoStatusValue = 'aguardando_confirmacao';
+  const statusNovo: PedidoStatusValue = 'aguardando_avaliacao';
 
   const chunk = <T,>(arr: T[], size: number): T[][] => {
     const out: T[][] = [];
@@ -375,7 +375,8 @@ export async function syncEntregaStatusFromOps(params: {
   const delivered = rows.filter((r) => String(r.status).toLowerCase() === 'entregue').length;
   if (delivered === 0) return { ok: true, target: null };
 
-  const target: PedidoStatusValue = delivered === total ? 'entregue' : 'parcialmente_entregue';
+  if (delivered < total) return { ok: true, target: null };
+  const target: PedidoStatusValue = 'entregue';
   const res = await setPedidoStatusWithOptionalNotify({
     pedidoId: params.pedidoId,
     numeroPedido: params.numeroPedido,

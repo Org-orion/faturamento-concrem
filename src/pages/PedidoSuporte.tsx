@@ -7,7 +7,8 @@ import { btnPrimary, formatCurrency, getOrderTotal, inputClass } from '@/compone
 import { CheckCircle2, Eye, Plus } from 'lucide-react';
 import { StatusBadge } from '@/components/shared';
 import { supabase, supabaseOps, supabasePedidos } from '@/lib/supabase';
-import { Order, SupportOrder } from '@/types';
+import { Order, PedidoStatusRow, SupportOrder } from '@/types';
+import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 import { useDebounce } from '@/hooks/useDebounce';
 import { tableColumns, suporteOr } from '@/contexts/AppContext';
 import { rowToOrder } from '@/lib/pedidoMapper';
@@ -54,6 +55,11 @@ const PedidoSuporte = () => {
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<SupportOrder | Order | null>(null);
+
+  // Track ops status rows to filter out already-liberated orders
+  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const statusByPedidoId = useMemo(() => new Map(statusRows.map(r => [r.pedido_id, r] as const)), [statusRows]);
+  const [liberatedIds, setLiberatedIds] = useState<Set<string>>(new Set());
 
   const debouncedFilterPedido = useDebounce(filterPedido, 400);
   const debouncedFilterConf = useDebounce(filterConf, 400);
@@ -122,12 +128,24 @@ const PedidoSuporte = () => {
     { key: 'status', getter: (o: SupportOrder) => o.status || '', match: 'exact' as const },
   ], []);
 
-  // Data pipeline: serverOrders → column filters → quick filter → sort
+  // Load ops status rows when serverOrders change
+  useEffect(() => {
+    const ids = serverOrders.map(o => o.id);
+    if (!ids.length) return;
+    void listPedidosStatusByPedidoIds(ids).then(setStatusRows);
+  }, [serverOrders]);
+
+  // Data pipeline: serverOrders (only aguardando_avaliacao) → column filters → quick filter → sort
   const displayedOrders = useMemo(() => {
-    const colFiltered = colFilter.filterItems(serverOrders, colDefs);
+    const awaiting = serverOrders.filter(o => {
+      if (liberatedIds.has(o.id)) return false;
+      const st = statusByPedidoId.get(o.id)?.status_atual;
+      return !st || st === 'aguardando_avaliacao';
+    });
+    const colFiltered = colFilter.filterItems(awaiting, colDefs);
     const filtered = filterItems(colFiltered, textGetters);
     return sortItems(filtered, sortGetters);
-  }, [serverOrders, colFilter, colDefs, filterItems, textGetters, sortItems, sortGetters]);
+  }, [serverOrders, statusByPedidoId, liberatedIds, colFilter, colDefs, filterItems, textGetters, sortItems, sortGetters]);
 
   useEffect(() => {
     if (!supabaseOps) return;
@@ -337,8 +355,8 @@ const PedidoSuporte = () => {
     }
   };
 
-  const canDecide = user?.role === 'COMERCIAL' || user?.role === 'ADMIN';
-  const canCreateSchedule = user?.role === 'COMERCIAL' || user?.role === 'ADMIN';
+  const canDecide = user?.role === 'LOGISTICA' || user?.role === 'ADMIN';
+  const canCreateSchedule = user?.role === 'LOGISTICA' || user?.role === 'ADMIN';
 
   const saveSchedule = () => {
     if (scheduleSelected.length === 0) return;
@@ -359,15 +377,24 @@ const PedidoSuporte = () => {
     showToast('Observações atualizadas');
   };
 
-  const confirmRelease = () => {
+  const confirmRelease = async () => {
     if (!selectedOrderDetails) return;
-    if (isSupport(selectedOrderDetails)) decideSupportOrderCommercial(selectedOrderDetails.id, 'Liberado p/ Produção', decisionNote || undefined);
-    else decideOrderCommercial(selectedOrderDetails.id, 'Liberado p/ Produção', decisionNote || undefined);
-    
-    setSelectedOrderDetails(prev => prev ? { ...prev, status: 'Liberado p/ Produção', commercialDecisionNote: decisionNote } : null);
-    setServerOrders(prev => prev.map(o => o.id === selectedOrderDetails.id ? { ...o, status: 'Liberado p/ Produção' } as SupportOrder : o));
 
-    showToast(`Pedido ${selectedOrderDetails.id} liberado para produção`);
+    const res = await updatePedidoStatus({
+      pedidoId: selectedOrderDetails.id,
+      numeroPedido: selectedOrderDetails.id,
+      statusNovo: 'liberado_comercial',
+      alteradoPor: user?.username || null,
+      observacao: decisionNote || 'Pedido suporte liberado pela logística',
+    });
+
+    if (!res.ok) {
+      showToast('Erro ao liberar pedido', 'error');
+      return;
+    }
+
+    setLiberatedIds(prev => { const next = new Set(prev); next.add(selectedOrderDetails.id); return next; });
+    showToast(`Pedido ${selectedOrderDetails.id} liberado para o comercial`);
     setOpenConfirm(null);
     setOpenDetail(false);
   };
@@ -632,7 +659,7 @@ const PedidoSuporte = () => {
                 }`}
               >
                 <CheckCircle2 className="h-4 w-4" />
-                Liberar p/ Produção
+                Liberar Pedido
               </button>
             </div>
           </div>
@@ -646,7 +673,7 @@ const PedidoSuporte = () => {
       >
         <div className="space-y-4">
           <p className="text-sm text-muted-foreground">
-            Confirme a liberação do pedido para produção.
+            Libere o pedido suporte para o comercial iniciar o processo.
           </p>
 
           <div>
@@ -666,7 +693,7 @@ const PedidoSuporte = () => {
             >
               Cancelar
             </button>
-            <button onClick={confirmRelease} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-semibold">
+            <button onClick={() => void confirmRelease()} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-semibold">
               Liberar
             </button>
           </div>

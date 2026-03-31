@@ -92,10 +92,10 @@ export type OrderStatus =
   | 'Cancelado';
 
 export type PedidoStatusValue =
-  | 'aguardando_confirmacao'
-  | 'aguardando_envio_diretoria'
-  | 'aguardando_confirmacao_diretoria'
-  | 'confirmado_diretoria'
+  | 'aguardando_avaliacao'
+  | 'liberado_comercial'
+  | 'aguardando_gerencia'
+  | 'confirmado_gerencia'
   | 'liberado_producao'
   | 'aguardando_mapeamento'
   | 'mapeamento_andamento'
@@ -104,12 +104,9 @@ export type PedidoStatusValue =
   | 'ferragem_recebida'
   | 'em_producao'
   | 'producao_finalizada'
-  | 'aguardando_liberacao'
   | 'faturado'
   | 'em_entrega'
-  | 'parcialmente_entregue'
   | 'entregue'
-  | 'aguardando_pagamento'
   | 'finalizado';
 
 export type PedidoStatusKind = 'manual' | 'automatico';

@@ -26,7 +26,7 @@ export function AtualizacaoStatusList({
           <div className="bg-card rounded-xl border border-border p-10 text-center text-muted-foreground">Nenhum pedido confirmado encontrado.</div>
         ) : (
           pedidos.map((p) => {
-            const st: PedidoStatusValue = statusByPedidoId.get(p.id)?.status_atual || 'aguardando_confirmacao';
+            const st: PedidoStatusValue = statusByPedidoId.get(p.id)?.status_atual || 'aguardando_avaliacao';
             const sel = selectedId === p.id;
             return (
               <button

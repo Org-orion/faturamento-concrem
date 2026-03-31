@@ -72,8 +72,8 @@ export function AtualizacaoStatusDetails({
           <div className="rounded-xl border border-border bg-card p-4">
             <div className="text-xs font-bold uppercase tracking-tight text-muted-foreground">Datas do Pedido</div>
             <div className="mt-3 space-y-2 text-sm">
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Confirmação</span><span className="font-mono-data">{fmtDateTime(stageDates.dataAprovacao)}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Diretoria</span><span className="font-mono-data">{fmtDateTime(stageDates.dataDiretoria)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Liberado Comercial</span><span className="font-mono-data">{fmtDateTime(stageDates.dataLiberacaoComercial)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Gerência</span><span className="font-mono-data">{fmtDateTime(stageDates.dataGerencia)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Liberação p/ Produção</span><span className="font-mono-data">{fmtDateTime(stageDates.dataLiberacaoProducao)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Mapeamento</span><span className="font-mono-data">{fmtDateTime(stageDates.dataMapeamento)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Ferragem</span><span className="font-mono-data">{fmtDateTime(stageDates.dataFerragem)}</span></div>
