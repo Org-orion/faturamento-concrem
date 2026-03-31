@@ -87,28 +87,18 @@ const ComercialLiberacao = () => {
   // Candidates for Section 3 (the "add to load" bucket)
   // Venda: confirmado_gerencia status; Suporte: liberado_comercial status
   const s3Candidates = useMemo(() => {
-    const vendaCandidates: UnifiedOrder[] = orders
+    return orders
       .filter(o => {
         if (liberatedToProducaoIds.has(o.id)) return false;
         if (loadIds.includes(o.id)) return false;
         const st = statusByPedidoId.get(o.id)?.status_atual;
         return st === 'confirmado_gerencia';
       })
-      .map(toUnified);
-
-    const suporteCandidates: UnifiedOrder[] = supportOrders
-      .filter(o => {
-        if (liberatedToProducaoIds.has(o.id)) return false;
-        if (loadIds.includes(o.id)) return false;
-        const st = statusByPedidoId.get(o.id)?.status_atual;
-        return st === 'liberado_comercial';
-      })
-      .map(toUnifiedSuport);
-
-    return [...vendaCandidates, ...suporteCandidates].sort((a, b) =>
-      (a.expiryDate || '').localeCompare(b.expiryDate || '') || a.id.localeCompare(b.id)
-    );
-  }, [orders, supportOrders, statusByPedidoId, loadIds, liberatedToProducaoIds]);
+      .map(toUnified)
+      .sort((a, b) =>
+        (a.expiryDate || '').localeCompare(b.expiryDate || '') || a.id.localeCompare(b.id)
+      );
+  }, [orders, statusByPedidoId, loadIds, liberatedToProducaoIds]);
 
   const s3LoadOrders = useMemo(() => {
     const vendaMap = new Map(orders.map(o => [o.id, toUnified(o)] as const));

@@ -21,6 +21,7 @@ const PedidoSuportePage = lazy(() => import('@/pages/PedidoSuporte'));
 const PedidoSuporteLiberacaoPage = lazy(() => import('@/pages/PedidoSuporteLiberacao'));
 const ProducaoPage = lazy(() => import('@/pages/Producao'));
 const PainelPedidosPage = lazy(() => import('@/pages/PainelPedidos'));
+const PedidosPage = lazy(() => import('@/pages/Pedidos'));
 const AtualizacaoStatusPage = lazy(() => import('@/pages/AtualizacaoStatus'));
 const UsersPage = lazy(() => import('@/pages/Users'));
 const AccessDenied = lazy(() => import('@/pages/AccessDenied'));
@@ -57,6 +58,7 @@ const AppRoutes = () => {
         <Route path="/pedido-suporte/liberacao" element={<ProtectedRoute><PedidoSuporteLiberacaoPage /></ProtectedRoute>} />
         <Route path="/pedido-suporte" element={<ProtectedRoute><PedidoSuportePage /></ProtectedRoute>} />
         <Route path="/producao" element={<ProtectedRoute><ProducaoPage /></ProtectedRoute>} />
+        <Route path="/pedidos" element={<ProtectedRoute><PedidosPage /></ProtectedRoute>} />
         <Route path="/painel-pedidos" element={<ProtectedRoute><PainelPedidosPage /></ProtectedRoute>} />
         <Route path="/atualizacao-status" element={<ProtectedRoute><AtualizacaoStatusPage /></ProtectedRoute>} />
         <Route path="/carregamento" element={<ProtectedRoute><LoadsPage /></ProtectedRoute>} />

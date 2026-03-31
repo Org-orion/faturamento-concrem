@@ -13,7 +13,8 @@ export type AppRouteKey =
   | 'programacao'
   | 'financeiro'
   | 'painel-pedidos'
-  | 'atualizacao-status';
+  | 'atualizacao-status'
+  | 'pedidos';
 
 export type MenuItem =
   | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' }
@@ -49,12 +50,14 @@ export const routeAccess: Record<AppRouteKey, UserRole[]> = {
   financeiro: ['ADMIN', 'FATURAMENTO'],
   'painel-pedidos': ['ADMIN', 'FATURAMENTO', 'COMERCIAL', 'PRODUCAO'],
   'atualizacao-status': ['ADMIN', 'LOGISTICA'],
+  pedidos: ['ADMIN', 'FATURAMENTO', 'COMERCIAL', 'PRODUCAO', 'LOGISTICA'],
 };
 
 export function canAccessRoute(role: UserRole, pathname: string): boolean {
   const path = pathname.split('?')[0].split('#')[0];
 
   if (path === '/' || path === '/dashboard') return routeAccess.dashboard.includes(role);
+  if (path === '/pedidos') return routeAccess.pedidos.includes(role);
   if (path === '/representantes') return routeAccess.representantes.includes(role);
   if (path === '/motoristas') return routeAccess.motoristas.includes(role);
   if (path === '/usuarios') return routeAccess.usuarios.includes(role);
@@ -77,21 +80,9 @@ export function getMenuForRole(role: UserRole): MenuItem[] {
   if (role === 'ADMIN') {
     return [
       { type: 'link', label: 'Dashboard', href: '/', icon: 'dashboard' },
-      {
-        type: 'group',
-        label: 'Operacional',
-        icon: 'box',
-        items: [
-          { label: 'Pedidos de Venda', href: '/comercial' },
-          { label: 'Atualização de Status', href: '/atualizacao-status' },
-          { label: 'Liberação de Pedidos', href: '/comercial/liberacao' },
-          { label: 'Programação de Carregamento', href: '/carregamento' },
-          { label: 'Financeiro', href: '/financeiro' },
-          { label: 'Painel de Pedidos', href: '/painel-pedidos' },
-          { label: 'Pedido Suporte', href: '/pedido-suporte' },
-          { label: 'Produção', href: '/producao' },
-        ],
-      },
+      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
+      { type: 'link', label: 'Programação de Carregamento', href: '/carregamento', icon: 'truck' },
+      { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
       {
         type: 'group',
         label: 'Cadastro',
@@ -107,15 +98,9 @@ export function getMenuForRole(role: UserRole): MenuItem[] {
 
   if (role === 'FATURAMENTO') {
     return [
-      {
-        type: 'group',
-        label: 'Operacional',
-        icon: 'box',
-        items: [
-          { label: 'Programação de Carregamento', href: '/carregamento' },
-          { label: 'Financeiro', href: '/financeiro' },
-        ],
-      },
+      { type: 'link', label: 'Programação de Carregamento', href: '/carregamento', icon: 'truck' },
+      { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
+      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
       {
         type: 'group',
         label: 'Cadastro',
@@ -130,44 +115,20 @@ export function getMenuForRole(role: UserRole): MenuItem[] {
 
   if (role === 'PRODUCAO') {
     return [
-      {
-        type: 'group',
-        label: 'Operacional',
-        icon: 'box',
-        items: [
-          { label: 'Programação de Carregamento', href: '/carregamento' },
-          { label: 'Painel de Pedidos', href: '/painel-pedidos' },
-        ],
-      },
+      { type: 'link', label: 'Programação de Carregamento', href: '/carregamento', icon: 'truck' },
+      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
     ];
   }
 
   if (role === 'LOGISTICA') {
     return [
-      {
-        type: 'group',
-        label: 'Operacional',
-        icon: 'box',
-        items: [
-          { label: 'Pedidos de Venda', href: '/comercial' },
-          { label: 'Atualização de Status', href: '/atualizacao-status' },
-        ],
-      },
+      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
     ];
   }
 
   // COMERCIAL
   return [
-    {
-      type: 'group',
-      label: 'Operacional',
-      icon: 'box',
-      items: [
-        { label: 'Pedidos de Venda', href: '/comercial' },
-        { label: 'Liberação de Pedidos', href: '/comercial/liberacao' },
-        { label: 'Painel de Pedidos', href: '/painel-pedidos' },
-      ],
-    },
+    { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
     {
       type: 'group',
       label: 'Cadastro',
@@ -180,8 +141,8 @@ export function getMenuForRole(role: UserRole): MenuItem[] {
 export function getHomePathForRole(role: UserRole): string {
   if (role === 'ADMIN') return '/';
   if (role === 'FATURAMENTO') return '/carregamento';
-  if (role === 'COMERCIAL') return '/comercial';
-  if (role === 'LOGISTICA') return '/atualizacao-status';
+  if (role === 'COMERCIAL') return '/pedidos';
+  if (role === 'LOGISTICA') return '/pedidos';
   if (role === 'PRODUCAO') return '/carregamento';
-  return '/comercial';
+  return '/pedidos';
 }
