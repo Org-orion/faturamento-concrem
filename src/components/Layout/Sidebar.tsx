@@ -23,7 +23,7 @@ import { Link, useLocation } from 'react-router-dom';
 import logo from '@/assets/logo-sidebar.png';
 import logoMini from '@/assets/logo-mini.png';
 import { useApp } from '@/contexts/AppContext';
-import { getMenuForRole, MenuItem, UserRole } from '@/utils/access';
+import { getMenuForRole, MenuItem, UserRole, roleLabel } from '@/utils/access';
 import { LucideIcon } from 'lucide-react';
 
 const iconMap = {
@@ -85,7 +85,7 @@ export const Sidebar: React.FC = () => {
                     "w-full flex items-center justify-center h-10 rounded-md transition-all duration-150",
                     hasActiveChild
                       ? "bg-white/15 text-white"
-                      : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-white/5"
+                      : "text-white/70 hover:text-white hover:bg-white/5"
                   )}
                 >
                   <item.icon className="h-[18px] w-[18px] shrink-0" />
@@ -127,8 +127,8 @@ export const Sidebar: React.FC = () => {
             className={cn(
               "w-full flex items-center justify-between h-10 px-3 rounded-md transition-all duration-150 group",
               hasActiveChild && !isOpen
-                ? "text-primary"
-                : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-white/5"
+                ? "text-white"
+                : "text-white/70 hover:text-white hover:bg-white/5"
             )}
           >
             <div className="flex items-center gap-3">
@@ -148,7 +148,7 @@ export const Sidebar: React.FC = () => {
               isOpen ? "max-h-[500px] opacity-100 mt-0.5" : "max-h-0 opacity-0"
             )}
           >
-            <div className="ml-3 pl-3 border-l border-white/8 space-y-0.5">
+            <div className="ml-3 pl-3 space-y-0.5">
               {item.children.map((child) => {
                 const active = isActive(child.href);
                 return (
@@ -158,7 +158,7 @@ export const Sidebar: React.FC = () => {
                         "w-full text-left h-9 px-3 rounded-md text-sm transition-all duration-150",
                         active
                           ? "text-white font-semibold bg-white/15"
-                          : "text-sidebar-foreground/55 hover:text-sidebar-foreground hover:bg-white/5 font-normal"
+                          : "text-white/70 hover:text-white hover:bg-white/5 font-normal"
                       )}
                     >
                       <span className="truncate font-sans">{child.title}</span>
@@ -181,8 +181,8 @@ export const Sidebar: React.FC = () => {
             "w-full flex items-center h-10 rounded-md transition-all duration-150",
             isCollapsed ? "justify-center px-0" : "gap-3 px-3",
             active
-              ? "bg-white/15 text-white font-semibold border-l-2 border-white pl-[10px]"
-              : "text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-white/5 font-normal border-l-2 border-transparent pl-[10px]"
+              ? "bg-white/15 text-white font-semibold pl-3"
+              : "text-white/70 hover:text-white hover:bg-white/5 font-normal pl-3"
           )}
         >
           <item.icon className={cn("shrink-0", isCollapsed ? "h-[18px] w-[18px]" : "h-[17px] w-[17px]")} />
@@ -271,11 +271,11 @@ export const Sidebar: React.FC = () => {
             </div>
             {!isCollapsed && (
               <div className="min-w-0">
-                <p className="text-xs font-semibold text-sidebar-foreground/90 truncate font-display">
+                <p className="text-xs font-semibold text-white truncate font-display">
                   {user?.name || 'Usuário'}
                 </p>
-                <p className="text-[10px] text-sidebar-foreground/40 truncate font-mono-data">
-                  {user?.username || 'admin'}
+                <p className="text-[10px] text-white/50 truncate font-sans uppercase tracking-wide">
+                  {user?.role ? roleLabel[user.role as UserRole] : 'ADMIN'}
                 </p>
               </div>
             )}

@@ -81,7 +81,7 @@ export function getMenuForRole(role: UserRole): MenuItem[] {
     return [
       { type: 'link', label: 'Dashboard', href: '/', icon: 'dashboard' },
       { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
-      { type: 'link', label: 'Programação de Carregamento', href: '/carregamento', icon: 'truck' },
+      { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
       { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
       {
         type: 'group',
@@ -98,7 +98,7 @@ export function getMenuForRole(role: UserRole): MenuItem[] {
 
   if (role === 'FATURAMENTO') {
     return [
-      { type: 'link', label: 'Programação de Carregamento', href: '/carregamento', icon: 'truck' },
+      { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
       { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
       { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
       {
@@ -115,7 +115,7 @@ export function getMenuForRole(role: UserRole): MenuItem[] {
 
   if (role === 'PRODUCAO') {
     return [
-      { type: 'link', label: 'Programação de Carregamento', href: '/carregamento', icon: 'truck' },
+      { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
       { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
     ];
   }
