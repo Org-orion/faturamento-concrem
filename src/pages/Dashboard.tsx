@@ -9,6 +9,7 @@ import { SortableHeader } from '@/components/table/SortableHeader';
 import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import type { Order } from '@/types';
+import { fmtDate } from '@/lib/dateUtils';
 
 const AnimatedCounter = ({ value, prefix = '', suffix = '' }: { value: number; prefix?: string; suffix?: string }) => {
   const [display, setDisplay] = useState(0);
@@ -244,7 +245,7 @@ const Dashboard = () => {
                 <tr key={o.id} className="border-b border-border/50 hover:bg-muted transition-colors">
                   <td className="py-4 px-4 font-medium text-foreground">{o.id}</td>
                   <td className="py-4 px-4 text-foreground">{o.representativeName || '-'}</td>
-                  <td className="py-4 px-4 text-muted-foreground">{new Date(o.date).toLocaleDateString('pt-BR')}</td>
+                  <td className="py-4 px-4 text-muted-foreground">{fmtDate(o.date)}</td>
                   <td className="py-4 px-4 text-right font-semibold text-foreground">{formatCurrency(getOrderTotal(o))}</td>
                   <td className="py-4 px-4"><StatusBadge status={o.status} colorMap={statusColors} /></td>
                 </tr>

@@ -18,6 +18,7 @@ import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, Fil
 import { cn } from '@/lib/utils';
 import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas } from '@/lib/opsRepo';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164 } from '@/lib/pedidosStatusRepo';
+import { todayBR, fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText, sendEvolutionMedia } from '@/lib/evolutionApi';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
@@ -47,8 +48,8 @@ const CreateShipment = () => {
   type ShipmentStatus = 'Aguardando Despacho' | 'Despachado' | 'Em Rota' | 'Entregue' | 'Cancelado';
   const [shipmentStatus, setShipmentStatus] = useState<ShipmentStatus>('Aguardando Despacho');
   const [freightValue, setFreightValue] = useState(0);
-  const [shipmentDate, setShipmentStatusDate] = useState(new Date().toISOString().split('T')[0]);
-  const [previsaoEntregaDate, setPrevisaoEntregaDate] = useState(new Date().toISOString().split('T')[0]);
+  const [shipmentDate, setShipmentStatusDate] = useState(todayBR());
+  const [previsaoEntregaDate, setPrevisaoEntregaDate] = useState(todayBR());
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [deliveredOrderIds, setDeliveredOrderIds] = useState<string[]>([]);
 
@@ -153,7 +154,7 @@ const CreateShipment = () => {
         setShipmentStatus(loadToEdit.shipmentStatus);
         setSelectedOrderIds(loadToEdit.orderIds);
         // freightValue será recalculado automaticamente pelo useEffect de soma
-        setShipmentStatusDate(loadToEdit.plannedDate || new Date().toISOString().split('T')[0]);
+        setShipmentStatusDate(loadToEdit.plannedDate || todayBR());
       } else {
         showToast('Carregamento não encontrado.', 'error');
         navigate('/carregamento');
@@ -433,7 +434,7 @@ const CreateShipment = () => {
       ? `<img src="${logoBase64}" />`
       : `<span style="font-weight:900;font-size:20px;letter-spacing:2px;">CONCREM</span>`;
 
-    const dateStr = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+    const dateStr = fmtDate(new Date().toISOString());
 
     const formHtml = `
 <style>
@@ -687,7 +688,7 @@ const CreateShipment = () => {
     const dataEmbarque = `${ad}/${am}/${ay}`;
     const [py, pm, pd] = previsaoEntregaDate.split('-');
     const dataPrevisaoEntrega = `${pd}/${pm}/${py}`;
-    const hora = new Date().getHours();
+    const hora = currentHourBR();
     const saudacao = hora < 12 ? 'Bom dia!' : hora < 18 ? 'Boa tarde!' : 'Boa noite!';
 
     // Agrupar pedidos por representante

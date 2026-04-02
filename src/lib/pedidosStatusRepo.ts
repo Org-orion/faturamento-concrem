@@ -1,4 +1,5 @@
 import { supabaseOps } from '@/lib/supabase';
+import { fmtDateTime } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { canMoveToStatus, getPedidoStatusDef } from '@/lib/pedidoStatusFlow';
 import type { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
@@ -416,7 +417,7 @@ export function formatStatusWhatsappMessage(params: {
 }): string {
   const statusAnteriorLabel = params.statusAnterior ? getPedidoStatusDef(params.statusAnterior).label : '-';
   const statusNovoLabel = getPedidoStatusDef(params.statusNovo).label;
-  const when = new Date(params.dataHoraIso).toLocaleString('pt-BR');
+  const when = fmtDateTime(params.dataHoraIso);
 
   const lines = [
     `Olá! O pedido *${params.numeroPedido}* do cliente *${params.clienteNome}* teve seu status atualizado.`,

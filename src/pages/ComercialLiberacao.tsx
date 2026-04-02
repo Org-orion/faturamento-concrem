@@ -17,6 +17,7 @@ import { FilterConfiguratorDialog } from '@/components/filters/FilterConfigurato
 
 
 import { updatePedidoStatus, normalizePhoneToE164 } from '@/lib/pedidosStatusRepo';
+import { fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { findRepresentanteContato } from '@/lib/opsRepo';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -27,7 +28,7 @@ import type { ColDef } from '@/hooks/useColumnFilters';
 
 const formatDateBR = (iso?: string) => {
   if (!iso) return '-';
-  return new Date(iso).toLocaleDateString('pt-BR');
+  return fmtDate(iso);
 };
 
 type UnifiedOrder = { id: string; kind: 'VENDA' | 'SUPORTE'; clientCode?: string; clientName?: string; representativeName?: string; clientCity?: string; clientUF?: string; expiryDate?: string; totalPedidoVenda?: number; previsaoCarregamento?: string; grupoCliente?: string };
@@ -346,7 +347,7 @@ const ComercialLiberacao = () => {
       if (!phoneE164) continue;
 
       const repName = orders[0].representativeName || '-';
-      const hora = new Date().getHours();
+      const hora = currentHourBR();
       const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
       let msg = `${saudacao}, ${repName}!\n\n`;
       msg += `Os seguintes pedidos foram *liberados para produção*:\n\n`;

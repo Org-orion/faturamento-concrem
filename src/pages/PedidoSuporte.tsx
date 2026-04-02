@@ -9,6 +9,7 @@ import { StatusBadge } from '@/components/shared';
 import { supabase, supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { Order, PedidoStatusRow, SupportOrder } from '@/types';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { tableColumns, suporteOr } from '@/contexts/AppContext';
 import { rowToOrder } from '@/lib/pedidoMapper';
@@ -66,7 +67,7 @@ const PedidoSuporte = () => {
   const [tempNotes, setTempNotes] = useState('');
 
   const [openSchedule, setOpenSchedule] = useState(false);
-  const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split('T')[0]);
+  const [scheduleDate, setScheduleDate] = useState(todayBR());
   const [scheduleObs, setScheduleObs] = useState('');
   const [scheduleSelected, setScheduleSelected] = useState<string[]>([]);
 
@@ -252,7 +253,7 @@ const PedidoSuporte = () => {
     }
 
     const awaiting = list.filter((o) => o.status === 'Aguardando Avaliação');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayBR();
     const releasedToday = list.filter((o) => {
       const last = (o.history || []).slice(-1)[0];
       return o.status === 'Liberado p/ Produção' && last?.action === 'Liberou pedido para produção' && (last.at || '').slice(0, 10) === today;
@@ -323,7 +324,7 @@ const PedidoSuporte = () => {
     setOpenSchedule(false);
     setScheduleObs('');
     setScheduleSelected([]);
-    setScheduleDate(new Date().toISOString().split('T')[0]);
+    setScheduleDate(todayBR());
   };
 
   const handleSaveNotes = () => {
@@ -479,8 +480,8 @@ const PedidoSuporte = () => {
                         </span>
                       </td>
                       <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
-                      <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? new Date(o.date).toLocaleDateString('pt-BR') : '-'}</td>
-                      <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? new Date(o.expiryDate).toLocaleDateString('pt-BR') : '-'}</td>
+                      <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? fmtDate(o.date) : '-'}</td>
+                      <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? fmtDate(o.expiryDate) : '-'}</td>
                       <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-2">
@@ -543,8 +544,8 @@ const PedidoSuporte = () => {
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Representante</p>
                 <p className="mt-1 font-semibold text-foreground">{selectedOrderDetails.representativeName || '-'}</p>
                 <p className="text-xs text-muted-foreground mt-1">Código: {selectedOrderDetails.representativeId || '-'}</p>
-                <p className="text-xs text-muted-foreground mt-2">Data Emissão: {selectedOrderDetails.date ? new Date(selectedOrderDetails.date).toLocaleDateString('pt-BR') : '-'}</p>
-                <p className="text-xs text-muted-foreground">Validade: {selectedOrderDetails.expiryDate ? new Date(selectedOrderDetails.expiryDate).toLocaleDateString('pt-BR') : '-'}</p>
+                <p className="text-xs text-muted-foreground mt-2">Data Emissão: {selectedOrderDetails.date ? fmtDate(selectedOrderDetails.date) : '-'}</p>
+                <p className="text-xs text-muted-foreground">Validade: {selectedOrderDetails.expiryDate ? fmtDate(selectedOrderDetails.expiryDate) : '-'}</p>
               </div>
               <div className="bg-muted/20 border border-border rounded-lg p-4">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</p>
@@ -607,7 +608,7 @@ const PedidoSuporte = () => {
                         {h.note && <p className="text-xs text-muted-foreground mt-0.5">{h.note}</p>}
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-muted-foreground font-mono-data">{new Date(h.at).toLocaleString('pt-BR')}</p>
+                        <p className="text-xs text-muted-foreground font-mono-data">{fmtDateTime(h.at)}</p>
                         <p className="text-xs text-muted-foreground">{h.by}</p>
                       </div>
                     </div>

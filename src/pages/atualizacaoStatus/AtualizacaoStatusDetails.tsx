@@ -5,11 +5,7 @@ import { PedidoStatusHistoricoRow, PedidoStatusValue } from '@/types';
 import { toStageDates } from '@/lib/pedidoStatusFlow';
 import { cn } from '@/lib/utils';
 import { UnifiedPedido } from './types';
-
-const fmtDateTime = (iso?: string | null) => {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleString('pt-BR');
-};
+import { fmtDateTime } from '@/lib/dateUtils';
 
 export function AtualizacaoStatusDetails({
   pedido,

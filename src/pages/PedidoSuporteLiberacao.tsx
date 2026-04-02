@@ -16,10 +16,11 @@ import { useColumnFilters } from '@/hooks/useColumnFilters';
 import { SortableHeader } from '@/components/table/SortableHeader';
 import type { ColDef } from '@/hooks/useColumnFilters';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { fmtDate } from '@/lib/dateUtils';
 
 const formatDateBR = (iso?: string) => {
   if (!iso) return '-';
-  return new Date(iso).toLocaleDateString('pt-BR');
+  return fmtDate(iso);
 };
 
 const PedidoSuporteLiberacao = () => {

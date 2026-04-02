@@ -16,6 +16,7 @@ import { FilterConfiguratorDialog } from '@/components/filters/FilterConfigurato
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/table/SortableHeader';
@@ -129,7 +130,7 @@ const Commercial = () => {
   const [tempNotes, setTempNotes] = useState('');
 
   const [openSchedule, setOpenSchedule] = useState(false);
-  const [scheduleDate, setScheduleDate] = useState(new Date().toISOString().split('T')[0]);
+  const [scheduleDate, setScheduleDate] = useState(todayBR());
   const [scheduleObs, setScheduleObs] = useState('');
   const [scheduleSelected, setScheduleSelected] = useState<string[]>([]);
 
@@ -306,7 +307,7 @@ const Commercial = () => {
 
   const totals = useMemo(() => {
     const awaiting = orders.filter((o) => o.status === 'Aguardando Avaliação');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayBR();
     const releasedToday = orders.filter((o) => {
       const last = (o.history || []).slice(-1)[0];
       return o.status === 'Liberado p/ Produção' && last?.action === 'Liberou pedido para produção' && (last.at || '').slice(0, 10) === today;
@@ -380,7 +381,7 @@ const Commercial = () => {
     setOpenSchedule(false);
     setScheduleObs('');
     setScheduleSelected([]);
-    setScheduleDate(new Date().toISOString().split('T')[0]);
+    setScheduleDate(todayBR());
   };
 
   const handleSaveNotes = () => {
@@ -525,8 +526,8 @@ const Commercial = () => {
                         </span>
                       </td>
                       <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
-                      <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? new Date(o.date).toLocaleDateString('pt-BR') : '-'}</td>
-                      <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? new Date(o.expiryDate).toLocaleDateString('pt-BR') : '-'}</td>
+                      <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? fmtDate(o.date) : '-'}</td>
+                      <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? fmtDate(o.expiryDate) : '-'}</td>
                       <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
                       <td className="py-4 px-6">
                         <PedidoStatusBadge value={statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao'} />
@@ -584,8 +585,8 @@ const Commercial = () => {
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Representante</p>
                 <p className="mt-1 font-semibold text-foreground">{selectedOrderDetails.representativeName || '-'}</p>
                 <p className="text-xs text-muted-foreground mt-1">Código: {selectedOrderDetails.representativeId || '-'}</p>
-                <p className="text-xs text-muted-foreground mt-2">Data Emissão: {selectedOrderDetails.date ? new Date(selectedOrderDetails.date).toLocaleDateString('pt-BR') : '-'}</p>
-                <p className="text-xs text-muted-foreground">Validade: {selectedOrderDetails.expiryDate ? new Date(selectedOrderDetails.expiryDate).toLocaleDateString('pt-BR') : '-'}</p>
+                <p className="text-xs text-muted-foreground mt-2">Data Emissão: {selectedOrderDetails.date ? fmtDate(selectedOrderDetails.date) : '-'}</p>
+                <p className="text-xs text-muted-foreground">Validade: {selectedOrderDetails.expiryDate ? fmtDate(selectedOrderDetails.expiryDate) : '-'}</p>
                 {selectedOrderDetails.pedCompraCliente && <p className="text-xs text-muted-foreground mt-1">Identificação: <span className="font-semibold text-foreground">{selectedOrderDetails.pedCompraCliente}</span></p>}
                 {selectedOrderDetails.grupoCliente && <p className="text-xs text-muted-foreground mt-1">Grupo do Cliente: <span className="font-semibold text-foreground">{selectedOrderDetails.grupoCliente}</span></p>}
               </div>
@@ -651,7 +652,7 @@ const Commercial = () => {
                         {h.note && <p className="text-xs text-muted-foreground mt-0.5">{h.note}</p>}
                       </div>
                       <div className="text-right">
-                        <p className="text-xs text-muted-foreground font-mono-data">{new Date(h.at).toLocaleString('pt-BR')}</p>
+                        <p className="text-xs text-muted-foreground font-mono-data">{fmtDateTime(h.at)}</p>
                         <p className="text-xs text-muted-foreground">{h.by}</p>
                       </div>
                     </div>

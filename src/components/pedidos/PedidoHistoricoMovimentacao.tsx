@@ -3,6 +3,7 @@ import { ArrowRight } from 'lucide-react';
 import { PedidoStatusHistoricoRow } from '@/types';
 import { getPedidoStatusBadgeClass, getPedidoStatusLabel } from '@/lib/pedidoStatusFlow';
 import { cn } from '@/lib/utils';
+import { fmtDateTime } from '@/lib/dateUtils';
 
 export function PedidoHistoricoMovimentacao({ items }: { items: PedidoStatusHistoricoRow[] }) {
   if (!items.length) {
@@ -18,7 +19,7 @@ export function PedidoHistoricoMovimentacao({ items }: { items: PedidoStatusHist
       {items.map((it) => {
         const prev = it.status_anterior ? getPedidoStatusLabel(it.status_anterior) : '—';
         const next = getPedidoStatusLabel(it.status_novo);
-        const when = new Date(it.alterado_em).toLocaleString('pt-BR');
+        const when = fmtDateTime(it.alterado_em);
 
         return (
           <div key={it.id} className="rounded-xl border border-border bg-card p-4">

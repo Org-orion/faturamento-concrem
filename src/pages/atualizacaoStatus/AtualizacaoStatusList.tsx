@@ -3,11 +3,7 @@ import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { PedidoStatusValue } from '@/types';
 import { cn } from '@/lib/utils';
 import { UnifiedPedido, PedidoStatusById } from './types';
-
-const fmtDateTime = (iso?: string | null) => {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleString('pt-BR');
-};
+import { fmtDateTime } from '@/lib/dateUtils';
 
 export function AtualizacaoStatusList({
   pedidos,

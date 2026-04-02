@@ -15,6 +15,7 @@ import { SortableHeader } from '@/components/table/SortableHeader';
 import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import type { Load } from '@/types';
+import { fmtDate, todayBR } from '@/lib/dateUtils';
 
 type ReportRow = {
   driverName: string;
@@ -27,10 +28,10 @@ type ReportRow = {
 
 const formatDateBR = (iso?: string) => {
   if (!iso) return '-';
-  return new Date(iso).toLocaleDateString('pt-BR');
+  return fmtDate(iso);
 };
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => todayBR();
 
 const getLogoDataUrl = async (): Promise<string> => {
   try {
@@ -415,7 +416,7 @@ const LoadsPage = () => {
                       </div>
                     </td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">
-                      {load.plannedDate ? new Date(load.plannedDate).toLocaleDateString('pt-BR') : '-'}
+                      {load.plannedDate ? fmtDate(load.plannedDate) : '-'}
                     </td>
                     <td className="py-4 px-6 font-mono-data font-bold text-foreground">
                       {formatCurrency(totalOrderValue)}

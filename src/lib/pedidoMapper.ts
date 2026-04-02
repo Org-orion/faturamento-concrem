@@ -1,4 +1,5 @@
 import { Order, OrderItem, OrderStatus, SupportOrder, SupportOrderStatus, SupportOrderType } from '@/types';
+import { todayBR } from '@/lib/dateUtils';
 
 type Row = Record<string, any>;
 
@@ -227,7 +228,7 @@ const isSupportType = (v: unknown): v is SupportOrderType => {
 };
 
 export function rowToOrder(row: Row, defaultClientId: string): Order {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayBR();
   const id = pickString(row, ['numero_pedido', 'num', 'numero', 'pedido', 'codigo', 'id', 'pedido_id']);
   const clientId = pickString(row, ['client_id', 'cliente_id', 'id_cliente', 'clientId', 'clienteId']) || defaultClientId;
   const driverIdRaw = pickString(row, ['driver_id', 'motorista_id', 'driverId', 'motoristaId']);
@@ -276,7 +277,7 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
 }
 
 export function rowToSupportOrder(row: Row): SupportOrder {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayBR();
   const id = pickString(row, ['numero_pedido', 'num', 'numero', 'pedido', 'codigo', 'id', 'pedido_id']);
   const tipoRaw = row.tipoPedido ?? row.tipo_pedido ?? row.tipo ?? row.tipo_pedido_suporte;
   const tipoPedido: SupportOrderType = isSupportType(tipoRaw) ? tipoRaw : 'Pedido de Amostra';

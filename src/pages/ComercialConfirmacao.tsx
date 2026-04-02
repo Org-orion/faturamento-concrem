@@ -20,16 +20,17 @@ import { SortableHeader } from '@/components/table/SortableHeader';
 import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import type { Order } from '@/types';
+import { fmtDate, fmtDateTime, todayBR } from '@/lib/dateUtils';
 
 const formatDateBR = (iso?: string) => {
   if (!iso) return '-';
-  return new Date(iso).toLocaleDateString('pt-BR');
+  return fmtDate(iso);
 };
 
 const formatDateTimeBR = (d: Date) =>
-  d.toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+  fmtDateTime(d.toISOString());
 
-const todayStr = () => new Date().toISOString().slice(0, 10);
+const todayStr = () => todayBR();
 
 type SheetType = 'engenharia' | 'diretoria';
 
@@ -332,7 +333,7 @@ const ComercialConfirmacao = () => {
   const openEmailModal = () => {
     if (!selected.length) { showToast('Selecione ao menos um pedido para enviar.', 'error'); return; }
     const now = new Date();
-    const dateStr = now.toLocaleDateString('pt-BR');
+    const dateStr = fmtDate(now.toISOString());
     const orderLines = filtered
       .filter((o) => selected.includes(o.id))
       .map((o) =>

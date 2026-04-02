@@ -13,6 +13,7 @@ import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import { supabaseOps } from '@/lib/supabase';
 import type { PedidoStatusRow } from '@/types';
+import { todayBR, fmtDate, currentYearMonthBR } from '@/lib/dateUtils';
 
 function sumExpenses(lines: FreightExpenseLine[]) {
   return lines.reduce((s, l) => s + (Number(l.value) || 0), 0);
@@ -175,8 +176,7 @@ const Financial = () => {
   }, [freightEntries, orders, filterLaunchedItems, sortLaunchedItems, drivers, colFilterLaunched.filterItems, launchedColDefs]);
 
   const summary = useMemo(() => {
-    const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const ym = currentYearMonthBR();
     const entriesMonth = freightEntries.filter((e) => monthKey(e.createdAt) === ym);
     const fretesLancados = entriesMonth.length;
     const pagoMotoristas = entriesMonth.reduce((s, e) => s + (Number(e.driverValue) || 0), 0);
@@ -193,7 +193,7 @@ const Financial = () => {
 
   const [orderId, setOrderId] = useState('');
   const [loadId, setLoadId] = useState('');
-  const [deliveryDate, setDeliveryDate] = useState(new Date().toISOString().split('T')[0]);
+  const [deliveryDate, setDeliveryDate] = useState(todayBR());
   const [freightValue, setFreightValue] = useState(0);
   const [driverValue, setDriverValue] = useState(0);
   const [lines, setLines] = useState<FreightExpenseLine[]>([]);
@@ -225,7 +225,7 @@ const Financial = () => {
   const resetNew = () => {
     setOrderId('');
     setLoadId('');
-    setDeliveryDate(new Date().toISOString().split('T')[0]);
+    setDeliveryDate(todayBR());
     setFreightValue(0);
     setDriverValue(0);
     setLines([]);
@@ -234,7 +234,7 @@ const Financial = () => {
   const openNewForLoad = (l: Load) => {
     setLoadId(l.id);
     setOrderId('');
-    setDeliveryDate(new Date().toISOString().split('T')[0]);
+    setDeliveryDate(todayBR());
     setFreightValue(Number(l.freightValue) || 0);
     setDriverValue(Math.max(0, Math.round((Number(l.freightValue) || 0) * 0.6)));
     setLines([]);
@@ -244,7 +244,7 @@ const Financial = () => {
   const openNewForOrder = (o: Order) => {
     setOrderId(o.id);
     setLoadId('');
-    setDeliveryDate(new Date().toISOString().split('T')[0]);
+    setDeliveryDate(todayBR());
     setFreightValue(Number(o.freightValue) || 0);
     setDriverValue(Math.max(0, Math.round((Number(o.freightValue) || 0) * 0.6)));
     setLines([]);
@@ -509,7 +509,7 @@ const Financial = () => {
                     <td className="py-4 px-6 font-mono-data font-bold text-primary">{e.orderId}</td>
                     <td className="py-4 px-6">{o?.representativeName || '-'}</td>
                     <td className="py-4 px-6">{driver?.name || '-'}</td>
-                    <td className="py-4 px-6 font-mono-data text-muted-foreground">{new Date(e.deliveryDate).toLocaleDateString('pt-BR')}</td>
+                    <td className="py-4 px-6 font-mono-data text-muted-foreground">{fmtDate(e.deliveryDate)}</td>
                     <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(e.freightValue)}</td>
                     <td className="py-4 px-6 text-right font-mono-data">{formatCurrency(e.driverValue)}</td>
                     <td className="py-4 px-6 text-right font-mono-data">{formatCurrency(other)}</td>
@@ -798,7 +798,7 @@ const Financial = () => {
               <div className="bg-muted/20 rounded-xl border border-border p-4">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Frete</p>
                 <p className="mt-1 font-mono-data font-bold">{formatCurrency(details.freightValue)}</p>
-                <p className="text-xs text-muted-foreground mt-1">Entrega: {new Date(details.deliveryDate).toLocaleDateString('pt-BR')}</p>
+                <p className="text-xs text-muted-foreground mt-1">Entrega: {fmtDate(details.deliveryDate)}</p>
               </div>
               <div className="bg-muted/20 rounded-xl border border-border p-4">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</p>
@@ -881,7 +881,7 @@ const Financial = () => {
                   <div className="text-right text-sm">
                     <div><span className="font-semibold">Nº:</span> {e.id}</div>
                     <div><span className="font-semibold">Pedido:</span> {e.orderId}</div>
-                    <div><span className="font-semibold">Emitido em:</span> {new Date().toLocaleDateString('pt-BR')}</div>
+                    <div><span className="font-semibold">Emitido em:</span> {fmtDate(new Date().toISOString())}</div>
                   </div>
                 </div>
 

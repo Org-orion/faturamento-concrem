@@ -5,11 +5,7 @@ import { PedidoHistoricoMovimentacao } from '@/components/pedidos/PedidoHistoric
 import { PedidoStatusHistoricoRow, PedidoStatusValue } from '@/types';
 import { toStageDates } from '@/lib/pedidoStatusFlow';
 import { UnifiedPedido } from './types';
-
-const fmtDateTime = (iso?: string | null) => {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleString('pt-BR');
-};
+import { fmtDateTime } from '@/lib/dateUtils';
 
 const formatCurrency = (v: number) =>
   v.toLocaleString('pt-BR', {

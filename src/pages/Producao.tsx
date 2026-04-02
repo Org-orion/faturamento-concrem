@@ -15,6 +15,7 @@ import { useColumnFilters } from '@/hooks/useColumnFilters';
 import { SortableHeader } from '@/components/table/SortableHeader';
 import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
+import { todayBR, fmtDate, currentYearMonthBR } from '@/lib/dateUtils';
 
 function calcItemsTotal(items: { quantity: number; unitPrice: number }[]) {
   return items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
@@ -32,7 +33,7 @@ function scheduleTotal(orders: Order[], supportOrders: SupportOrder[], orderIds?
 
 function isOverdue(plannedDate: string, status: ProductionSchedule['status']) {
   if (status === 'Concluído') return false;
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayBR();
   return plannedDate < today;
 }
 
@@ -70,13 +71,13 @@ const Producao = () => {
   const [openDetails, setOpenDetails] = useState(false);
 
   const [openCreate, setOpenCreate] = useState(false);
-  const [plannedDate, setPlannedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [plannedDate, setPlannedDate] = useState(todayBR());
   const [obs, setObs] = useState('');
   const [selected, setSelected] = useState<string[]>([]);
 
   const [editId, setEditId] = useState<string | null>(null);
   const [openEdit, setOpenEdit] = useState(false);
-  const [editPlannedDate, setEditPlannedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [editPlannedDate, setEditPlannedDate] = useState(todayBR());
   const [editObs, setEditObs] = useState('');
   const [editSelected, setEditSelected] = useState<string[]>([]);
 
@@ -147,8 +148,7 @@ const Producao = () => {
   const summary = useMemo(() => {
     const awaiting = productionSchedules.filter((s) => s.status === 'Aguardando Início').length;
     const doing = productionSchedules.filter((s) => s.status === 'Em Produção').length;
-    const now = new Date();
-    const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+    const ym = currentYearMonthBR();
     const doneMonth = productionSchedules.filter((s) => s.status === 'Concluído' && s.createdAt.startsWith(ym)).length;
     const queuedOrders =
       orders.filter((o) => ['Liberado p/ Produção', 'Em Carregamento'].includes(o.status)).length +
@@ -335,7 +335,7 @@ const Producao = () => {
   }, [printId]);
 
   const resetCreate = () => {
-    setPlannedDate(new Date().toISOString().split('T')[0]);
+    setPlannedDate(todayBR());
     setObs('');
     setSelected([]);
   };
@@ -440,7 +440,7 @@ const Producao = () => {
                   <td className="py-3 px-4 font-mono-data text-muted-foreground">
                     <span className="inline-flex items-center gap-2">
                       <Calendar className="h-4 w-4" />
-                      {new Date(s.plannedDate).toLocaleDateString('pt-BR')}
+                      {fmtDate(s.plannedDate)}
                     </span>
                   </td>
                   <td className="py-3 px-4 text-right font-mono-data">{s.orderIds?.length || 0}</td>
@@ -562,12 +562,12 @@ const Producao = () => {
             {!loadingConcluidos && visibleConcluded.map((x) => {
               const s = x.schedule;
               const total = s ? scheduleTotal(orders, supportOrders, s.orderIds) : 0;
-              const planned = s?.plannedDate || (x.row?.data_conclusao ? String(x.row.data_conclusao).slice(0, 10) : new Date().toISOString().slice(0, 10));
+              const planned = s?.plannedDate || (x.row?.data_conclusao ? String(x.row.data_conclusao).slice(0, 10) : todayBR());
               return (
                 <tr key={x.carregamentoId} className="hover:bg-muted/20 transition-colors">
                   <td className="py-3 px-4 font-mono-data font-bold text-primary">{s?.num || x.carregamentoId}</td>
                   <td className="py-3 px-4 font-mono-data text-muted-foreground">
-                    <span className="inline-flex items-center gap-2"><Calendar className="h-4 w-4" />{new Date(planned).toLocaleDateString('pt-BR')}</span>
+                    <span className="inline-flex items-center gap-2"><Calendar className="h-4 w-4" />{fmtDate(planned)}</span>
                   </td>
                   <td className="py-3 px-4 text-right font-mono-data">{s?.orderIds.length || '-'}</td>
                   <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(total)}</td>
@@ -634,7 +634,7 @@ const Producao = () => {
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <div className="bg-muted/20 rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Data Prevista</p>
-                <p className="mt-1 font-semibold">{new Date(details.plannedDate).toLocaleDateString('pt-BR')}</p>
+                <p className="mt-1 font-semibold">{fmtDate(details.plannedDate)}</p>
               </div>
               <div className="bg-muted/20 rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Enviado por</p>
@@ -642,7 +642,7 @@ const Producao = () => {
               </div>
               <div className="bg-muted/20 rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Emitido em</p>
-                <p className="mt-1 font-mono-data font-semibold">{new Date(details.createdAt).toLocaleDateString('pt-BR')}</p>
+                <p className="mt-1 font-mono-data font-semibold">{fmtDate(details.createdAt)}</p>
               </div>
               <div className="bg-muted/20 rounded-xl border border-border p-4">
                 <p className="text-xs text-muted-foreground uppercase tracking-wider font-bold">Status</p>
@@ -893,9 +893,9 @@ const Producao = () => {
                   </div>
                   <div className="text-right text-sm">
                     <div><span className="font-semibold">Nº:</span> {s.num}</div>
-                    <div><span className="font-semibold">Data Prevista:</span> {new Date(s.plannedDate).toLocaleDateString('pt-BR')}</div>
+                    <div><span className="font-semibold">Data Prevista:</span> {fmtDate(s.plannedDate)}</div>
                     <div><span className="font-semibold">Enviado por:</span> {s.createdBy}</div>
-                    <div><span className="font-semibold">Emitido em:</span> {new Date().toLocaleDateString('pt-BR')}</div>
+                    <div><span className="font-semibold">Emitido em:</span> {fmtDate(new Date().toISOString())}</div>
                   </div>
                 </div>
 

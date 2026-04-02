@@ -4,17 +4,13 @@ import { PedidoTimelineStages } from '@/components/pedidos/PedidoTimelineStages'
 import { PedidoStatusValue } from '@/types';
 import { cn } from '@/lib/utils';
 import { UnifiedPedido, PedidoStatusById } from './types';
+import { fmtDateTime } from '@/lib/dateUtils';
 
 const formatCurrency = (v: number) =>
   v.toLocaleString('pt-BR', {
     style: 'currency',
     currency: 'BRL',
   });
-
-const fmtDateTime = (iso?: string | null) => {
-  if (!iso) return '-';
-  return new Date(iso).toLocaleString('pt-BR');
-};
 
 export function PainelPedidosList({
   pedidos,
