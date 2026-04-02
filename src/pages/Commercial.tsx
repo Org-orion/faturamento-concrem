@@ -18,12 +18,7 @@ import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { useTableSort } from '@/hooks/useTableSort';
-import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { SortableHeader } from '@/components/table/SortableHeader';
-import { QuickFilterBar } from '@/components/table/QuickFilterBar';
-import { useColumnFilters } from '@/hooks/useColumnFilters';
-import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
-import { pedidoStatusFlow } from '@/lib/pedidoStatusFlow';
 
 type ScheduleCandidate = {
   id: string;
@@ -44,11 +39,10 @@ const Commercial = () => {
 
   const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
 
-  const { sortState, toggleSort, sortItems } = useTableSort();
-  const { query, setQuery, filterItems } = useQuickFilter<Order>();
-  const colFilter = useColumnFilters();
+  const { sortState, toggleSort } = useTableSort();
 
   const [filterPedido, setFilterPedido] = useState<string>('');
+  const [filterCliente, setFilterCliente] = useState<string>('');
   const [filterConf, setFilterConf] = useState<string>('');
   const [filterRep, setFilterRep] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>('');
@@ -80,64 +74,20 @@ const Commercial = () => {
     if (ids.length) void refreshStatusRows(ids);
   }, [serverOrders]);
 
-  // Pedidos aguardando avaliação (status = aguardando_avaliacao ou sem status)
-  const awaitingConfirmation = useMemo(() => {
-    return serverOrders.filter(o => {
-      const st = statusByPedidoId.get(o.id)?.status_atual;
-      return !st || st === 'aguardando_avaliacao';
-    });
-  }, [serverOrders, statusByPedidoId]);
+  // Map UI sort keys → Supabase column names
+  const sortColumnMap: Record<string, string> = {
+    id: 'numero_pedido',
+    cliente: 'cliente_nome',
+    date: 'data_emissao',
+    expiryDate: 'data_validade',
+    value: 'total_pedido_venda',
+  };
 
-  // Quick filter text getters
-  const textGetters = useMemo(() => [
-    (o: Order) => o.id,
-    (o: Order) => o.representativeName || '',
-    (o: Order) => o.representativePhone || '',
-    (o: Order) => o.idNotaConf != null ? String(o.idNotaConf) : '',
-    (o: Order) => o.clientName || '',
-    (o: Order) => o.date || '',
-    (o: Order) => o.expiryDate || '',
-    (o: Order) => String(getOrderTotal(o)),
-  ], []);
+  // Sort and filtering are server-side; show all fetched records
+  const displayedOrders = serverOrders;
 
-  // Sort getters for sortable columns
-  const sortGetters = useMemo(() => ({
-    id: (o: Order) => o.id,
-    cliente: (o: Order) => (o.clientName || o.clientCode || '').toLowerCase(),
-    date: (o: Order) => o.date || '',
-    expiryDate: (o: Order) => o.expiryDate || '',
-    value: (o: Order) => getOrderTotal(o),
-    status: (o: Order) => statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao',
-  }), [statusByPedidoId]);
-
-  // Column filter slots & definitions for main table
-  const pedidoStatusOptions = useMemo(() => pedidoStatusFlow.map(s => ({ value: s.value, label: s.label })), []);
-
-  const colFilterSlots = useMemo<ColFilterSlot[]>(() => [
-    { key: 'id', type: 'text', placeholder: 'Filtrar pedido...' },
-    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
-    { key: 'date', type: 'date' },
-    { key: 'expiryDate', type: 'date' },
-    { key: 'value', type: 'number', placeholder: 'Filtrar...' },
-    { key: 'status', type: 'select', options: pedidoStatusOptions },
-    { type: 'none' },
-  ], [pedidoStatusOptions]);
-
-  const colDefs = useMemo(() => [
-    { key: 'id', getter: (o: Order) => o.id },
-    { key: 'cliente', getter: (o: Order) => o.clientName || o.clientCode },
-    { key: 'date', getter: (o: Order) => o.date },
-    { key: 'expiryDate', getter: (o: Order) => o.expiryDate },
-    { key: 'value', getter: (o: Order) => o.totalPedidoVenda ?? getOrderTotal(o) },
-    { key: 'status', getter: (o: Order) => statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao', match: 'exact' as const },
-  ], [statusByPedidoId]);
-
-  // Data pipeline: awaitingConfirmation → column filters → quick filter → sort
-  const displayedOrders = useMemo(() => {
-    const colFiltered = colFilter.filterItems(awaitingConfirmation, colDefs);
-    const filtered = filterItems(colFiltered, textGetters);
-    return sortItems(filtered, sortGetters);
-  }, [awaitingConfirmation, colFilter, colDefs, filterItems, textGetters, sortItems, sortGetters]);
+  // Reset page when sort changes
+  useEffect(() => { setPage(1); }, [sortState]);
 
   useEffect(() => {
     if (!supabaseOps) return;
@@ -248,10 +198,11 @@ const Commercial = () => {
     return 'num' in o;
   };
 
+  const debouncedFilterCliente = useDebounce(filterCliente, 400);
+
   const filterFields = useMemo(() => {
     return [
-      { id: 'pedido', label: 'Nº Pedido', type: 'text', getValue: (o: Order) => o.id, placeholder: 'Número do pedido' },
-      { id: 'conf', label: 'Conf.', type: 'text', getValue: (o: Order) => o.idNotaConf ?? '', placeholder: 'id_nota_conf' },
+      { id: 'conf', label: 'Config. Doc.', type: 'text', getValue: (o: Order) => String(o.idNotaConf ?? ''), placeholder: 'id_nota_conf' },
       {
         id: 'rep',
         label: 'Representante',
@@ -267,7 +218,6 @@ const Commercial = () => {
   useEffect(() => {
     const byField = new Map<string, FilterCondition>();
     for (const c of conditions) byField.set(c.fieldId, c);
-    setFilterPedido(byField.get('pedido')?.value ?? '');
     setFilterConf(byField.get('conf')?.value ?? '');
     setFilterRep(byField.get('rep')?.value ?? '');
     setIssueDate(byField.get('emissao')?.value ?? '');
@@ -302,6 +252,9 @@ const Commercial = () => {
         if (debouncedFilterPedido) {
           query = query.ilike('numero_pedido', `%${debouncedFilterPedido}%`);
         }
+        if (debouncedFilterCliente) {
+          query = query.ilike('cliente_nome', `%${debouncedFilterCliente}%`);
+        }
         if (debouncedFilterConf) {
           query = query.eq('id_nota_conf', debouncedFilterConf);
         }
@@ -315,9 +268,10 @@ const Commercial = () => {
           query = query.gte('data_validade', `${validDate}T00:00:00`).lte('data_validade', `${validDate}T23:59:59`);
         }
 
-        const from = (page - 1) * 50;
-        const to = from + 49;
-        query = query.range(from, to).order('data_emissao', { ascending: false });
+        const from = (page - 1) * 20;
+        const to = from + 19;
+        const sortCol = sortState.key ? sortColumnMap[sortState.key] : null;
+        query = query.range(from, to).order(sortCol || 'data_emissao', { ascending: sortCol ? sortState.direction === 'asc' : false });
 
         const { data, count, error } = await query;
         if (cancelled) return;
@@ -348,7 +302,7 @@ const Commercial = () => {
 
     fetchPage();
     return () => { cancelled = true; };
-  }, [debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, issueDate, moveOverride, page, validDate]);
+  }, [debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, issueDate, moveOverride, page, sortState, validDate]);
 
   const totals = useMemo(() => {
     const awaiting = orders.filter((o) => o.status === 'Aguardando Avaliação');
@@ -441,20 +395,6 @@ const Commercial = () => {
 
   const confirmRelease = async () => {
     if (!selectedOrderDetails) return;
-
-    const res = await updatePedidoStatus({
-      pedidoId: selectedOrderDetails.id,
-      numeroPedido: selectedOrderDetails.id,
-      statusNovo: 'liberado_comercial',
-      alteradoPor: user?.username || null,
-      observacao: decisionNote || 'Pedido liberado pela logística',
-    });
-
-    if (!res.ok) {
-      showToast('Erro ao liberar pedido', 'error');
-      return;
-    }
-
     // Refresh status rows
     await refreshStatusRows(serverOrders.map(o => o.id));
 
@@ -513,19 +453,37 @@ const Commercial = () => {
         </div>
       </div>
 
-      <div className="space-y-3">
-        <QuickFilterBar
-          query={query}
-          onQueryChange={setQuery}
-          placeholder="Buscar pedido, representante, cliente, valor..."
-        >
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={filterPedido}
+            onChange={(e) => { setFilterPedido(e.target.value); setPage(1); }}
+            placeholder="Filtrar pedido..."
+            className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+          <input
+            type="text"
+            value={filterCliente}
+            onChange={(e) => { setFilterCliente(e.target.value); setPage(1); }}
+            placeholder="Filtrar cliente..."
+            className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+          <input
+            type="text"
+            value={filterRep}
+            onChange={(e) => { setFilterRep(e.target.value); setPage(1); }}
+            placeholder="Filtrar representante..."
+            className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
-        </QuickFilterBar>
+        </div>
         <ActiveFiltersChips
           fields={filterFields}
           conditions={conditions}
           onRemove={(id) => setConditions((prev) => prev.filter((c) => c.id !== id))}
           onClear={() => setConditions([])}
+          onEdit={() => setFiltersOpen(true)}
         />
       </div>
 
@@ -533,11 +491,10 @@ const Commercial = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
               <tr className="border-b border-border bg-muted/30">
                 <SortableHeader columnKey="id" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
                 <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
-                <SortableHeader columnKey="date" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Data</SortableHeader>
+                <SortableHeader columnKey="date" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Emissão</SortableHeader>
                 <SortableHeader columnKey="expiryDate" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
                 <SortableHeader columnKey="value" sortState={sortState} onToggle={toggleSort} className="text-right py-4 px-6">Valor</SortableHeader>
                 <SortableHeader columnKey="status" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Status</SortableHeader>
@@ -604,7 +561,7 @@ const Commercial = () => {
                 Anterior
               </button>
               <button
-                disabled={page * 50 >= totalCount}
+                disabled={page * 20 >= totalCount}
                 onClick={() => setPage(p => p + 1)}
                 className="px-3 py-1.5 rounded border border-border bg-card text-xs font-semibold disabled:opacity-50"
               >
@@ -629,13 +586,15 @@ const Commercial = () => {
                 <p className="text-xs text-muted-foreground mt-1">Código: {selectedOrderDetails.representativeId || '-'}</p>
                 <p className="text-xs text-muted-foreground mt-2">Data Emissão: {selectedOrderDetails.date ? new Date(selectedOrderDetails.date).toLocaleDateString('pt-BR') : '-'}</p>
                 <p className="text-xs text-muted-foreground">Validade: {selectedOrderDetails.expiryDate ? new Date(selectedOrderDetails.expiryDate).toLocaleDateString('pt-BR') : '-'}</p>
+                {selectedOrderDetails.pedCompraCliente && <p className="text-xs text-muted-foreground mt-1">Identificação: <span className="font-semibold text-foreground">{selectedOrderDetails.pedCompraCliente}</span></p>}
+                {selectedOrderDetails.grupoCliente && <p className="text-xs text-muted-foreground mt-1">Grupo do Cliente: <span className="font-semibold text-foreground">{selectedOrderDetails.grupoCliente}</span></p>}
               </div>
               <div className="bg-muted/20 border border-border rounded-lg p-4">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</p>
                 <div className="mt-2">
                   <StatusBadge status={selectedOrderDetails.status} colorMap={commercialStatusColors} />
                 </div>
-                {selectedOrderDetails.previsaoCarregamento && <p className="text-xs text-muted-foreground mt-3">Previsão de Carregamento: <span className="font-semibold text-foreground">{selectedOrderDetails.previsaoCarregamento}</span></p>}
+                {selectedOrderDetails.previsaoCarregamento && <p className="text-xs text-muted-foreground mt-3">Previsão de Embarque: <span className="font-semibold text-foreground">{selectedOrderDetails.previsaoCarregamento}</span></p>}
                 <p className="text-xs text-muted-foreground mt-3">Valor total: <span className="font-mono-data font-bold text-foreground">{formatCurrency(getOrderTotal(selectedOrderDetails))}</span></p>
                 <p className="text-xs text-muted-foreground mt-1">Frete: <span className="font-mono-data font-bold text-foreground">{formatCurrency(selectedOrderDetails.freightValue || 0)}</span></p>
               </div>
@@ -710,55 +669,10 @@ const Commercial = () => {
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
-              <button
-                disabled={!canDecide}
-                onClick={() => setOpenConfirm({ type: 'liberar' })}
-                className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg font-semibold transition-opacity ${
-                  canDecide ? 'bg-primary text-primary-foreground hover:opacity-90' : 'bg-muted text-muted-foreground opacity-70 cursor-not-allowed'
-                }`}
-              >
-                <CheckCircle2 className="h-4 w-4" />
-                Liberar Pedido
-              </button>
-            </div>
           </div>
         )}
       </Modal>
 
-      <Modal
-        open={Boolean(openConfirm)}
-        onClose={() => setOpenConfirm(null)}
-        title="Liberar Pedido"
-      >
-        <div className="space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Libere o pedido para o comercial iniciar o processo de aprovação.
-          </p>
-
-          <div>
-            <label className="text-sm font-semibold font-display text-foreground">Observação (opcional)</label>
-            <textarea
-              className={`${inputClass} mt-2 min-h-[88px]`}
-              value={decisionNote}
-              onChange={(e) => setDecisionNote(e.target.value)}
-              placeholder="Detalhes adicionais para registro..."
-            />
-          </div>
-
-          <div className="flex justify-end gap-3">
-            <button
-              onClick={() => setOpenConfirm(null)}
-              className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors"
-            >
-              Cancelar
-            </button>
-            <button onClick={confirmRelease} className="px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:opacity-90 transition-opacity font-semibold">
-              Confirmar
-            </button>
-          </div>
-        </div>
-      </Modal>
 
       <Modal open={openSchedule} onClose={() => setOpenSchedule(false)} title="Criar Cronograma de Produção" wide>
         <div className="space-y-5">

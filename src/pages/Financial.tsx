@@ -3,7 +3,7 @@ import { useApp } from '@/contexts/AppContext';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/ToastProvider';
 import { btnDanger, btnPrimary, btnSecondary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
-import { ExpenseType, FreightEntry, FreightEntryStatus, FreightExpenseLine, Order } from '@/types';
+import { ExpenseType, FreightEntry, FreightEntryStatus, FreightExpenseLine, Load, Order } from '@/types';
 import { CheckCircle2, Eye, Plus, Printer, Settings2, Edit, Trash2, AlertTriangle } from 'lucide-react';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
@@ -11,6 +11,8 @@ import { useColumnFilters } from '@/hooks/useColumnFilters';
 import { SortableHeader } from '@/components/table/SortableHeader';
 import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
+import { supabaseOps } from '@/lib/supabase';
+import type { PedidoStatusRow } from '@/types';
 
 function sumExpenses(lines: FreightExpenseLine[]) {
   return lines.reduce((s, l) => s + (Number(l.value) || 0), 0);
@@ -43,68 +45,56 @@ const Financial = () => {
   const [newTypeDesc, setNewTypeDesc] = useState('');
   const [newTypeActive, setNewTypeActive] = useState(true);
 
-  // Filter orders by load shipmentStatus === 'Entregue'
+  // Fetch pedidos_status to detect loads where all orders are 'entregue'
+  const [pedidoStatusRows, setPedidoStatusRows] = useState<PedidoStatusRow[]>([]);
+  useEffect(() => {
+    if (!supabaseOps) return;
+    void supabaseOps.from('pedidos_status').select('pedido_id,status_atual').then(({ data }) => {
+      if (data) setPedidoStatusRows(data as PedidoStatusRow[]);
+    });
+  }, []);
+  const pedidoStatusMap = useMemo(() => new Map(pedidoStatusRows.map(r => [r.pedido_id, r.status_atual])), [pedidoStatusRows]);
+
+  // FreightEntry lookup by loadId (or orderId for backwards compat)
+  const entryByLoadId = useMemo(() => {
+    const m = new Map<string, FreightEntry>();
+    for (const e of freightEntries) {
+      const key = e.loadId || e.orderId;
+      m.set(key, e);
+    }
+    return m;
+  }, [freightEntries]);
+
+  // A load is pending when: shipmentStatus === 'Entregue' OR all its orders have status 'entregue'
+  // AND it has no FreightEntry yet
+  const pendingLoads = useMemo(() => {
+    return loads.filter(l => {
+      if (entryByLoadId.has(l.id)) return false;
+      if (l.orderIds.length === 0) return false;
+      if (l.shipmentStatus === 'Entregue') return true;
+      return l.orderIds.every(oid => pedidoStatusMap.get(oid) === 'entregue');
+    });
+  }, [loads, entryByLoadId, pedidoStatusMap]);
+
+  // For backward compat: keep deliveredOrders/pendingOrders for the form dropdown
   const deliveredOrOrderIds = useMemo(() => {
     const ids = new Set<string>();
     for (const l of loads) {
-      if (l.shipmentStatus === 'Entregue') {
+      if (l.shipmentStatus === 'Entregue' || l.orderIds.every(oid => pedidoStatusMap.get(oid) === 'entregue')) {
         for (const id of l.orderIds) ids.add(id);
       }
     }
     return ids;
-  }, [loads]);
+  }, [loads, pedidoStatusMap]);
 
   const deliveredOrders = useMemo(
     () => orders.filter((o) => deliveredOrOrderIds.has(o.id)),
     [orders, deliveredOrOrderIds],
   );
 
-  const entryByOrderId = useMemo(() => {
-    const m = new Map<string, FreightEntry>();
-    for (const e of freightEntries) m.set(e.orderId, e);
-    return m;
-  }, [freightEntries]);
-
-  const pendingOrders = useMemo(
-    () => deliveredOrders.filter((o) => !entryByOrderId.has(o.id)),
-    [deliveredOrders, entryByOrderId],
-  );
-
-  // --- Pending table: text getters, sort getters, data pipeline ---
-  type PendingRow = { kind: 'pending'; order: Order };
-
-  const pendingTextGetters: Array<(item: PendingRow) => unknown> = [
-    (r) => r.order.id,
-    (r) => r.order.representativeName,
-    (r) => {
-      const d = r.order.driverId ? drivers.find((x) => x.id === r.order.driverId) : undefined;
-      return d?.name;
-    },
-    (r) => r.order.freightValue,
-  ];
-
-  const pendingSortGetters: Record<string, (item: PendingRow) => unknown> = {
-    orderId: (r) => r.order.id,
-    representative: (r) => r.order.representativeName,
-    driver: (r) => {
-      const d = r.order.driverId ? drivers.find((x) => x.id === r.order.driverId) : undefined;
-      return d?.name;
-    },
-    date: (r) => r.order.date,
-    freightValue: (r) => Number(r.order.freightValue) || 0,
-  };
-
-  const pendingColDefs = useMemo(() => [
-    { key: 'orderId', getter: (r: PendingRow) => r.order.id },
-    { key: 'representative', getter: (r: PendingRow) => r.order.representativeName },
-    { key: 'driver', getter: (r: PendingRow) => {
-      const d = r.order.driverId ? drivers.find((x) => x.id === r.order.driverId) : undefined;
-      return d?.name ?? '';
-    }},
-  ], [drivers]);
   const pendingColSlots: ColFilterSlot[] = [
-    { key: 'orderId', type: 'text', placeholder: 'Nº Pedido...' },
-    { key: 'representative', type: 'text', placeholder: 'Representante...' },
+    { key: 'loadId', type: 'text', placeholder: 'Carregamento...' },
+    { type: 'none' },
     { key: 'driver', type: 'text', placeholder: 'Motorista...' },
     { type: 'none' },
     { type: 'none' },
@@ -114,13 +104,6 @@ const Financial = () => {
     { type: 'none' },
     { type: 'none' },
   ];
-
-  const allPendingRows = useMemo(() => {
-    const rows: PendingRow[] = pendingOrders.map(o => ({ kind: 'pending' as const, order: o }));
-    const colFiltered = colFilterPending.filterItems(rows, pendingColDefs);
-    const filtered = filterPendingItems(colFiltered, pendingTextGetters);
-    return sortPendingItems(filtered, pendingSortGetters);
-  }, [pendingOrders, filterPendingItems, sortPendingItems, drivers, colFilterPending.filterItems, pendingColDefs]);
 
   // --- Launched table: text getters, sort getters, data pipeline ---
   type LaunchedRow = { kind: 'entry'; entry: FreightEntry; order: Order | undefined };
@@ -202,23 +185,25 @@ const Financial = () => {
       fretesLancados,
       pagoMotoristas,
       outrasDespesas,
-      pendentes: pendingOrders.length,
+      pendentes: pendingLoads.length,
     };
-  }, [freightEntries, pendingOrders.length]);
+  }, [freightEntries, pendingLoads.length]);
 
   const activeExpenseTypes = useMemo(() => expenseTypes.filter((t) => t.active), [expenseTypes]);
 
   const [orderId, setOrderId] = useState('');
+  const [loadId, setLoadId] = useState('');
   const [deliveryDate, setDeliveryDate] = useState(new Date().toISOString().split('T')[0]);
   const [freightValue, setFreightValue] = useState(0);
   const [driverValue, setDriverValue] = useState(0);
   const [lines, setLines] = useState<FreightExpenseLine[]>([]);
 
   const selectedOrder = useMemo(() => deliveredOrders.find((o) => o.id === orderId) || null, [deliveredOrders, orderId]);
-  const selectedDriver = useMemo(
-    () => (selectedOrder?.driverId ? drivers.find((d) => d.id === selectedOrder.driverId) : undefined),
-    [drivers, selectedOrder?.driverId],
-  );
+  const selectedLoad = useMemo(() => loads.find((l) => l.id === loadId) || null, [loads, loadId]);
+  const selectedDriver = useMemo(() => {
+    const dId = selectedLoad?.driverId || selectedOrder?.driverId;
+    return dId ? drivers.find((d) => d.id === dId) : undefined;
+  }, [drivers, selectedLoad, selectedOrder]);
 
   const saldo = useMemo(() => freightValue - driverValue - sumExpenses(lines), [driverValue, freightValue, lines]);
 
@@ -239,14 +224,26 @@ const Financial = () => {
 
   const resetNew = () => {
     setOrderId('');
+    setLoadId('');
     setDeliveryDate(new Date().toISOString().split('T')[0]);
     setFreightValue(0);
     setDriverValue(0);
     setLines([]);
   };
 
+  const openNewForLoad = (l: Load) => {
+    setLoadId(l.id);
+    setOrderId('');
+    setDeliveryDate(new Date().toISOString().split('T')[0]);
+    setFreightValue(Number(l.freightValue) || 0);
+    setDriverValue(Math.max(0, Math.round((Number(l.freightValue) || 0) * 0.6)));
+    setLines([]);
+    setOpenNew(true);
+  };
+
   const openNewForOrder = (o: Order) => {
     setOrderId(o.id);
+    setLoadId('');
     setDeliveryDate(new Date().toISOString().split('T')[0]);
     setFreightValue(Number(o.freightValue) || 0);
     setDriverValue(Math.max(0, Math.round((Number(o.freightValue) || 0) * 0.6)));
@@ -277,7 +274,8 @@ const Financial = () => {
 
   const openEditEntry = (e: FreightEntry) => {
     setEditingId(e.id);
-    setOrderId(e.orderId);
+    setLoadId(e.loadId || '');
+    setOrderId(e.loadId ? '' : e.orderId);
     setDeliveryDate(e.deliveryDate);
     setFreightValue(e.freightValue);
     setDriverValue(e.driverValue);
@@ -286,9 +284,10 @@ const Financial = () => {
   };
 
   const saveEntry = () => {
-    if (!selectedOrder) return;
-    if (!selectedOrder.driverId) {
-      showToast('Pedido sem motorista vinculado', 'error');
+    const dId = selectedLoad?.driverId || selectedOrder?.driverId;
+    if (!selectedLoad && !selectedOrder) return;
+    if (!dId) {
+      showToast('Carregamento sem motorista vinculado', 'error');
       return;
     }
 
@@ -300,10 +299,22 @@ const Financial = () => {
         expenses: lines,
       });
       showToast('Lançamento atualizado');
-    } else {
+    } else if (selectedLoad) {
+      addFreightEntry({
+        orderId: selectedLoad.id,
+        loadId: selectedLoad.id,
+        driverId: dId,
+        deliveryDate,
+        freightValue,
+        driverValue,
+        expenses: lines,
+        status: 'Lançado',
+      });
+      showToast('Lançamento salvo');
+    } else if (selectedOrder) {
       addFreightEntry({
         orderId: selectedOrder.id,
-        driverId: selectedOrder.driverId,
+        driverId: dId,
         deliveryDate,
         freightValue,
         driverValue,
@@ -354,11 +365,11 @@ const Financial = () => {
           <button
             className={btnPrimary}
             onClick={() => {
-              const first = pendingOrders[0];
+              const first = pendingLoads[0];
               if (!first) return;
-              openNewForOrder(first);
+              openNewForLoad(first);
             }}
-            disabled={pendingOrders.length === 0}
+            disabled={pendingLoads.length === 0}
           >
             <Plus className="h-4 w-4" />
             Novo Lançamento
@@ -389,7 +400,7 @@ const Financial = () => {
         <div className="p-5 border-b border-border space-y-4">
           <div>
             <h2 className="text-sm font-bold text-foreground uppercase tracking-wider">Pendentes de Lançamento</h2>
-            <p className="text-xs text-muted-foreground mt-1">Pedidos entregues aguardando lançamento de frete.</p>
+            <p className="text-xs text-muted-foreground mt-1">Carregamentos entregues aguardando lançamento de frete.</p>
           </div>
           <QuickFilterBar
             query={qPending}
@@ -402,8 +413,8 @@ const Financial = () => {
             <thead>
               <ColumnFilterRow columns={pendingColSlots} values={colFilterPending.values} onChange={colFilterPending.setFilter} />
               <tr className="border-b border-border bg-muted/30">
-                <SortableHeader columnKey="orderId" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
-                <SortableHeader columnKey="representative" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Representante</SortableHeader>
+                <SortableHeader columnKey="orderId" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Carregamento</SortableHeader>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedidos</th>
                 <SortableHeader columnKey="driver" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Motorista</SortableHeader>
                 <SortableHeader columnKey="date" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Data</SortableHeader>
                 <SortableHeader columnKey="freightValue" sortState={sortPending} onToggle={togglePending} className="text-right py-4 px-6">Valor Frete</SortableHeader>
@@ -415,16 +426,17 @@ const Financial = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {allPendingRows.map((r) => {
-                const o = r.order;
-                const driver = o.driverId ? drivers.find((d) => d.id === o.driverId) : undefined;
-                const frete = Number(o.freightValue) || 0;
+              {pendingLoads.map((l) => {
+                const driver = drivers.find((d) => d.id === l.driverId);
+                const frete = Number(l.freightValue) || 0;
+                const [y, m, d] = (l.plannedDate || '').split('-');
+                const dataStr = l.plannedDate ? `${d}/${m}/${y}` : '-';
                 return (
-                  <tr key={o.id} className="hover:bg-muted/20 transition-colors">
-                    <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
-                    <td className="py-4 px-6">{o.representativeName || '-'}</td>
+                  <tr key={l.id} className="hover:bg-muted/20 transition-colors">
+                    <td className="py-4 px-6 font-mono-data font-bold text-primary">{l.id}</td>
+                    <td className="py-4 px-6 text-xs text-muted-foreground">{l.orderIds.join(', ')}</td>
                     <td className="py-4 px-6">{driver?.name || '-'}</td>
-                    <td className="py-4 px-6 font-mono-data text-muted-foreground">-</td>
+                    <td className="py-4 px-6 font-mono-data text-muted-foreground">{dataStr}</td>
                     <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(frete)}</td>
                     <td className="py-4 px-6 text-right font-mono-data">-</td>
                     <td className="py-4 px-6 text-right font-mono-data">-</td>
@@ -433,14 +445,14 @@ const Financial = () => {
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-status-warning/15 text-status-warning">Pendente</span>
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <button className={btnPrimary} onClick={() => openNewForOrder(o)}>Lançar</button>
+                      <button className={btnPrimary} onClick={() => openNewForLoad(l)}>Lançar</button>
                     </td>
                   </tr>
                 );
               })}
-              {allPendingRows.length === 0 && (
+              {pendingLoads.length === 0 && (
                 <tr>
-                  <td colSpan={10} className="py-10 text-center text-muted-foreground">Nenhum pedido pendente.</td>
+                  <td colSpan={10} className="py-10 text-center text-muted-foreground">Nenhum carregamento pendente.</td>
                 </tr>
               )}
             </tbody>
@@ -625,25 +637,27 @@ const Financial = () => {
         </div>
       </Modal>
 
-      <Modal open={openNew} onClose={() => { setOpenNew(false); setEditingId(null); resetNew(); }} title={editingId ? `Editar Lançamento: ${orderId}` : 'Novo Lançamento'} wide>
+      <Modal open={openNew} onClose={() => { setOpenNew(false); setEditingId(null); resetNew(); }} title={editingId ? `Editar Lançamento: ${loadId || orderId}` : 'Novo Lançamento'} wide>
         <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-semibold font-display text-foreground">Pedido Entregue</label>
+              <label className="text-sm font-semibold font-display text-foreground">Carregamento</label>
               <select
                 className={inputClass + ' mt-2'}
-                value={orderId}
+                value={loadId}
                 onChange={(e) => {
                   const id = e.target.value;
-                  setOrderId(id);
-                  const o = deliveredOrders.find((x) => x.id === id);
-                  setFreightValue(Number(o?.freightValue) || 0);
+                  setLoadId(id);
+                  setOrderId('');
+                  const l = loads.find((x) => x.id === id);
+                  setFreightValue(Number(l?.freightValue) || 0);
+                  setDriverValue(Math.max(0, Math.round((Number(l?.freightValue) || 0) * 0.6)));
                 }}
               >
                 <option value="">Selecione...</option>
-                {pendingOrders.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.id} — {o.representativeName || '-'}
+                {pendingLoads.map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.id} — {drivers.find(d => d.id === l.driverId)?.name || '-'}
                   </option>
                 ))}
               </select>
@@ -654,11 +668,11 @@ const Financial = () => {
             </div>
           </div>
 
-          {selectedOrder && (
+          {selectedLoad && (
             <div className="bg-muted/20 rounded-xl border border-border p-4 grid grid-cols-1 md:grid-cols-4 gap-4">
               <div>
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Representante</p>
-                <p className="mt-1 font-semibold">{selectedOrder.representativeName || '-'}</p>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Pedidos</p>
+                <p className="mt-1 font-semibold text-xs">{selectedLoad.orderIds.join(', ')}</p>
               </div>
               <div>
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Motorista</p>
@@ -669,8 +683,8 @@ const Financial = () => {
                 <p className="mt-1 font-mono-data font-bold">{formatCurrency(freightValue)}</p>
               </div>
               <div>
-                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Total do Pedido</p>
-                <p className="mt-1 font-mono-data font-bold">{formatCurrency(getOrderTotal(selectedOrder))}</p>
+                <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Nº de Pedidos</p>
+                <p className="mt-1 font-mono-data font-bold">{selectedLoad.orderIds.length}</p>
               </div>
             </div>
           )}
@@ -746,7 +760,7 @@ const Financial = () => {
 
           <div className="flex items-center justify-end gap-3">
             <button className={btnDanger} onClick={() => { setOpenNew(false); setEditingId(null); resetNew(); }}>Cancelar</button>
-            <button className={btnPrimary} onClick={saveEntry} disabled={!selectedOrder}>Salvar Lançamento</button>
+            <button className={btnPrimary} onClick={saveEntry} disabled={!selectedLoad && !selectedOrder}>Salvar Lançamento</button>
           </div>
         </div>
       </Modal>

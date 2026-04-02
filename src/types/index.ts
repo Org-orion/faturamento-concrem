@@ -20,6 +20,7 @@ export interface Client {
 export interface Driver {
   id: string;
   name: string;
+  cpf?: string;
   cnh: string;
   cnhCategory: string;
   phone: string;
@@ -73,6 +74,8 @@ export interface SupportOrder {
   paymentTerms?: string;
   totalPedidoVenda?: number;
   totalQtdM3?: number;
+  totalQtd?: number;
+  pesoLiquidoItem?: number;
   commercialNotes?: string;
   commercialDecisionNote?: string;
   history?: { at: string; by: string; action: string; note?: string }[];
@@ -169,6 +172,8 @@ export interface Order {
   paymentTerms?: string;
   totalPedidoVenda?: number;
   totalQtdM3?: number;
+  totalQtd?: number;
+  pesoLiquidoItem?: number;
   commercialNotes?: string;
   commercialDecisionNote?: string;
   carregamentoId?: string;
@@ -207,6 +212,7 @@ export type FreightEntryStatus = 'Pendente' | 'Lançado' | 'Conferido';
 export interface FreightEntry {
   id: string;
   orderId: string;
+  loadId?: string;
   driverId: string;
   deliveryDate: string;
   freightValue: number;

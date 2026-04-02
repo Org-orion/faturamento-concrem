@@ -1,7 +1,10 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, tableColumns } from '@/contexts/AppContext';
 import { formatCurrency, getOrderTotal, loadStatusColors, StatusBadge, btnSecondary } from '@/components/shared';
+import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { rowToOrder } from '@/lib/pedidoMapper';
+import type { Order, PedidoStatusRow } from '@/types';
 import { Edit2, Plus, Package, FileText, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoSrc from '@/assets/logo.png';
@@ -47,13 +50,42 @@ const shipmentStatuses = [
   { value: 'Aguardando Despacho', label: 'Aguardando Despacho' },
   { value: 'Despachado', label: 'Despachado' },
   { value: 'Em Rota', label: 'Em Rota' },
-  { value: 'Entregue', label: 'Entregue' },
   { value: 'Cancelado', label: 'Cancelado' },
 ];
 
 const LoadsPage = () => {
   const { loads, drivers, orders, supportOrders } = useApp();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [extraOrders, setExtraOrders] = useState<Order[]>([]);
+  const [pedidoStatusMap, setPedidoStatusMap] = useState<Map<string, PedidoStatusRow>>(new Map());
+
+  // Buscar pedidos extras (não estão no AppContext) e status de todos os pedidos dos carregamentos
+  useEffect(() => {
+    if (!loads.length) return;
+    const allOrderIds = Array.from(new Set(loads.flatMap((l) => l.orderIds)));
+    if (!allOrderIds.length) return;
+
+    void (async () => {
+      // Buscar status
+      if (supabaseOps) {
+        const { data } = await supabaseOps.from('pedidos_status').select('*').in('pedido_id', allOrderIds);
+        if (data) {
+          setPedidoStatusMap(new Map((data as PedidoStatusRow[]).map((r) => [r.pedido_id, r])));
+        }
+      }
+
+      // Buscar pedidos extras
+      if (supabasePedidos) {
+        const knownIds = new Set([...orders.map((o) => o.id), ...supportOrders.map((o) => o.id)]);
+        const missingIds = allOrderIds.filter((id) => !knownIds.has(id));
+        if (missingIds.length > 0) {
+          const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+          const { data } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
+          if (data) setExtraOrders((data as any[]).map((row) => rowToOrder(row, 'CLI-001')));
+        }
+      }
+    })();
+  }, [loads, orders.length, supportOrders.length]);
 
   const { sortState, toggleSort, sortItems } = useTableSort();
   const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<Load>();
@@ -84,12 +116,8 @@ const LoadsPage = () => {
       driver: (l: Load) => drivers.find((d) => d.id === l.driverId)?.name ?? '',
       date: (l: Load) => l.plannedDate,
       orderValue: (l: Load) => {
-        const saleOrders = orders.filter((o) => l.orderIds.includes(o.id));
-        const supOrders = supportOrders.filter((o) => l.orderIds.includes(o.id));
-        return (
-          saleOrders.reduce((acc, o) => acc + getOrderTotal(o), 0) +
-          supOrders.reduce((acc, o) => acc + o.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0), 0)
-        );
+        const all = [...orders, ...supportOrders as unknown as Order[], ...extraOrders];
+        return all.filter((o) => l.orderIds.includes(o.id)).reduce((acc, o) => acc + (o.totalPedidoVenda || getOrderTotal(o)), 0);
       },
       freightValue: (l: Load) => l.freightValue || 0,
       status: (l: Load) => l.shipmentStatus,
@@ -115,7 +143,8 @@ const LoadsPage = () => {
   ];
 
   const filteredAndSorted = useMemo(() => {
-    const colFiltered = colFilter.filterItems(loads, colDefs);
+    const active = loads.filter(l => l.shipmentStatus !== 'Entregue');
+    const colFiltered = colFilter.filterItems(active, colDefs);
     const filtered = filterItems(
       colFiltered,
       textGetters,
@@ -357,11 +386,15 @@ const LoadsPage = () => {
             <tbody className="divide-y divide-border/50">
               {filteredAndSorted.map((load, index) => {
                 const driver = drivers.find((d) => d.id === load.driverId);
-                const saleOrders = orders.filter((o) => load.orderIds.includes(o.id));
-                const supOrders = supportOrders.filter((o) => load.orderIds.includes(o.id));
-                const totalOrderValue =
-                  saleOrders.reduce((acc, o) => acc + getOrderTotal(o), 0) +
-                  supOrders.reduce((acc, o) => acc + o.items.reduce((s, it) => s + it.quantity * it.unitPrice, 0), 0);
+                const allAvailable = [...orders, ...supportOrders as unknown as Order[], ...extraOrders];
+                const loadOrders = allAvailable.filter((o) => load.orderIds.includes(o.id));
+                const totalOrderValue = loadOrders.reduce((acc, o) => acc + (o.totalPedidoVenda || getOrderTotal(o)), 0);
+
+                // Derivar productionStatus real dos pedidos_status
+                const prodStatusValues = load.orderIds.map((id) => pedidoStatusMap.get(id)?.status_atual);
+                const allFinalized = prodStatusValues.every((s) => s === 'producao_finalizada' || s === 'faturado' || s === 'em_entrega' || s === 'entregue' || s === 'finalizado');
+                const anyInProd = prodStatusValues.some((s) => s === 'em_producao' || s === 'mapeamento_andamento' || s === 'mapeamento_concluido' || s === 'aguardando_ferragem' || s === 'ferragem_recebida');
+                const derivedProdStatus = allFinalized ? 'Produção Concluída' : anyInProd ? 'Em Produção' : load.productionStatus;
 
                 return (
                   <tr key={`${load.id}-${index}`} className="hover:bg-muted/30 transition-colors group">
@@ -392,7 +425,7 @@ const LoadsPage = () => {
                     </td>
                     <td className="py-4 px-6">
                       <div className="flex flex-col gap-2">
-                        <StatusBadge status={load.productionStatus} colorMap={loadStatusColors} />
+                        <StatusBadge status={derivedProdStatus} colorMap={loadStatusColors} />
                         <StatusBadge status={load.shipmentStatus} colorMap={loadStatusColors} />
                       </div>
                     </td>

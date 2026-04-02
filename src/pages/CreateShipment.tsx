@@ -14,11 +14,11 @@ import {
   formatCurrency,
   getOrderTotal
 } from '@/components/shared';
-import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle, Printer } from 'lucide-react';
+import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas } from '@/lib/opsRepo';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164 } from '@/lib/pedidosStatusRepo';
-import { sendEvolutionText } from '@/lib/evolutionApi';
+import { sendEvolutionText, sendEvolutionMedia } from '@/lib/evolutionApi';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
@@ -48,6 +48,7 @@ const CreateShipment = () => {
   const [shipmentStatus, setShipmentStatus] = useState<ShipmentStatus>('Aguardando Despacho');
   const [freightValue, setFreightValue] = useState(0);
   const [shipmentDate, setShipmentStatusDate] = useState(new Date().toISOString().split('T')[0]);
+  const [previsaoEntregaDate, setPrevisaoEntregaDate] = useState(new Date().toISOString().split('T')[0]);
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [deliveredOrderIds, setDeliveredOrderIds] = useState<string[]>([]);
 
@@ -77,9 +78,9 @@ const CreateShipment = () => {
     (o: Order) => o.clientCode || '',
     (o: Order) => {
       const client = clients.find((c) => c.id === o.clientId);
-      return `${client?.address.city || ''} ${client?.address.state || ''}`;
+      return `${o.clientCity || client?.address.city || ''} ${o.clientUF || client?.address.state || ''}`;
     },
-    (o: Order) => o.expiryDate || '',
+    (o: Order) => o.previsaoCarregamento || o.expiryDate || '',
   ], [clients]);
 
   const sortGetters: Record<string, (item: Order) => unknown> = useMemo(() => ({
@@ -88,9 +89,9 @@ const CreateShipment = () => {
     phone: (o: Order) => o.representativePhone || '',
     city: (o: Order) => {
       const client = clients.find((c) => c.id === o.clientId);
-      return `${client?.address.city || ''}/${client?.address.state || ''}`;
+      return `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
     },
-    expiry: (o: Order) => o.expiryDate || '',
+    expiry: (o: Order) => o.previsaoCarregamento || o.expiryDate || '',
     value: (o: Order) => o.totalPedidoVenda || getOrderTotal(o),
   }), [clients]);
 
@@ -117,7 +118,7 @@ const CreateShipment = () => {
         type: 'text',
         getValue: (o: Order) => {
           const client = clients.find((c) => c.id === o.clientId);
-          return `${client?.address.city || ''}/${client?.address.state || ''}`;
+          return `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
         },
         placeholder: 'Cidade ou Estado...',
       },
@@ -125,7 +126,7 @@ const CreateShipment = () => {
         id: 'expiry',
         label: 'Filtrar Previsão',
         type: 'text',
-        getValue: (o: Order) => o.expiryDate || '',
+        getValue: (o: Order) => o.previsaoCarregamento || o.expiryDate || '',
         placeholder: 'Data...',
       },
     ] satisfies Array<FilterField<Order>>;
@@ -151,7 +152,7 @@ const CreateShipment = () => {
         setDriverId(loadToEdit.driverId);
         setShipmentStatus(loadToEdit.shipmentStatus);
         setSelectedOrderIds(loadToEdit.orderIds);
-        setFreightValue(loadToEdit.freightValue || 0);
+        // freightValue será recalculado automaticamente pelo useEffect de soma
         setShipmentStatusDate(loadToEdit.plannedDate || new Date().toISOString().split('T')[0]);
       } else {
         showToast('Carregamento não encontrado.', 'error');
@@ -219,6 +220,9 @@ const CreateShipment = () => {
     'ferragem_recebida',
     'em_producao',
     'producao_finalizada',
+    'faturado',
+    'em_entrega',
+    'entregue',
   ];
 
   const [directPedidos, setDirectPedidos] = useState<Order[]>([]);
@@ -230,7 +234,7 @@ const CreateShipment = () => {
         ?? directPedidos.find(o => o.id === orderId);
       return acc + (order?.freightValue || 0);
     }, 0);
-    setFreightValue(totalFreight);
+    setFreightValue(Math.round(totalFreight * 100) / 100);
   }, [selectedOrderIds, orders, supportOrders, directPedidos]);
 
   const selectedDriver = drivers.find(d => d.id === driverId);
@@ -284,6 +288,29 @@ const CreateShipment = () => {
     return Array.from(map.values());
   }, [directPedidos, orders, supportOrders]);
 
+  // Pré-preencher qtdKits e qtdVolumes com valores do pedido quando não há valor salvo
+  useEffect(() => {
+    if (selectedOrderIds.length === 0) return;
+    setQtdKits(prev => {
+      const next = { ...prev };
+      for (const oid of selectedOrderIds) {
+        if (next[oid] !== undefined && next[oid] !== '') continue;
+        const order = allCandidates.find(o => o.id === oid);
+        if (order?.totalQtd != null) next[oid] = String(order.totalQtd);
+      }
+      return next;
+    });
+    setQtdVolumes(prev => {
+      const next = { ...prev };
+      for (const oid of selectedOrderIds) {
+        if (next[oid] !== undefined && next[oid] !== '') continue;
+        const order = allCandidates.find(o => o.id === oid);
+        if (order?.totalQtdM3 != null) next[oid] = String(order.totalQtdM3).replace('.', ',');
+      }
+      return next;
+    });
+  }, [selectedOrderIds, allCandidates]);
+
   const availableOrders = allCandidates.filter(o => {
     const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
     const isAllowedStatus = pedidoStatus ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !o.carregamentoId : false;
@@ -292,13 +319,13 @@ const CreateShipment = () => {
     if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
     const client = clients.find(c => c.id === o.clientId);
-    const cityState = `${client?.address.city || ''}/${client?.address.state || ''}`;
+    const cityState = `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
 
     const matchesId = o.id.toLowerCase().includes(filters.id.toLowerCase());
     const matchesClient = (o.representativeName || '').toLowerCase().includes(filters.client.toLowerCase());
     const matchesRep = (o.representativePhone || '').toLowerCase().includes(filters.representative.toLowerCase());
     const matchesCity = cityState.toLowerCase().includes(filters.city.toLowerCase());
-    const matchesExpiry = (o.expiryDate || '').toLowerCase().includes(filters.expiry.toLowerCase());
+    const matchesExpiry = (o.previsaoCarregamento || o.expiryDate || '').toLowerCase().includes(filters.expiry.toLowerCase());
 
     return matchesId && matchesClient && matchesRep && matchesCity && matchesExpiry;
   });
@@ -343,107 +370,304 @@ const CreateShipment = () => {
     });
   };
 
-  const handlePrint = () => {
+  const handleGenerateFormulario = async (orderId: string) => {
+    const order = allCandidates.find((o) => o.id === orderId);
+    if (!order) return;
+
     const driver = drivers.find((d) => d.id === driverId);
-    const driverName = driver?.name || 'NÃO SELECIONADO';
-    const vehicleType = driver?.vehicleType || '-';
+    const client = clients.find((c) => c.id === order.clientId);
 
-    const totalGeral = selectedOrderIds.reduce((acc, orderId) => {
-      const order = allCandidates.find((o) => o.id === orderId);
-      return acc + (order ? (order.totalPedidoVenda || getOrderTotal(order)) : 0);
-    }, 0);
+    const repId = String(order.representativeId || '').trim();
+    const repName = String(order.representativeName || '').trim();
+    const repContact = repContacts[repId] || repContacts[repName];
 
-    const html = `
-      <!doctype html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>RELATÓRIO GERAL DE CARREGAMENTOS</title>
-          <style>
-            @page { size: A4; margin: 14mm; }
-            body { font-family: Arial, Helvetica, sans-serif; color: #000; }
-            .header { display:flex; justify-content:space-between; align-items:flex-start; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 14px; }
-            .logo { font-weight: 900; font-size: 18px; }
-            .title { text-align:center; font-weight: 900; font-size: 14px; letter-spacing: .6px; }
-            .meta { text-align:right; font-weight: 700; font-size: 11px; }
-            .info { display:flex; justify-content:space-between; border-bottom: 2px solid #000; padding-bottom: 10px; margin-bottom: 14px; }
-            .info div { font-weight: 800; font-size: 12px; text-transform: uppercase; }
-            table { width: 100%; border-collapse: collapse; font-size: 11px; text-transform: uppercase; }
-            th, td { border: 1px solid #000; padding: 8px; }
-            th { font-weight: 900; background: #fff; }
-            tfoot td { font-weight: 900; }
-            .right { text-align:right; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <div class="logo">CONCREM</div>
-            <div class="title">RELATÓRIO GERAL DE CARREGAMENTOS / CONCREM INDUSTRIAL LTDA</div>
-            <div class="meta">
-              <div>DATA: ${new Date(shipmentDate).toLocaleDateString('pt-BR')}</div>
-              <div>MOTORISTA: ${String(driverName).toUpperCase()}</div>
-            </div>
-          </div>
-
-          <div class="info">
-            <div>MOTORISTA: ${String(driverName).toUpperCase()}</div>
-            <div>DATA: ${new Date(shipmentDate).toLocaleDateString('pt-BR')}</div>
-            <div>VEÍCULO: ${String(vehicleType).toUpperCase()}</div>
-          </div>
-
-          <table>
-            <thead>
-              <tr>
-                <th>MOTORISTA</th>
-                <th>DATA</th>
-                <th>Nº PEDIDO</th>
-                <th>EMPRESA</th>
-                <th class="right">VALOR</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${selectedOrderIds
-                .map((orderId) => {
-                  const order = allCandidates.find((o) => o.id === orderId);
-                  const client = order ? clients.find((c) => c.id === order.clientId) : undefined;
-                  const total = order ? (order.totalPedidoVenda || getOrderTotal(order)) : 0;
-                  const company = client ? `${client.id} - ${client.name}` : '-';
-                  const dateStr = new Date(shipmentDate).toLocaleDateString('pt-BR');
-                  return `
-                    <tr>
-                      <td>${String(driverName).toUpperCase()}</td>
-                      <td>${dateStr}</td>
-                      <td>${String(orderId).toUpperCase()}</td>
-                      <td>${String(company).toUpperCase()}</td>
-                      <td class="right">${formatCurrency(total)}</td>
-                    </tr>
-                  `;
-                })
-                .join('')}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colspan="4" class="right">TOTAL GERAL</td>
-                <td class="right">${formatCurrency(totalGeral)}</td>
-              </tr>
-            </tfoot>
-          </table>
-
-          <script>
-            window.onload = () => window.print();
-          </script>
-        </body>
-      </html>
-    `;
-
-    const w = window.open('', '_blank');
-    if (!w) {
-      showToast('Popup bloqueado ao gerar PDF. Permita popups para este site.', 'error');
-      return;
+    let repAddress: any = null;
+    if (repContact?.endereco) {
+      try { repAddress = JSON.parse(repContact.endereco); } catch { repAddress = null; }
     }
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+
+    const driverName = driver?.name || '-';
+    const driverCpf = driver?.cpf || '-';
+    const driverPhone = driver?.phone || '-';
+    const driverPlate = driver?.plate || '-';
+    const representanteName = repContact?.nome || order.representativeName || '-';
+    const representantePhone = repContact?.telefone || order.representativePhone || '-';
+
+    const numeroPedido = order.id || '-';
+    const nfNumber = invoiceNumbers[orderId] || '';
+
+    const cidadeUfRaw = (order.clientCity && order.clientUF)
+      ? `${order.clientCity} - ${order.clientUF}`
+      : repAddress
+        ? `${repAddress.city || ''} - ${repAddress.state || ''}`
+        : client
+          ? `${client.address.city || ''} - ${client.address.state || ''}`
+          : '-';
+
+    const enderecoRaw = repAddress
+      ? `${repAddress.street || ''}, ${repAddress.number || ''}${repAddress.neighborhood ? ' - ' + repAddress.neighborhood : ''}`
+      : client
+        ? `${client.address.street || ''}, ${client.address.number || ''}${client.address.neighborhood ? ' - ' + client.address.neighborhood : ''}`
+        : '-';
+
+    const empresaLabel = order.clientCode
+      ? `${order.clientCode} - ${order.clientName || client?.name || '-'}`
+      : (order.clientName || client?.name || '-');
+    const cnpj = client?.cpfCnpj || '-';
+
+    const kits = qtdKits[orderId] || '0';
+    const pallets = qtdPallets[orderId] || '0';
+    const volumes = qtdVolumes[orderId] || '0';
+
+    const logoBase64 = await fetch('/logo-nova-tagline.png')
+      .then(r => r.blob())
+      .then(b => new Promise<string>((res, rej) => {
+        const reader = new FileReader();
+        reader.onloadend = () => res(reader.result as string);
+        reader.onerror = rej;
+        reader.readAsDataURL(b);
+      }))
+      .catch(() => '');
+
+    const logoTag = logoBase64
+      ? `<img src="${logoBase64}" />`
+      : `<span style="font-weight:900;font-size:20px;letter-spacing:2px;">CONCREM</span>`;
+
+    const dateStr = new Date().toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+    const formHtml = `
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; background: #fff; }
+  .page { width: 680px; }
+
+  /* HEADER */
+  table.hdr { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
+  table.hdr td { vertical-align: middle; }
+  .hdr-logo { width: 130px; border-right: 1px solid #000; padding: 6px 8px; text-align: center; }
+  .hdr-logo img { width: 110px; height: auto; display: block; margin: 0 auto; }
+  .hdr-title { text-align: center; padding: 6px 10px; border-right: 1px solid #000; }
+  .hdr-title .t1 { font-weight: 900; font-size: 11pt; text-transform: uppercase; letter-spacing: .3px; }
+  .hdr-title .t2 { font-size: 9pt; font-weight: 700; margin-top: 2px; }
+  .hdr-date { width: 95px; text-align: center; padding: 6px 6px; }
+  .hdr-date .dlbl { font-size: 7pt; font-weight: 700; text-transform: uppercase; color: #333; }
+  .hdr-date .dv { font-size: 10pt; font-weight: 900; margin-top: 2px; }
+
+  /* MANDATORY */
+  .mandatory { text-align: center; font-weight: 900; font-size: 10pt; padding: 4px 0 5px; }
+
+  /* SECTION */
+  table.sec { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
+  table.sec td { padding: 0 6px; font-size: 9pt; border: 1px solid #000; vertical-align: middle; height: 22px; }
+  td.sec-hdr { font-weight: 900; font-size: 9pt; text-transform: uppercase; background: #fff; border-bottom: 1px solid #000; padding: 3px 6px; height: auto; vertical-align: middle; }
+  .lbl { font-weight: 400; }
+  .val { font-weight: 700; }
+
+  /* QTY */
+  table.qty { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
+  table.qty td { padding: 0 6px; height: 22px; border: 1px solid #000; font-size: 9pt; vertical-align: middle; }
+  .qlbl { font-weight: 700; }
+  .qval { font-weight: 700; }
+
+  /* CONDITIONS */
+  table.cond { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
+  table.cond td { padding: 5px 6px; font-size: 9pt; }
+  .cond-title { font-weight: 900; text-transform: uppercase; margin-bottom: 3px; }
+  .cond-line { line-height: 1.6; }
+  .cond-notice { font-weight: 900; margin-top: 4px; }
+
+  /* OBS */
+  table.obs { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
+  table.obs td { padding: 4px 6px; font-size: 9pt; }
+  .obs-title { font-weight: 900; text-transform: uppercase; margin-bottom: 3px; }
+  .obs-box { height: 50px; margin-top: 3px; }
+
+  /* DECLARATION */
+  table.decl { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 0; }
+  table.decl td { padding: 5px 6px; font-size: 8.5pt; line-height: 1.55; text-align: justify; }
+
+  /* SIGNATURES */
+  .sigs { display: flex; gap: 80px; padding: 14px 60px 4px; }
+  .sig { flex: 1; text-align: center; }
+  .sig .line { border-top: 1px solid #000; padding-top: 3px; font-size: 9pt; font-weight: 400; margin-top: 18px; }
+
+  /* FOOTER */
+  table.ftr { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; }
+  table.ftr td { padding: 5px 6px; font-size: 8.5pt; }
+  .ftr-line { font-weight: 700; display: block; line-height: 1.5; }
+  .ftr-contact { text-align: center; font-size: 8pt; margin-top: 5px; padding-top: 4px; border-top: 1px solid #ccc; }
+</style>
+
+<div class="page">
+
+  <!-- HEADER -->
+  <table class="hdr">
+    <tr>
+      <td class="hdr-logo">${logoTag}</td>
+      <td class="hdr-title">
+        <div class="t1">Formulário de Recebimento de Produtos</div>
+        <div class="t2">CONCREM INDUSTRIAL LTDA</div>
+      </td>
+      <td class="hdr-date">
+        <div class="dlbl">Data</div>
+        <div class="dv">${dateStr}</div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- MANDATORY -->
+  <div class="mandatory">*****Preenchimento obrigatório!*****</div>
+
+  <!-- DADOS DO MOTORISTA -->
+  <table class="sec">
+    <tr><td colspan="2" class="sec-hdr">Dados do Motorista</td></tr>
+    <tr height="22">
+      <td width="60%" height="22" valign="middle" style="width:60%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nome: </span><span class="val">${driverName}</span></td>
+      <td width="40%" height="22" valign="middle" style="width:40%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CPF: </span><span class="val">${driverCpf}</span></td>
+    </tr>
+    <tr height="22">
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Placas: </span><span class="val">${driverPlate}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cel: </span><span class="val">${driverPhone}</span></td>
+    </tr>
+    <tr height="22">
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Representante Comercial Concrem: </span><span class="val">${representanteName}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cel: </span><span class="val">${representantePhone}</span></td>
+    </tr>
+  </table>
+
+  <!-- DADOS DA ENTREGA -->
+  <table class="sec">
+    <tr><td colspan="2" class="sec-hdr">Dados da Entrega</td></tr>
+    <tr height="22">
+      <td width="50%" height="22" valign="middle" style="width:50%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nº do Pedido: </span><span class="val">${numeroPedido}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nº da nota fiscal: </span><span class="val">${nfNumber}</span></td>
+    </tr>
+    <tr height="22">
+      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Endereço de entrega: </span><span class="val">${enderecoRaw}</span></td>
+    </tr>
+    <tr height="22">
+      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cidade/UF: </span><span class="val">${cidadeUfRaw}</span></td>
+    </tr>
+  </table>
+
+  <!-- DADOS DO CLIENTE -->
+  <table class="sec">
+    <tr><td colspan="2" class="sec-hdr">Dados do Cliente</td></tr>
+    <tr height="22">
+      <td width="60%" height="22" valign="middle" style="width:60%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Empresa: </span><span class="val">${empresaLabel}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CNPJ: </span><span class="val">${cnpj}</span></td>
+    </tr>
+    <tr height="22">
+      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Responsável pelo Recebimento: </span></td>
+    </tr>
+    <tr height="22">
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cargo: </span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CPF: </span></td>
+    </tr>
+    <tr height="22">
+      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Data do recebimento: </span></td>
+    </tr>
+  </table>
+
+  <!-- KITS / PALLETS / VOLUMES -->
+  <table class="qty">
+    <tr height="22">
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="qlbl">KITS:</span><span class="qval">${kits}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="qlbl">PALLETS: </span><span class="qval">${pallets}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="qlbl">VOLUMES: </span><span class="qval">${volumes}</span></td>
+    </tr>
+  </table>
+
+  <!-- CONDITIONS -->
+  <table class="cond">
+    <tr><td>
+      <div class="cond-title">Condições de Recebimento dos Produtos</div>
+      <div class="cond-line">1. Os produtos recebidos estão de acordo com o pedido? ( ) Sim &nbsp; ( ) Não</div>
+      <div class="cond-line">2. As embalagens/produtos/pallets chegaram em perfeito estado? ( ) Sim &nbsp; ( ) Não</div>
+      <div class="cond-line">3. As quantidades recebidas estão de acordo com o pedido? ( ) Sim &nbsp; ( ) Não</div>
+      <div class="cond-line">4. As quantidades de ferragens estão de acordo com o combinado? ( ) Sim &nbsp; ( ) Não &nbsp; ( ) N/A</div>
+      <div class="cond-line">5. Todos os produtos recebidos foram conferidos corretamente na hora do desembarque? ( ) Sim &nbsp; ( ) Não</div>
+      <div class="cond-notice">O não preenchimento deste formulário atesta o recebimento dos itens conforme o pedido/nota fiscal.</div>
+    </td></tr>
+  </table>
+
+  <!-- OBS -->
+  <table class="obs">
+    <tr><td>
+      <div class="obs-title">Observações do Cliente</div>
+      <div class="obs-box"></div>
+    </td></tr>
+  </table>
+
+  <!-- DECLARATION -->
+  <table class="decl">
+    <tr><td>
+      EU, motorista citado a cima, declaro estar ciente de que OS PRODUTOS DA EMPRESA CONCREM INDUSTRIAL LTDA, estão de acordo com o pedido, todos embalados e etiquetados com suas devidas orientações e em perfeitas condições, estou ciente e orientado de como devo proceder no desembarque dos mesmos, para evitar danos aos produtos, sendo assim, comprometo-me pela entrega até o endereço a mim destinado, me responsabilizando em avisar ao setor responsável no ato da descarga qualquer tipo de avaria.
+    </td></tr>
+  </table>
+
+  <!-- SIGNATURES -->
+  <div class="sigs">
+    <div class="sig"><div class="line">Motorista</div></div>
+    <div class="sig"><div class="line">Responsável pelo Recebimento</div></div>
+  </div>
+
+  <!-- FOOTER -->
+  <table class="ftr">
+    <tr><td>
+      <span class="ftr-line">ATENÇÃO CLIENTE, Em caso de dúvidas, sugestões ou reclamações, entrar em contato imediatamente com a Concrem.</span>
+      <span class="ftr-line">ATENÇÃO MOTORISTA, enviar uma via digital deste formulário para a empresa, logo após seu preenchimento.</span>
+      <div class="ftr-contact">
+        E-mail: sac@concrem.com.br &nbsp;&nbsp; Whatsapp: (94) 99272-3890 &nbsp;&nbsp; Tel: (94) 98114-2020<br/>
+        <strong>CONCREM INDUSTRIAL LTDA</strong><br/>
+        www.concremportas.com.br
+      </div>
+    </td></tr>
+  </table>
+
+</div>`;
+
+    // Render off-screen so html2canvas can capture it
+    const container = document.createElement('div');
+    container.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:white;pointer-events:none;width:680px;';
+    container.innerHTML = formHtml;
+    document.body.appendChild(container);
+
+    await new Promise(r => setTimeout(r, 800));
+
+    try {
+      const html2pdf = (await import('html2pdf.js')).default;
+      const el = container.querySelector('.page') as HTMLElement;
+      if (!el) throw new Error('Elemento .page não encontrado');
+      await html2pdf()
+        .set({
+          margin: [15, 15, 15, 15],
+          filename: `formulario-pedido-${numeroPedido}.pdf`,
+          image: { type: 'jpeg', quality: 0.98 },
+          html2canvas: { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false },
+          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+        })
+        .from(el)
+        .save();
+    } catch (err) {
+      console.error('Erro ao gerar PDF:', err);
+      showToast('Erro ao gerar PDF. Tente novamente.', 'error');
+      return;
+    } finally {
+      document.body.removeChild(container);
+    }
+
+    // Formulário gerado → pedido Em Rota (somente se NF e boleto também estiverem anexados)
+    const attachs = orderAttachments[orderId] || {};
+    if (attachs.nf?.url && attachs.boleto?.url) {
+      void updatePedidoStatus({
+        pedidoId: orderId,
+        numeroPedido: orderId,
+        statusNovo: 'em_entrega',
+        alteradoPor: user?.username || null,
+        observacao: 'Formulário de entrega gerado',
+      });
+    }
   };
 
   const sendReportWhatsapp = async () => {
@@ -459,7 +683,10 @@ const CreateShipment = () => {
     const driver = drivers.find((d) => d.id === driverId);
     const driverName = driver?.name || '-';
     const driverPhone = driver?.phone || '-';
-    const dataEmbarque = new Date(shipmentDate).toLocaleDateString('pt-BR');
+    const [ay, am, ad] = shipmentDate.split('-');
+    const dataEmbarque = `${ad}/${am}/${ay}`;
+    const [py, pm, pd] = previsaoEntregaDate.split('-');
+    const dataPrevisaoEntrega = `${pd}/${pm}/${py}`;
     const hora = new Date().getHours();
     const saudacao = hora < 12 ? 'Bom dia!' : hora < 18 ? 'Boa tarde!' : 'Boa noite!';
 
@@ -488,21 +715,20 @@ const CreateShipment = () => {
         const nf = invoiceNumbers[order.id] || 'S/N';
         message += `· ${nf} - ${client?.name || order.clientName || 'Cliente'}\n`;
       }
-      message += `\nPrevisão de entrega a partir do dia ${dataEmbarque}.\n\n`;
+      message += `\nPrevisão de entrega a partir do dia ${dataPrevisaoEntrega}.\n\n`;
       message += `Gentileza contatar o motorista para informações sobre o local de entrega.\n`;
       message += `Lembrando a importância do representante sempre acompanhar a descarga.\n\n`;
       message += `MOTORISTA / CONTATO\n${driverName} - ${driverPhone}`;
 
-      // Incluir links de documentos (apenas de pedidos deste representante)
-      const docLines: string[] = [];
+      // Coletar anexos (PDFs) para envio direto
+      const hasBoleto = repOrders.some(o => orderAttachments[o.id]?.boleto?.url);
+      type DocAttach = { url: string; label: string; orderId: string };
+      const docAttachs: DocAttach[] = [];
       for (const order of repOrders) {
         const attachs = orderAttachments[order.id] || {};
-        if (attachs.boleto?.url) docLines.push(`Boleto (${order.id}): ${attachs.boleto.url}`);
-        if (attachs.nf?.url) docLines.push(`Nota Fiscal (${order.id}): ${attachs.nf.url}`);
-        if (attachs.comprovante?.url) docLines.push(`Comprovante (${order.id}): ${attachs.comprovante.url}`);
-      }
-      if (docLines.length > 0) {
-        message += `\n\nDocumentos:\n${docLines.join('\n')}`;
+        if (attachs.boleto?.url) docAttachs.push({ url: attachs.boleto.url, label: `Boleto-${order.id}.pdf`, orderId: order.id });
+        if (attachs.nf?.url) docAttachs.push({ url: attachs.nf.url, label: `NotaFiscal-${order.id}.pdf`, orderId: order.id });
+        // comprovante de entrega NÃO é enviado ao representante
       }
 
       // Enviar via Evolution API
@@ -515,6 +741,23 @@ const CreateShipment = () => {
           } else {
             showToast(`Falha ao enviar para ${repName}: ${result.error}`, 'error');
           }
+
+          // Enviar cada PDF diretamente como arquivo
+          for (const doc of docAttachs) {
+            try {
+              const blob = await fetch(doc.url).then(r => r.blob());
+              const base64 = await new Promise<string>((resolve, reject) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '');
+                reader.onerror = reject;
+                reader.readAsDataURL(blob);
+              });
+              const mime = blob.type || 'application/pdf';
+              await sendEvolutionMedia(phoneE164, base64, mime, doc.label);
+            } catch (e) {
+              console.error(`Erro ao enviar arquivo ${doc.label}:`, e);
+            }
+          }
         } else {
           showToast(`Número inválido para ${repName}: ${repPhoneRaw}`, 'error');
         }
@@ -524,11 +767,10 @@ const CreateShipment = () => {
 
       // Atualizar status de cada pedido para faturado
       for (const order of repOrders) {
-        const novoStatus = 'faturado';
-        void updatePedidoStatus({
+        await updatePedidoStatus({
           pedidoId: order.id,
           numeroPedido: order.id,
-          statusNovo: novoStatus,
+          statusNovo: 'faturado',
           alteradoPor: user?.username || null,
           observacao: `Relatório enviado via WhatsApp${hasBoleto ? ' com boleto' : ''}`,
         });
@@ -542,10 +784,10 @@ const CreateShipment = () => {
 
   const calculateTotals = () => {
     return selectedOrderIds.reduce((acc, orderId) => {
-      const order = orders.find(o => o.id === orderId) ?? supportOrders.find(o => o.id === orderId);
+      const order = orders.find(o => o.id === orderId) ?? (supportOrders as unknown as Order[]).find(o => o.id === orderId) ?? directPedidos.find(o => o.id === orderId);
       if (!order) return acc;
       const orderVolume = order.totalQtdM3 || 0;
-      const orderWeight = 0; // Placeholder — conectar ao campo de peso quando adicionado no Supabase
+      const orderWeight = order.pesoLiquidoItem || 0;
       return {
         volume: acc.volume + orderVolume,
         weight: acc.weight + orderWeight
@@ -597,6 +839,32 @@ const CreateShipment = () => {
           [type]: { url: urlData.publicUrl, nome: file.name, saved: false },
         },
       }));
+
+      // Comprovante anexado → status Entregue
+      if (type === 'comprovante') {
+        await updatePedidoStatus({
+          pedidoId: orderId,
+          numeroPedido: orderId,
+          statusNovo: 'entregue',
+          alteradoPor: user?.username || null,
+          observacao: 'Comprovante de entrega anexado',
+        });
+
+        // Verifica se todos os pedidos do carregamento têm comprovante
+        const updatedAttachments = { ...orderAttachments, [orderId]: { ...(orderAttachments[orderId] || {}), comprovante: { url: urlData.publicUrl, nome: file.name, saved: false } } };
+        const allDelivered = selectedOrderIds.length > 0 && selectedOrderIds.every(
+          (sid) => updatedAttachments[sid]?.comprovante?.url,
+        );
+        if (allDelivered) {
+          if (id) {
+            const old = loads.find((x) => x.id === id);
+            if (old) void updateLoad({ ...old, shipmentStatus: 'Entregue' });
+          }
+          showToast('Todos os pedidos foram entregues! Carregamento pronto para levantamento financeiro.');
+          return;
+        }
+      }
+
       showToast(`${label} carregado: ${file.name} — clique em Salvar para confirmar.`);
     };
     input.click();
@@ -604,9 +872,9 @@ const CreateShipment = () => {
 
   const [orderSequence, setOrderSequence] = useState<Record<string, number>>({});
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({});
-  const [qtdKits, setQtdKits] = useState<Record<string, number>>({});
-  const [qtdPallets, setQtdPallets] = useState<Record<string, number>>({});
-  const [qtdVolumes, setQtdVolumes] = useState<Record<string, number>>({});
+  const [qtdKits, setQtdKits] = useState<Record<string, string>>({});
+  const [qtdPallets, setQtdPallets] = useState<Record<string, string>>({});
+  const [qtdVolumes, setQtdVolumes] = useState<Record<string, string>>({});
   const [repContacts, setRepContacts] = useState<Record<string, { nome: string | null; telefone: string | null; endereco: string | null }>>({});
 
   useEffect(() => {
@@ -676,9 +944,9 @@ const CreateShipment = () => {
           entregue_em: deliveredOrderIds.includes(pedidoId) ? new Date().toISOString() : null,
           numero_nota: invoiceNumbers[pedidoId] || null,
           ordem_entrega: orderSequence[pedidoId] ?? null,
-          qtd_kits: qtdKits[pedidoId] ?? null,
-          qtd_pallets: qtdPallets[pedidoId] ?? null,
-          qtd_volumes: qtdVolumes[pedidoId] ?? null,
+          qtd_kits: (() => { const v = parseFloat(String(qtdKits[pedidoId] ?? '').replace(',', '.')); return isNaN(v) ? null : v; })(),
+          qtd_pallets: (() => { const v = parseFloat(String(qtdPallets[pedidoId] ?? '').replace(',', '.')); return isNaN(v) ? null : v; })(),
+          qtd_volumes: (() => { const v = parseFloat(String(qtdVolumes[pedidoId] ?? '').replace(',', '.')); return isNaN(v) ? null : v; })(),
         })),
       );
 
@@ -721,6 +989,16 @@ const CreateShipment = () => {
           ...prev,
           [pedidoId]: { ...(prev[pedidoId] || {}), [tipo]: { ...info, saved: true } },
         }));
+      }
+
+      // Se todos os pedidos do carregamento estão marcados como entregues → avançar shipmentStatus para 'Entregue'
+      if (sortedOrderIds.length > 0 && sortedOrderIds.every((pid) => deliveredOrderIds.includes(pid))) {
+        const old = loads.find((x) => x.id === id);
+        if (old && old.shipmentStatus !== 'Entregue') {
+          await updateLoad({ ...old, shipmentStatus: 'Entregue' });
+          showToast('Todos os pedidos entregues! Carregamento enviado para o Financeiro.');
+          return;
+        }
       }
     }
     showToast('Alterações salvas com sucesso!');
@@ -765,6 +1043,7 @@ const CreateShipment = () => {
           freightValue,
         });
         showToast('Programação atualizada com sucesso!');
+        return; // Permanecer na página de edição
       } else {
         await addLoad({
           driverId,
@@ -806,7 +1085,7 @@ const CreateShipment = () => {
   };
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div className="space-y-8">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -859,7 +1138,7 @@ const CreateShipment = () => {
               </select>
             </FormField>
 
-            <FormField label="Data da Embarcação">
+            <FormField label="Data do Carregamento">
               <input 
                 type="date" 
                 className={inputClass} 
@@ -869,12 +1148,16 @@ const CreateShipment = () => {
             </FormField>
 
             <FormField label="Valor do Frete (R$)">
-              <input 
-                type="number" 
-                className={inputClass} 
+              <input
+                type="text"
+                className={inputClass}
                 placeholder="0,00"
-                value={freightValue} 
-                onChange={e => setFreightValue(Number(e.target.value))}
+                value={freightValue === 0 ? '' : freightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                onChange={e => {
+                  const raw = e.target.value.replace(/\./g, '').replace(',', '.');
+                  const num = parseFloat(raw);
+                  setFreightValue(isNaN(num) ? 0 : num);
+                }}
               />
             </FormField>
 
@@ -983,15 +1266,15 @@ const CreateShipment = () => {
                               <p className="text-[10px] text-muted-foreground font-medium">Representante</p>
                             </div>
                             <div>
-                              <p className="font-bold text-sm font-mono-data">{order.representativePhone || '-'}</p>
+                              <p className="font-bold text-sm font-mono-data">{(() => { const repId = String(order.representativeId || '').trim(); const repName = String(order.representativeName || '').trim(); const contact = repContacts[repId] || repContacts[repName]; return contact?.telefone || order.representativePhone || '-'; })()}</p>
                               <p className="text-[10px] text-muted-foreground font-medium">Tel. Rep.</p>
                             </div>
                             <div>
-                              <p className="font-bold text-sm truncate">{client?.address.city}/{client?.address.state}</p>
+                              <p className="font-bold text-sm truncate">{order.clientCity || client?.address.city}/{order.clientUF || client?.address.state}</p>
                               <p className="text-[10px] text-muted-foreground font-medium">Cidade/UF</p>
                             </div>
                             <div>
-                              <p className="font-bold text-sm text-amber-600">{order.expiryDate}</p>
+                              <p className="font-bold text-sm text-amber-600">{order.previsaoCarregamento || order.expiryDate}</p>
                               <p className="text-[10px] text-muted-foreground font-medium">Previsão</p>
                             </div>
                           </div>
@@ -1053,15 +1336,15 @@ const CreateShipment = () => {
                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Representante</p>
                             </div>
                             <div>
-                              <p className="font-bold text-sm font-mono-data">{order.representativePhone || '-'}</p>
+                              <p className="font-bold text-sm font-mono-data">{(() => { const repId = String(order.representativeId || '').trim(); const repName = String(order.representativeName || '').trim(); const contact = repContacts[repId] || repContacts[repName]; return contact?.telefone || order.representativePhone || '-'; })()}</p>
                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Tel. Rep.</p>
                             </div>
                             <div>
-                              <p className="font-bold text-sm truncate">{client?.address.city}/{client?.address.state}</p>
+                              <p className="font-bold text-sm truncate">{order.clientCity || client?.address.city}/{order.clientUF || client?.address.state}</p>
                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Cidade/UF</p>
                             </div>
                             <div>
-                              <p className="font-bold text-sm text-foreground">{order.expiryDate}</p>
+                              <p className="font-bold text-sm text-foreground">{order.previsaoCarregamento || order.expiryDate}</p>
                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Previsão</p>
                             </div>
                           </div>
@@ -1087,7 +1370,16 @@ const CreateShipment = () => {
               Relatório de Entrega
             </h3>
             <div className="flex items-center gap-2">
-              <button 
+              <div className="flex items-center gap-1.5">
+                <label className="text-xs font-bold font-display text-muted-foreground uppercase tracking-tight whitespace-nowrap">Prev. Entrega</label>
+                <input
+                  type="date"
+                  value={previsaoEntregaDate}
+                  onChange={e => setPrevisaoEntregaDate(e.target.value)}
+                  className="px-2 py-1 rounded-lg border border-input bg-card text-foreground font-mono-data text-xs focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                />
+              </div>
+              <button
                 onClick={sendReportWhatsapp}
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors font-display text-xs font-bold uppercase tracking-tight"
                 title="Enviar para o motorista"
@@ -1274,29 +1566,32 @@ const CreateShipment = () => {
                                   </td>
                                   <td className="py-3 px-4 text-center">
                                     <input
-                                      type="number"
-                                      className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm no-spinner"
+                                      type="text"
+                                      inputMode="decimal"
+                                      className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm"
                                       placeholder="0"
                                       value={qtdKits[order.id] ?? ''}
-                                      onChange={(e) => setQtdKits((prev) => ({ ...prev, [order.id]: parseInt(e.target.value, 10) || 0 }))}
+                                      onChange={(e) => setQtdKits((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                     />
                                   </td>
                                   <td className="py-3 px-4 text-center">
                                     <input
-                                      type="number"
-                                      className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm no-spinner"
+                                      type="text"
+                                      inputMode="decimal"
+                                      className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm"
                                       placeholder="0"
                                       value={qtdPallets[order.id] ?? ''}
-                                      onChange={(e) => setQtdPallets((prev) => ({ ...prev, [order.id]: parseInt(e.target.value, 10) || 0 }))}
+                                      onChange={(e) => setQtdPallets((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                     />
                                   </td>
                                   <td className="py-3 px-4 text-center">
                                     <input
-                                      type="number"
-                                      className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm no-spinner"
+                                      type="text"
+                                      inputMode="decimal"
+                                      className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data text-sm"
                                       placeholder="0"
                                       value={qtdVolumes[order.id] ?? ''}
-                                      onChange={(e) => setQtdVolumes((prev) => ({ ...prev, [order.id]: parseInt(e.target.value, 10) || 0 }))}
+                                      onChange={(e) => setQtdVolumes((prev) => ({ ...prev, [order.id]: e.target.value }))}
                                     />
                                   </td>
                                 </>
@@ -1304,12 +1599,12 @@ const CreateShipment = () => {
 
                               <td className="py-3 px-4 text-center sticky right-0 bg-card group-hover:bg-muted/30 z-10 border-l border-border/50">
                                 <div className="flex items-center justify-center gap-1">
-                                  {/* Indicadores de anexo pendente */}
-                                  {orderAttachments[id]?.boleto && (
-                                    <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.boleto?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.boleto?.saved ? 'Boleto salvo' : 'Boleto pendente'}>B</span>
-                                  )}
+                                  {/* Indicadores de anexo */}
                                   {orderAttachments[id]?.nf && (
                                     <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.nf?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.nf?.saved ? 'NF salva' : 'NF pendente'}>NF</span>
+                                  )}
+                                  {orderAttachments[id]?.boleto && (
+                                    <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.boleto?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.boleto?.saved ? 'Boleto salvo' : 'Boleto pendente'}>B</span>
                                   )}
                                   {orderAttachments[id]?.comprovante && (
                                     <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.comprovante?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.comprovante?.saved ? 'Comprovante salvo' : 'Comprovante pendente'}>C</span>
@@ -1323,19 +1618,9 @@ const CreateShipment = () => {
                                     <DropdownMenuContent align="end">
                                       <DropdownMenuLabel>Ações</DropdownMenuLabel>
                                       <DropdownMenuSeparator />
-                                      <DropdownMenuItem className="cursor-pointer">
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleGenerateFormulario(id)}>
                                         <FileText className="mr-2 h-4 w-4" /> Gerar formulário
                                       </DropdownMenuItem>
-                                      <DropdownMenuSeparator />
-                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'boleto')}>
-                                        <Upload className="mr-2 h-4 w-4" />
-                                        {orderAttachments[id]?.boleto ? 'Substituir Boleto' : 'Anexar Boleto'}
-                                      </DropdownMenuItem>
-                                      {orderAttachments[id]?.boleto && (
-                                        <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(orderAttachments[id]?.boleto?.url, '_blank')}>
-                                          <Eye className="mr-2 h-4 w-4" /> Ver Boleto
-                                        </DropdownMenuItem>
-                                      )}
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'nf')}>
                                         <Upload className="mr-2 h-4 w-4" />
@@ -1344,6 +1629,16 @@ const CreateShipment = () => {
                                       {orderAttachments[id]?.nf && (
                                         <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(orderAttachments[id]?.nf?.url, '_blank')}>
                                           <FileCheck className="mr-2 h-4 w-4" /> Ver Nota Fiscal
+                                        </DropdownMenuItem>
+                                      )}
+                                      <DropdownMenuSeparator />
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'boleto')}>
+                                        <Upload className="mr-2 h-4 w-4" />
+                                        {orderAttachments[id]?.boleto ? 'Substituir Boleto' : 'Anexar Boleto'}
+                                      </DropdownMenuItem>
+                                      {orderAttachments[id]?.boleto && (
+                                        <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(orderAttachments[id]?.boleto?.url, '_blank')}>
+                                          <Eye className="mr-2 h-4 w-4" /> Ver Boleto
                                         </DropdownMenuItem>
                                       )}
                                       <DropdownMenuSeparator />

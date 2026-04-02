@@ -93,8 +93,10 @@ const ClientsPage = ({
     { key: 'name', type: 'text' as const, placeholder: 'Nome...' },
     { key: 'cpfCnpj', type: 'text' as const, placeholder: 'CPF/CNPJ...' },
     { key: 'phone', type: 'text' as const, placeholder: 'Telefone...' },
-    { key: 'city', type: 'text' as const, placeholder: 'Cidade...' },
-    { key: 'state', type: 'text' as const, placeholder: 'UF...' },
+    ...(entityLabel !== 'Representante' ? [
+      { key: 'city', type: 'text' as const, placeholder: 'Cidade...' },
+      { key: 'state', type: 'text' as const, placeholder: 'UF...' },
+    ] : []),
     { type: 'none' as const },
   ], [entityLabel]);
 
@@ -223,8 +225,10 @@ const ClientsPage = ({
               <SortableHeader columnKey="name" sortState={sortState} onToggle={toggleSort}>Nome</SortableHeader>
               <SortableHeader columnKey="cpfCnpj" sortState={sortState} onToggle={toggleSort}>CPF/CNPJ</SortableHeader>
               <SortableHeader columnKey="phone" sortState={sortState} onToggle={toggleSort}>Telefone</SortableHeader>
-              <SortableHeader columnKey="city" sortState={sortState} onToggle={toggleSort}>Cidade</SortableHeader>
-              <SortableHeader columnKey="state" sortState={sortState} onToggle={toggleSort}>UF</SortableHeader>
+              {entityLabel !== 'Representante' && <>
+                <SortableHeader columnKey="city" sortState={sortState} onToggle={toggleSort}>Cidade</SortableHeader>
+                <SortableHeader columnKey="state" sortState={sortState} onToggle={toggleSort}>UF</SortableHeader>
+              </>}
               <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Ações</th>
             </tr>
           </thead>
@@ -237,8 +241,10 @@ const ClientsPage = ({
                 <td className="py-3 px-4 font-display font-medium">{c.name}</td>
                 <td className="py-3 px-4 font-mono-data">{c.cpfCnpj}</td>
                 <td className="py-3 px-4 font-mono-data">{c.phone}</td>
-                <td className="py-3 px-4 font-display">{c.address.city}</td>
-                <td className="py-3 px-4 font-mono-data">{c.address.state}</td>
+                {entityLabel !== 'Representante' && <>
+                  <td className="py-3 px-4 font-display">{c.address.city}</td>
+                  <td className="py-3 px-4 font-mono-data">{c.address.state}</td>
+                </>}
                 <td className="py-3 px-4">
                   <div className="flex gap-2">
                     <button onClick={() => openEdit(c)} className="text-muted-foreground hover:text-primary transition-colors">
@@ -272,6 +278,7 @@ const ClientsPage = ({
           <FormField label="Telefone" error={errors.phone}>
             <input className={inputClass} value={form.phone} onChange={e => setField('phone', e.target.value)} />
           </FormField>
+          {entityLabel !== 'Representante' && (<>
           <FormField label="Rua">
             <input className={inputClass} value={form.address.street} onChange={e => setAddr('street', e.target.value)} />
           </FormField>
@@ -290,6 +297,7 @@ const ClientsPage = ({
           <FormField label="CEP">
             <input className={inputClass} value={form.address.zip} onChange={e => setAddr('zip', e.target.value)} />
           </FormField>
+          </>)}
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button className={btnDanger} onClick={() => setModalOpen(false)}>Cancelar</button>

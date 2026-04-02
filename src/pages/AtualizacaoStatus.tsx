@@ -1,10 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardCheck } from 'lucide-react';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
+import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { rowToOrder } from '@/lib/pedidoMapper';
 import { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
 import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, listPedidosStatusHistorico, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
-import { logisticaManualStatuses, getAutoFollowUpStatus, pedidoStatusFlow } from '@/lib/pedidoStatusFlow';
+import { logisticaManualStatuses, getAutoFollowUpStatus, pedidoStatusFlow, shouldAutoLiberarComercial } from '@/lib/pedidoStatusFlow';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useColumnFilters, ColDef } from '@/hooks/useColumnFilters';
@@ -16,7 +18,7 @@ import { useQueryParam } from '@/pages/atualizacaoStatus/useQueryParam';
 import type { UnifiedPedido } from '@/pages/atualizacaoStatus/types';
 
 const statusButtons: StatusButton[] = pedidoStatusFlow
-  .filter((s) => logisticaManualStatuses.includes(s.value))
+  .filter((s) => s.value !== 'finalizado')
   .sort((a, b) => a.order - b.order)
   .map((s) => ({ value: s.value, label: s.label }));
 
@@ -31,6 +33,12 @@ const AtualizacaoStatus = () => {
   const { orders, supportOrders, user } = useApp();
   const { showToast } = useToast();
   const presetId = useQueryParam('pedido');
+
+  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const [extraPedidos, setExtraPedidos] = useState<UnifiedPedido[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
 
   const pedidos = useMemo(() => {
     const venda: UnifiedPedido[] = (orders || []).map((o) => ({
@@ -48,42 +56,88 @@ const AtualizacaoStatus = () => {
       repPhone: o.representativePhone || null,
     }));
     const map = new Map<string, UnifiedPedido>();
-    for (const p of [...venda, ...sup]) map.set(p.id, p);
+    for (const p of [...venda, ...sup, ...extraPedidos]) map.set(p.id, p);
     return Array.from(map.values()).sort((a, b) => a.numero.localeCompare(b.numero));
-  }, [orders, supportOrders]);
+  }, [orders, supportOrders, extraPedidos]);
 
   const { query, setQuery, activeStatus, setActiveStatus, filterItems } = useQuickFilter<UnifiedPedido>();
   const { sortState, setSortState, sortItems } = useTableSort();
   const colFilter = useColumnFilters();
 
-  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
-
   const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [r.pedido_id, r] as const)), [statusRows]);
 
   const refresh = async () => {
-    const payload = pedidos.map((p) => ({ pedidoId: p.id, numeroPedido: p.numero }));
-    await ensurePedidosStatusInitializedBatch(payload, user?.username || null);
-    const rows = await listPedidosStatusByPedidoIds(payload.map((p) => p.pedidoId));
-    setStatusRows(rows);
+    try {
+      let allRows: PedidoStatusRow[] = [];
+      if (supabaseOps) {
+        const { data } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
+        allRows = (data || []) as PedidoStatusRow[];
+      } else {
+        allRows = await listPedidosStatusByPedidoIds(payload.map((p) => p.pedidoId));
+      }
+
+      if (supabasePedidos && allRows.length > 0) {
+        const knownIds = new Set(payload.map((p) => p.pedidoId));
+        const missingIds = allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id));
+        if (missingIds.length > 0) {
+          const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+          const { data: extraData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
+          const extras: UnifiedPedido[] = ((extraData || []) as any[]).map((row: any) => {
+            const o = rowToOrder(row, 'CLI-001');
+            return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', repPhone: o.representativePhone || null };
+          });
+          setExtraPedidos(extras);
+        } else {
+          setExtraPedidos([]);
+        }
+      }
+
+      setStatusRows(allRows);
+    } catch (e) {
+      console.error('[AtualizacaoStatus] refresh error:', e);
+    }
+  };
+
+  // Busca pontual no ERP quando o pedido não está na lista
+  const searchErpByNumero = async (numero: string) => {
+    if (!supabasePedidos || !numero.trim()) return;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const { data } = await supabasePedidos.from(table).select(tableColumns).eq('numero_pedido', numero.trim()).limit(1);
+    if (!data?.length) return;
+    const o = rowToOrder((data as any[])[0], 'CLI-001');
+    const found: UnifiedPedido = { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', repPhone: o.representativePhone || null };
+    setExtraPedidos((prev) => {
+      if (prev.some((p) => p.id === found.id)) return prev;
+      return [...prev, found];
+    });
+    // Inicializa status se ainda não existir
+    if (supabaseOps) {
+      await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero }], user?.username || null);
+      const { data: statusData } = await supabaseOps.from('pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
+      if (statusData?.length) {
+        setStatusRows((prev) => {
+          const exists = prev.some((r) => r.pedido_id === found.id);
+          return exists ? prev : [...prev, (statusData as any[])[0] as PedidoStatusRow];
+        });
+      }
+    }
   };
 
   useEffect(() => {
     void refresh();
-  }, [pedidos.length]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (presetId) setSelectedId(presetId);
   }, [presetId]);
 
-  // Filter: only show pedidos whose current status is in the logística manual statuses
+  // Mostrar apenas pedidos que já têm registro de status (exceto finalizados)
+  // Pedidos novos são adicionados via busca pontual no campo "Nº Pedido"
   const logisticaPedidos = useMemo(() => {
     return pedidos.filter((p) => {
       const st = statusByPedidoId.get(p.id)?.status_atual;
       if (!st) return false;
-      return logisticaManualStatuses.includes(st);
+      return st !== 'finalizado';
     });
   }, [pedidos, statusByPedidoId]);
 
@@ -136,11 +190,12 @@ const AtualizacaoStatus = () => {
   const [openUpdate, setOpenUpdate] = useState(false);
 
   const onSaved = async (newStatus?: PedidoStatusValue) => {
-    // Handle auto follow-up transitions
-    if (newStatus) {
+    if (newStatus && selectedId) {
+      const pedido = pedidos.find(p => p.id === selectedId);
+
+      // Auto follow-up genérico
       const followUp = getAutoFollowUpStatus(newStatus);
-      if (followUp && selectedId) {
-        const pedido = pedidos.find(p => p.id === selectedId);
+      if (followUp) {
         await updatePedidoStatus({
           pedidoId: selectedId,
           numeroPedido: pedido?.numero || selectedId,
@@ -148,6 +203,22 @@ const AtualizacaoStatus = () => {
           alteradoPor: 'sistema',
           observacao: `Transição automática: ${newStatus} → ${followUp}`,
         });
+      }
+
+      // Auto-liberar para comercial quando mapeamento + ferragem concluídos
+      if (newStatus === 'mapeamento_concluido' || newStatus === 'ferragem_recebida') {
+        const currentHistory = await listPedidosStatusHistorico(selectedId);
+        // Inclui o status que acabou de ser salvo (pode ainda não estar no histórico)
+        const historyWithNew = [...currentHistory, { status_novo: newStatus, alterado_em: new Date().toISOString() }];
+        if (shouldAutoLiberarComercial(historyWithNew)) {
+          await updatePedidoStatus({
+            pedidoId: selectedId,
+            numeroPedido: pedido?.numero || selectedId,
+            statusNovo: 'liberado_comercial',
+            alteradoPor: 'sistema',
+            observacao: 'Liberado automaticamente: mapeamento e ferragem concluídos',
+          });
+        }
       }
     }
 
@@ -206,7 +277,17 @@ const AtualizacaoStatus = () => {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 mt-3">
           <div>
             <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Nº Pedido</label>
-            <input type="text" value={colFilter.values.numero || ''} onChange={e => colFilter.setFilter('numero', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+            <input
+              type="text"
+              value={colFilter.values.numero || ''}
+              onChange={e => {
+                const v = e.target.value;
+                colFilter.setFilter('numero', v);
+                if (v.length >= 4) void searchErpByNumero(v);
+              }}
+              placeholder="Filtrar..."
+              className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors"
+            />
           </div>
           <div>
             <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Cliente</label>
@@ -216,7 +297,7 @@ const AtualizacaoStatus = () => {
             <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Status</label>
             <select value={colFilter.values.status || ''} onChange={e => colFilter.setFilter('status', e.target.value, true)} className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors">
               <option value="">Todos</option>
-              {pedidoStatusFlow.filter((s) => logisticaManualStatuses.includes(s.value)).map((s) => (
+              {pedidoStatusFlow.filter((s) => s.value !== 'finalizado').map((s) => (
                 <option key={s.value} value={s.value}>{s.label}</option>
               ))}
             </select>
@@ -248,7 +329,7 @@ const AtualizacaoStatus = () => {
       <StatusUpdateDialog
         open={openUpdate}
         onOpenChange={setOpenUpdate}
-        pedido={selected ? { id: selected.id, numero: selected.numero, cliente: selected.cliente, repPhone: selected.repPhone } : null}
+        pedido={selected ? { id: selected.id, numero: selected.numero, cliente: selected.cliente, representante: selected.representante, repPhone: selected.repPhone } : null}
         statusAtual={selectedStatus}
         userName={user?.username || null}
         onSaved={async (newStatus) => { await onSaved(newStatus); }}

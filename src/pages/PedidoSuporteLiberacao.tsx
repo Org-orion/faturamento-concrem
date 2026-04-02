@@ -1,20 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { btnPrimary } from '@/components/shared';
-import { CheckCircle2, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { SupportOrder, PedidoStatusRow } from '@/types';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { applyFilters } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
-import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
-import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
+
+
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useColumnFilters } from '@/hooks/useColumnFilters';
 import { SortableHeader } from '@/components/table/SortableHeader';
-import { QuickFilterBar } from '@/components/table/QuickFilterBar';
-import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import type { ColDef } from '@/hooks/useColumnFilters';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 
@@ -24,6 +23,7 @@ const formatDateBR = (iso?: string) => {
 };
 
 const PedidoSuporteLiberacao = () => {
+  const navigate = useNavigate();
   const { supportOrders, user } = useApp();
   const { showToast } = useToast();
 
@@ -213,6 +213,10 @@ const PedidoSuporteLiberacao = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
+          <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">
+            <ArrowLeft className="h-4 w-4" />
+            Voltar
+          </button>
           <h1 className="text-2xl font-bold font-display text-foreground">Liberação de Pedidos Suporte</h1>
           <p className="text-sm text-muted-foreground">Confirme, monte a carga e libere para a produção</p>
         </div>
@@ -224,26 +228,16 @@ const PedidoSuporteLiberacao = () => {
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Aguardando Liberação para Produção</h2>
         </div>
 
-        <QuickFilterBar
-          query={s2Query}
-          onQueryChange={s2SetQuery}
-          placeholder="Buscar pedido, cliente, representante..."
-        >
-          <FilterTriggerButton count={s2Conditions.length} onClick={() => setS2FiltersOpen(true)} />
-        </QuickFilterBar>
-
-        <ActiveFiltersChips
-          fields={s12FilterFields}
-          conditions={s2Conditions}
-          onRemove={(id) => setS2Conditions((prev) => prev.filter((c) => c.id !== id))}
-          onClear={() => setS2Conditions([])}
-        />
+        <div className="flex items-center gap-3">
+          <input type="text" value={s2ColFilter.values['pedido'] || ''} onChange={(e) => s2ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s2ColFilter.values['cliente'] || ''} onChange={(e) => s2ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s2ColFilter.values['representante'] || ''} onChange={(e) => s2ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+        </div>
 
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto max-h-[600px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <ColumnFilterRow columns={s2ColSlots} values={s2ColFilter.values} onChange={s2ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <SortableHeader columnKey="pedido" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Pedido</SortableHeader>
                   <SortableHeader columnKey="cliente" sortState={s2Sort} onToggle={s2Toggle} className="text-left py-4 px-6">Cliente</SortableHeader>
@@ -301,26 +295,16 @@ const PedidoSuporteLiberacao = () => {
           </button>
         </div>
 
-        <QuickFilterBar
-          query={s3Query}
-          onQueryChange={s3SetQuery}
-          placeholder="Buscar pedido, cliente, representante..."
-        >
-          <FilterTriggerButton count={s3Conditions.length} onClick={() => setS3FiltersOpen(true)} />
-        </QuickFilterBar>
-
-        <ActiveFiltersChips
-          fields={s3FilterFields}
-          conditions={s3Conditions}
-          onRemove={(id) => setS3Conditions((prev) => prev.filter((c) => c.id !== id))}
-          onClear={() => setS3Conditions([])}
-        />
+        <div className="flex items-center gap-3">
+          <input type="text" value={s3ColFilter.values['pedido'] || ''} onChange={(e) => s3ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s3ColFilter.values['cliente'] || ''} onChange={(e) => s3ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s3ColFilter.values['representante'] || ''} onChange={(e) => s3ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+        </div>
 
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <ColumnFilterRow columns={s3ColSlots} values={s3ColFilter.values} onChange={s3ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
                     <input
@@ -382,21 +366,6 @@ const PedidoSuporteLiberacao = () => {
         </div>
       </div>
 
-      <FilterConfiguratorDialog
-        open={s2FiltersOpen}
-        onOpenChange={setS2FiltersOpen}
-        fields={s12FilterFields}
-        value={s2Conditions}
-        onApply={setS2Conditions}
-      />
-
-      <FilterConfiguratorDialog
-        open={s3FiltersOpen}
-        onOpenChange={setS3FiltersOpen}
-        fields={s3FilterFields}
-        value={s3Conditions}
-        onApply={setS3Conditions}
-      />
     </div>
   );
 };

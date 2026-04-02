@@ -79,7 +79,7 @@ export function AtualizacaoStatusDetails({
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Ferragem</span><span className="font-mono-data">{fmtDateTime(stageDates.dataFerragem)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Conclusão Produção</span><span className="font-mono-data">{fmtDateTime(stageDates.dataConclusaoProducao)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Faturamento</span><span className="font-mono-data">{fmtDateTime(stageDates.dataFaturamento)}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Expedição</span><span className="font-mono-data">{fmtDateTime(stageDates.dataExpedicao)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Em Rota</span><span className="font-mono-data">{fmtDateTime(stageDates.dataExpedicao)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Entrega</span><span className="font-mono-data">{fmtDateTime(stageDates.dataEntrega)}</span></div>
             </div>
           </div>

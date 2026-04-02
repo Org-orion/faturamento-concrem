@@ -1,4 +1,5 @@
 import { supabaseOps } from '@/lib/supabase';
+import { sendEvolutionText } from '@/lib/evolutionApi';
 import { canMoveToStatus, getPedidoStatusDef } from '@/lib/pedidoStatusFlow';
 import type { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
 
@@ -31,12 +32,24 @@ export async function getPedidoStatus(pedidoId: string): Promise<PedidoStatusRow
 export async function listPedidosStatusByPedidoIds(pedidoIds: string[]): Promise<PedidoStatusRow[]> {
   if (!supabaseOps) return [];
   if (pedidoIds.length === 0) return [];
-  const { data, error } = await supabaseOps.from('pedidos_status').select('*').in('pedido_id', pedidoIds);
-  if (error) {
-    console.error('[Supabase OPS] listPedidosStatusByPedidoIds:', error.message);
-    return [];
+
+  // Chunk into batches of 200 to avoid URL length limits on .in() queries
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  };
+  const batches = chunk(pedidoIds, 200);
+  const results: PedidoStatusRow[] = [];
+  for (const batch of batches) {
+    const { data, error } = await supabaseOps.from('pedidos_status').select('*').in('pedido_id', batch).limit(500);
+    if (error) {
+      console.error('[Supabase OPS] listPedidosStatusByPedidoIds:', error.message);
+      continue;
+    }
+    results.push(...((data || []) as any) as PedidoStatusRow[]);
   }
-  return ((data || []) as any) as PedidoStatusRow[];
+  return results;
 }
 
 export async function listPedidosStatusHistorico(pedidoId: string): Promise<PedidoStatusHistoricoRow[]> {
@@ -115,19 +128,30 @@ export async function ensurePedidosStatusInitializedBatch(
   const ids = Array.from(unique.keys());
   if (!ids.length) return;
 
-  let existing: any[] | null = null;
-  let existingErr: { message: string } | null = null;
-  try {
-    const res = await supabaseOps.from('pedidos_status').select('pedido_id').in('pedido_id', ids);
-    existing = res.data as any;
-    existingErr = res.error as any;
-  } catch (err) {
-    console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing (fetch):', err);
-    return;
-  }
-  if (existingErr) {
-    console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing:', existingErr.message);
-    return;
+  // Chunk ID list to avoid URL length limits on .in() queries
+  const chunkArr = <T,>(arr: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  };
+
+  let existing: any[] = [];
+  for (const idBatch of chunkArr(ids, 200)) {
+    let batchData: any[] | null = null;
+    let batchErr: { message: string } | null = null;
+    try {
+      const res = await supabaseOps.from('pedidos_status').select('pedido_id').in('pedido_id', idBatch).limit(500);
+      batchData = res.data as any;
+      batchErr = res.error as any;
+    } catch (err) {
+      console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing (fetch):', err);
+      return;
+    }
+    if (batchErr) {
+      console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing:', batchErr.message);
+      return;
+    }
+    existing.push(...(batchData || []));
   }
 
   const existingSet = new Set((existing || []).map((r: any) => String(r.pedido_id)));
@@ -254,23 +278,8 @@ export function normalizePhoneToE164(raw: string | null | undefined): string | n
 }
 
 async function sendWhatsappMessage(toPhoneE164: string, message: string): Promise<{ ok: boolean; providerMessageId: string | null; error: string | null }> {
-  if (!supabaseOps) return { ok: false, providerMessageId: null, error: 'Supabase OPS não configurado.' };
-  try {
-    const { data, error } = await supabaseOps.functions.invoke('whatsapp-send-status', {
-      body: { toPhoneE164, message },
-    } as any);
-
-    if (error) {
-      return { ok: false, providerMessageId: null, error: error.message || 'Falha ao enviar WhatsApp.' };
-    }
-
-    const ok = Boolean((data as any)?.ok);
-    const providerMessageId = (data as any)?.providerMessageId ? String((data as any).providerMessageId) : null;
-    const err = (data as any)?.error ? String((data as any).error) : null;
-    return { ok, providerMessageId, error: err };
-  } catch (e: any) {
-    return { ok: false, providerMessageId: null, error: e?.message || String(e) };
-  }
+  const result = await sendEvolutionText(toPhoneE164, message);
+  return { ok: result.ok, providerMessageId: result.messageId, error: result.error };
 }
 
 export async function setPedidoStatusWithOptionalNotify(params: {
@@ -374,8 +383,15 @@ export async function syncEntregaStatusFromOps(params: {
   if (!total) return { ok: true, target: null };
   const delivered = rows.filter((r) => String(r.status).toLowerCase() === 'entregue').length;
   if (delivered === 0) return { ok: true, target: null };
-
   if (delivered < total) return { ok: true, target: null };
+
+  // Só avança para 'entregue' se o pedido já estiver em 'faturado' ou 'em_entrega'
+  const current = await getPedidoStatus(params.pedidoId);
+  const statusAtual = current?.status_atual;
+  if (statusAtual !== 'faturado' && statusAtual !== 'em_entrega') {
+    return { ok: true, target: null };
+  }
+
   const target: PedidoStatusValue = 'entregue';
   const res = await setPedidoStatusWithOptionalNotify({
     pedidoId: params.pedidoId,

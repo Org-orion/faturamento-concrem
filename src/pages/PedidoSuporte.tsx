@@ -17,11 +17,7 @@ import { FilterConfiguratorDialog } from '@/components/filters/FilterConfigurato
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { useTableSort } from '@/hooks/useTableSort';
-import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { SortableHeader } from '@/components/table/SortableHeader';
-import { QuickFilterBar } from '@/components/table/QuickFilterBar';
-import { useColumnFilters } from '@/hooks/useColumnFilters';
-import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 
 const statusColors: Record<string, string> = {
   'Aguardando Avaliação': 'bg-status-warning/15 text-status-warning',
@@ -34,13 +30,12 @@ const PedidoSuporte = () => {
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  const { sortState, toggleSort, sortItems } = useTableSort();
-  const { query, setQuery, filterItems } = useQuickFilter<SupportOrder>();
-  const colFilter = useColumnFilters();
+  const { sortState, toggleSort } = useTableSort();
 
   const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
 
   const [filterPedido, setFilterPedido] = useState<string>('');
+  const [filterCliente, setFilterCliente] = useState<string>('');
   const [filterConf, setFilterConf] = useState<string>('');
   const [filterRep, setFilterRep] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>('');
@@ -58,7 +53,6 @@ const PedidoSuporte = () => {
 
   // Track ops status rows to filter out already-liberated orders
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
-  const statusByPedidoId = useMemo(() => new Map(statusRows.map(r => [r.pedido_id, r] as const)), [statusRows]);
   const [liberatedIds, setLiberatedIds] = useState<Set<string>>(new Set());
 
   const debouncedFilterPedido = useDebounce(filterPedido, 400);
@@ -83,50 +77,14 @@ const PedidoSuporte = () => {
       .sort((a, b) => a.id.localeCompare(b.id));
   }, [supportOrders]);
 
-  // Quick filter text getters
-  const textGetters = useMemo(() => [
-    (o: SupportOrder) => o.num || o.id,
-    (o: SupportOrder) => o.representativeName || '',
-    (o: SupportOrder) => o.idNotaConf != null ? String(o.idNotaConf) : '',
-    (o: SupportOrder) => o.clientName || '',
-    (o: SupportOrder) => o.date || '',
-    (o: SupportOrder) => o.expiryDate || '',
-  ], []);
-
-  // Sort getters for sortable columns
-  const sortGetters = useMemo(() => ({
-    id: (o: SupportOrder) => o.num || o.id,
-    cliente: (o: SupportOrder) => (o.clientName || o.clientCode || '').toLowerCase(),
-    date: (o: SupportOrder) => o.date || '',
-    expiryDate: (o: SupportOrder) => o.expiryDate || '',
-    value: (o: SupportOrder) => getOrderTotal(o),
-    status: (o: SupportOrder) => o.status || '',
-  }), []);
-
-  // Column filter slots & definitions
-  const suporteStatusOptions = useMemo(() => [
-    { value: 'Aguardando Avaliação', label: 'Aguardando Avaliação' },
-    { value: 'Liberado p/ Produção', label: 'Liberado p/ Produção' },
-  ], []);
-
-  const colFilterSlots = useMemo<ColFilterSlot[]>(() => [
-    { key: 'id', type: 'text', placeholder: 'Filtrar pedido...' },
-    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
-    { key: 'date', type: 'date' },
-    { key: 'expiryDate', type: 'date' },
-    { key: 'value', type: 'number', placeholder: 'Filtrar...' },
-    { key: 'status', type: 'select', options: suporteStatusOptions },
-    { type: 'none' },
-  ], [suporteStatusOptions]);
-
-  const colDefs = useMemo(() => [
-    { key: 'id', getter: (o: SupportOrder) => o.num || o.id },
-    { key: 'cliente', getter: (o: SupportOrder) => o.clientName || o.clientCode },
-    { key: 'date', getter: (o: SupportOrder) => o.date },
-    { key: 'expiryDate', getter: (o: SupportOrder) => o.expiryDate },
-    { key: 'value', getter: (o: SupportOrder) => getOrderTotal(o) },
-    { key: 'status', getter: (o: SupportOrder) => o.status || '', match: 'exact' as const },
-  ], []);
+  // Map UI sort keys → Supabase column names
+  const sortColumnMap: Record<string, string> = {
+    id: 'numero_pedido',
+    cliente: 'cliente_nome',
+    date: 'data_emissao',
+    expiryDate: 'data_validade',
+    value: 'total_pedido_venda',
+  };
 
   // Load ops status rows when serverOrders change
   useEffect(() => {
@@ -135,17 +93,13 @@ const PedidoSuporte = () => {
     void listPedidosStatusByPedidoIds(ids).then(setStatusRows);
   }, [serverOrders]);
 
-  // Data pipeline: serverOrders (only aguardando_avaliacao) → column filters → quick filter → sort
+  // Sort and filtering are server-side; hide only orders liberated in this session
   const displayedOrders = useMemo(() => {
-    const awaiting = serverOrders.filter(o => {
-      if (liberatedIds.has(o.id)) return false;
-      const st = statusByPedidoId.get(o.id)?.status_atual;
-      return !st || st === 'aguardando_avaliacao';
-    });
-    const colFiltered = colFilter.filterItems(awaiting, colDefs);
-    const filtered = filterItems(colFiltered, textGetters);
-    return sortItems(filtered, sortGetters);
-  }, [serverOrders, statusByPedidoId, liberatedIds, colFilter, colDefs, filterItems, textGetters, sortItems, sortGetters]);
+    return serverOrders.filter(o => !liberatedIds.has(o.id));
+  }, [serverOrders, liberatedIds]);
+
+  // Reset page when sort changes
+  useEffect(() => { setPage(1); }, [sortState]);
 
   useEffect(() => {
     if (!supabaseOps) return;
@@ -190,10 +144,11 @@ const PedidoSuporte = () => {
     return 'num' in o;
   };
 
+  const debouncedFilterCliente = useDebounce(filterCliente, 400);
+
   const filterFields = useMemo(() => {
     return [
-      { id: 'pedido', label: 'Nº Pedido', type: 'text', getValue: (o: SupportOrder) => o.num || o.id, placeholder: 'Número do pedido' },
-      { id: 'conf', label: 'Conf.', type: 'text', getValue: (o: SupportOrder) => o.idNotaConf ?? '', placeholder: 'id_nota_conf' },
+      { id: 'conf', label: 'Conf.', type: 'text', getValue: (o: SupportOrder) => String(o.idNotaConf ?? ''), placeholder: 'id_nota_conf' },
       {
         id: 'rep',
         label: 'Representante',
@@ -209,7 +164,6 @@ const PedidoSuporte = () => {
   useEffect(() => {
     const byField = new Map<string, FilterCondition>();
     for (const c of conditions) byField.set(c.fieldId, c);
-    setFilterPedido(byField.get('pedido')?.value ?? '');
     setFilterConf(byField.get('conf')?.value ?? '');
     setFilterRep(byField.get('rep')?.value ?? '');
     setIssueDate(byField.get('emissao')?.value ?? '');
@@ -243,6 +197,9 @@ const PedidoSuporte = () => {
       if (debouncedFilterPedido) {
         query = query.ilike('numero_pedido', `%${debouncedFilterPedido}%`);
       }
+      if (debouncedFilterCliente) {
+        query = query.ilike('cliente_nome', `%${debouncedFilterCliente}%`);
+      }
       if (debouncedFilterConf) {
         query = query.eq('id_nota_conf', debouncedFilterConf);
       }
@@ -256,9 +213,10 @@ const PedidoSuporte = () => {
         query = query.gte('data_validade', `${validDate}T00:00:00`).lte('data_validade', `${validDate}T23:59:59`);
       }
 
-      const from = (page - 1) * 50;
-      const to = from + 49;
-      query = query.range(from, to).order('data_emissao', { ascending: false });
+      const from = (page - 1) * 20;
+      const to = from + 19;
+      const sortCol = sortState.key ? sortColumnMap[sortState.key] : null;
+      query = query.range(from, to).order(sortCol || 'data_emissao', { ascending: sortCol ? sortState.direction === 'asc' : false });
 
       const { data, count, error } = await query;
       if (cancelled) return;
@@ -280,7 +238,7 @@ const PedidoSuporte = () => {
 
     fetchPage();
     return () => { cancelled = true; };
-  }, [debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, issueDate, moveOverride, page, validDate]);
+  }, [debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, issueDate, moveOverride, page, sortState, validDate]);
 
   const totals = useMemo(() => {
     const list: (Order | SupportOrder)[] = [];
@@ -449,19 +407,37 @@ const PedidoSuporte = () => {
         </div>
       </div>
 
-      <div className="space-y-3">
-        <QuickFilterBar
-          query={query}
-          onQueryChange={setQuery}
-          placeholder="Buscar pedido, representante, cliente, valor..."
-        >
+      <div className="space-y-2">
+        <div className="flex items-center gap-3">
+          <input
+            type="text"
+            value={filterPedido}
+            onChange={(e) => { setFilterPedido(e.target.value); setPage(1); }}
+            placeholder="Filtrar pedido..."
+            className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+          <input
+            type="text"
+            value={filterCliente}
+            onChange={(e) => { setFilterCliente(e.target.value); setPage(1); }}
+            placeholder="Filtrar cliente..."
+            className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+          <input
+            type="text"
+            value={filterRep}
+            onChange={(e) => { setFilterRep(e.target.value); setPage(1); }}
+            placeholder="Filtrar representante..."
+            className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
-        </QuickFilterBar>
+        </div>
         <ActiveFiltersChips
           fields={filterFields}
           conditions={conditions}
           onRemove={(id) => setConditions((prev) => prev.filter((c) => c.id !== id))}
           onClear={() => setConditions([])}
+          onEdit={() => setFiltersOpen(true)}
         />
       </div>
 
@@ -469,7 +445,6 @@ const PedidoSuporte = () => {
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
               <tr className="border-b border-border bg-muted/30">
                 <SortableHeader columnKey="id" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
                 <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
@@ -547,7 +522,7 @@ const PedidoSuporte = () => {
                 Anterior
               </button>
               <button
-                disabled={page * 50 >= totalCount}
+                disabled={page * 20 >= totalCount}
                 onClick={() => setPage(p => p + 1)}
                 className="px-3 py-1.5 rounded border border-border bg-card text-xs font-semibold disabled:opacity-50"
               >

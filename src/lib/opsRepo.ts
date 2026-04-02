@@ -145,42 +145,23 @@ export async function upsertEntregasDetalhes(programacaoId: string, rows: Array<
 export async function upsertEntregasDetalhesSafe(programacaoId: string, rows: Array<{ pedido_id: string; status: 'pendente' | 'entregue'; entregue_em?: string | null; numero_nota?: string | null; ordem_entrega?: number | null; qtd_kits?: number | null; qtd_pallets?: number | null; qtd_volumes?: number | null; }>) {
   if (!supabaseOps) return;
 
-  // 1. Salva os campos garantidamente existentes (status nunca fica para trás)
-  const core = rows.map((r) => ({
+  const payload = rows.map((r) => ({
     programacao_id: programacaoId,
     pedido_id: r.pedido_id,
     status: r.status,
     entregue_em: r.entregue_em ?? (r.status === 'entregue' ? new Date().toISOString() : null),
     numero_nota: r.numero_nota ?? null,
     ordem_entrega: r.ordem_entrega ?? null,
+    qtd_kits: r.qtd_kits ?? null,
+    qtd_pallets: r.qtd_pallets ?? null,
+    qtd_volumes: r.qtd_volumes ?? null,
   }));
-  const { error: coreErr } = await supabaseOps
-    .from('entregas')
-    .upsert(core as any, { onConflict: 'programacao_id,pedido_id' });
-  if (coreErr) {
-    console.error('[Supabase OPS] upsert entregas (core):', coreErr.message);
-  }
 
-  // 2. Tenta salvar campos extras (qtd_*) — ignora se as colunas ainda não existirem
-  const hasExtra = rows.some((r) => r.qtd_kits != null || r.qtd_pallets != null || r.qtd_volumes != null);
-  if (hasExtra) {
-    const extended = rows.map((r) => ({
-      programacao_id: programacaoId,
-      pedido_id: r.pedido_id,
-      status: r.status,
-      entregue_em: r.entregue_em ?? (r.status === 'entregue' ? new Date().toISOString() : null),
-      numero_nota: r.numero_nota ?? null,
-      ordem_entrega: r.ordem_entrega ?? null,
-      qtd_kits: r.qtd_kits ?? null,
-      qtd_pallets: r.qtd_pallets ?? null,
-      qtd_volumes: r.qtd_volumes ?? null,
-    }));
-    const { error: extErr } = await supabaseOps
-      .from('entregas')
-      .upsert(extended as any, { onConflict: 'programacao_id,pedido_id' });
-    if (extErr) {
-      console.warn('[Supabase OPS] upsert entregas (qtd extras):', extErr.message);
-    }
+  const { error } = await supabaseOps
+    .from('entregas')
+    .upsert(payload as any, { onConflict: 'programacao_id,pedido_id' });
+  if (error) {
+    console.error('[Supabase OPS] upsert entregas:', error.message);
   }
 }
 
@@ -408,6 +389,7 @@ export async function listLancamentosFinanceiros() {
   return (lancamentos || []).map((row: any) => ({
     id: row.id,
     orderId: row.pedido_id,
+    loadId: row.carregamento_id ?? undefined,
     driverId: row.motorista_id,
     deliveryDate: row.data_entrega,
     freightValue: Number(row.valor_frete || 0),
@@ -426,9 +408,10 @@ export async function upsertLancamentoFinanceiro(entry: FreightEntry) {
   if (!supabaseOps) return;
   
   // 1. Salvar o lançamento principal
-  const payloadLancamento = {
+  const payloadLancamento: Record<string, unknown> = {
     id: entry.id,
     pedido_id: entry.orderId,
+    carregamento_id: entry.loadId ?? null,
     motorista_id: entry.driverId,
     data_entrega: entry.deliveryDate,
     valor_frete: entry.freightValue,

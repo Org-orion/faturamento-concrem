@@ -236,6 +236,8 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
   const items = normalizeItems(row.dados_tabela ?? row.items ?? row.itens ?? row.produtos);
   const totalPedidoVenda = pickNumber(row, ['total_pedido_venda', 'total', 'total_pedido', 'valor_total']);
   const totalQtdM3 = pickNumber(row, ['total_qtd_m3', 'totalQtdM3', 'qtd_m3', 'volume_m3']);
+  const totalQtd = pickNumber(row, ['total_qtd', 'totalQtd', 'qtd_total', 'quantidade_total']);
+  const pesoLiquidoItem = pickNumber(row, ['peso_liquido_item', 'pesoLiquidoItem', 'peso_liquido', 'peso']);
   const idNotaConf = pickNumber(row, ['id_nota_conf', 'idNotaConf']);
 
   return {
@@ -247,7 +249,7 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
     clientUF: pickString(row, ['cliente_UF', 'cliente_uf', 'uf_cliente', 'client_uf', 'clientUF']) || undefined,
     clienteFantasia: pickString(row, ['cliente_fantasia', 'fantasia_cliente', 'clienteFantasia']) || undefined,
     pedCompraCliente: pickString(row, ['ped_compra_cliente', 'pedido_compra_cliente', 'pedCompraCliente']) || undefined,
-    previsaoCarregamento: pickString(row, ['precisao_embarque', 'previsao_embarque', 'previsaoCarregamento']) || undefined,
+    previsaoCarregamento: pickString(row, ['previsao_embarque', 'precisao_embarque', 'previsaoCarregamento']) || undefined,
     grupoCliente: pickString(row, ['grupo_cliente', 'grupoCliente']) || undefined,
     clientId,
     representativeId: pickString(row, ['representative_id', 'representante_id', 'id_representante', 'representativeId', 'representanteId']) || undefined,
@@ -264,6 +266,8 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
     paymentTerms: pickString(row, ['payment_terms', 'condicao_pagamento', 'paymentTerms']) || undefined,
     totalPedidoVenda: totalPedidoVenda || undefined,
     totalQtdM3: totalQtdM3 || undefined,
+    totalQtd: totalQtd || undefined,
+    pesoLiquidoItem: pesoLiquidoItem || undefined,
     commercialNotes: pickString(row, ['commercial_notes', 'obs_comercial', 'commercialNotes']) || undefined,
     commercialDecisionNote: pickString(row, ['commercial_decision_note', 'nota_decisao', 'commercialDecisionNote']) || undefined,
     carregamentoId: pickString(row, ['embarque_id', 'load_id', 'carregamentoId', 'loadId']) || undefined,
@@ -280,6 +284,8 @@ export function rowToSupportOrder(row: Row): SupportOrder {
   const status: SupportOrderStatus = isSupportStatus(statusRaw) ? statusRaw : 'Aguardando Avaliação';
   const totalPedidoVenda = pickNumber(row, ['total_pedido_venda', 'total', 'total_pedido', 'valor_total']);
   const totalQtdM3 = pickNumber(row, ['total_qtd_m3', 'totalQtdM3', 'qtd_m3', 'volume_m3']);
+  const totalQtd = pickNumber(row, ['total_qtd', 'totalQtd', 'qtd_total', 'quantidade_total']);
+  const pesoLiquidoItem = pickNumber(row, ['peso_liquido_item', 'pesoLiquidoItem', 'peso_liquido', 'peso']);
   const idNotaConf = pickNumber(row, ['id_nota_conf', 'idNotaConf']);
 
   return {
@@ -293,7 +299,7 @@ export function rowToSupportOrder(row: Row): SupportOrder {
     clientUF: pickString(row, ['cliente_UF', 'cliente_uf', 'uf_cliente', 'client_uf', 'clientUF']) || undefined,
     clienteFantasia: pickString(row, ['cliente_fantasia', 'fantasia_cliente', 'clienteFantasia']) || undefined,
     pedCompraCliente: pickString(row, ['ped_compra_cliente', 'pedido_compra_cliente', 'pedCompraCliente']) || undefined,
-    previsaoCarregamento: pickString(row, ['precisao_embarque', 'previsao_embarque', 'previsaoCarregamento']) || undefined,
+    previsaoCarregamento: pickString(row, ['previsao_embarque', 'precisao_embarque', 'previsaoCarregamento']) || undefined,
     grupoCliente: pickString(row, ['grupo_cliente', 'grupoCliente']) || undefined,
     representativeId: pickString(row, ['representative_id', 'representante_id', 'id_representante', 'representativeId', 'representanteId']) || undefined,
     tipoPedido,
@@ -308,6 +314,8 @@ export function rowToSupportOrder(row: Row): SupportOrder {
     paymentTerms: pickString(row, ['payment_terms', 'condicao_pagamento', 'paymentTerms']) || undefined,
     totalPedidoVenda: totalPedidoVenda || undefined,
     totalQtdM3: totalQtdM3 || undefined,
+    totalQtd: totalQtd || undefined,
+    pesoLiquidoItem: pesoLiquidoItem || undefined,
     commercialNotes: pickString(row, ['commercial_notes', 'obs_comercial', 'commercialNotes']) || undefined,
     commercialDecisionNote: pickString(row, ['commercial_decision_note', 'nota_decisao', 'commercialDecisionNote']) || undefined,
     history: Array.isArray(row.history) ? row.history : undefined,

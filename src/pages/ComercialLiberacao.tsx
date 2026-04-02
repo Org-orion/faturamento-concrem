@@ -1,23 +1,28 @@
 import React, { useEffect, useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { btnPrimary, btnSecondary, inputClass } from '@/components/shared';
-import { supabaseOps } from '@/lib/supabase';
-import { CheckCircle2, FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
-import { Order, PedidoStatusRow, SupportOrder } from '@/types';
+import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { tableColumns } from '@/contexts/AppContext';
+import { rowToOrder } from '@/lib/pedidoMapper';
+import { ArrowLeft, CheckCircle2, FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
+import { Order, SupportOrder } from '@/types';
 import { createBrandedWorkbook, downloadBuffer } from '@/lib/excelBranded';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { applyFilters } from '@/lib/filters';
+// applyFilters used in s3CandProcessed
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
-import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
-import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
-import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+
+
+import { updatePedidoStatus, normalizePhoneToE164 } from '@/lib/pedidosStatusRepo';
+import { sendEvolutionText } from '@/lib/evolutionApi';
+import { findRepresentanteContato } from '@/lib/opsRepo';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useColumnFilters } from '@/hooks/useColumnFilters';
 import { SortableHeader } from '@/components/table/SortableHeader';
-import { QuickFilterBar } from '@/components/table/QuickFilterBar';
-import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import type { ColDef } from '@/hooks/useColumnFilters';
 
 const formatDateBR = (iso?: string) => {
@@ -25,86 +30,112 @@ const formatDateBR = (iso?: string) => {
   return new Date(iso).toLocaleDateString('pt-BR');
 };
 
-type UnifiedOrder = { id: string; kind: 'VENDA' | 'SUPORTE'; clientCode?: string; clientName?: string; representativeName?: string; clientCity?: string; clientUF?: string; expiryDate?: string; totalPedidoVenda?: number; previsaoCarregamento?: string };
+type UnifiedOrder = { id: string; kind: 'VENDA' | 'SUPORTE'; clientCode?: string; clientName?: string; representativeName?: string; clientCity?: string; clientUF?: string; expiryDate?: string; totalPedidoVenda?: number; previsaoCarregamento?: string; grupoCliente?: string };
 
 const toUnified = (o: Order): UnifiedOrder => ({
   id: o.id, kind: 'VENDA', clientCode: o.clientCode, clientName: o.clientName,
   representativeName: o.representativeName, clientCity: o.clientCity, clientUF: o.clientUF,
-  expiryDate: o.expiryDate, totalPedidoVenda: o.totalPedidoVenda, previsaoCarregamento: o.previsaoCarregamento,
+  expiryDate: o.expiryDate, totalPedidoVenda: o.totalPedidoVenda, previsaoCarregamento: o.previsaoCarregamento, grupoCliente: o.grupoCliente,
 });
 
 const toUnifiedSuport = (o: SupportOrder): UnifiedOrder => ({
   id: o.id, kind: 'SUPORTE', clientCode: o.clientCode, clientName: o.clientName,
   representativeName: o.representativeName, clientCity: o.clientCity, clientUF: o.clientUF,
-  expiryDate: o.expiryDate,
+  expiryDate: o.expiryDate, grupoCliente: o.grupoCliente,
 });
 
+type TabKey = 'gerencia' | 'confirmar' | 'producao';
+const TAB_LABELS: Record<TabKey, string> = {
+  gerencia: 'Enviar para Gerência',
+  confirmar: 'Confirmar Gerência',
+  producao: 'Prontos para Produção',
+};
+const ALL_TABS: TabKey[] = ['gerencia', 'confirmar', 'producao'];
+
 const ComercialLiberacao = () => {
-  const { orders, supportOrders, user } = useApp();
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = useMemo<TabKey>(() => {
+    const p = searchParams.get('tab') as TabKey | null;
+    return p && ALL_TABS.includes(p) ? p : 'gerencia';
+  }, [searchParams]);
+  const setTab = (key: TabKey) => setSearchParams({ tab: key }, { replace: true });
+  const { user } = useApp();
   const { showToast } = useToast();
 
-  // --- Ops status rows for all orders ---
-  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
-  const statusByPedidoId = useMemo(() => new Map(statusRows.map(r => [r.pedido_id, r] as const)), [statusRows]);
+  // --- Pedidos buscados diretamente do Supabase por status ---
+  const [directOrders, setDirectOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(false);
 
-  const allOrderIds = useMemo(() => [
-    ...orders.map(o => o.id),
-    ...supportOrders.map(o => o.id),
-  ], [orders, supportOrders]);
+  const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
-  // Load and refresh status rows
-  const refreshStatus = async () => {
-    if (!allOrderIds.length) return;
-    const rows = await listPedidosStatusByPedidoIds(allOrderIds);
-    setStatusRows(rows);
+  const refreshOrders = async () => {
+    if (!supabaseOps || !supabasePedidos) return;
+    setLoading(true);
+    try {
+      const { data: statusData } = await supabaseOps
+        .from('pedidos_status')
+        .select('*')
+        .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia']);
+      if (!statusData?.length) { setDirectOrders([]); return; }
+
+      const ids = (statusData as any[]).map((r: any) => r.pedido_id);
+      const { data: pedidosData, error: pedidosError } = await supabasePedidos
+        .from(table)
+        .select(tableColumns)
+        .in('numero_pedido', ids);
+
+      if (pedidosError) {
+        console.error('[ComercialLiberacao] pedidos query error:', pedidosError.message);
+        showToast(`Erro ao carregar pedidos: ${pedidosError.message}`, 'error');
+        return;
+      }
+
+      const mapped = (pedidosData || []).map((row: any) => rowToOrder(row, 'CLI-001'));
+      const statusMap = new Map((statusData as any[]).map((r: any) => [r.pedido_id, r] as const));
+      setDirectOrders(mapped);
+      setStatusRowsDirect(statusMap);
+    } catch (e: any) {
+      console.error('[ComercialLiberacao] refreshOrders error:', e);
+      showToast('Erro ao carregar pedidos', 'error');
+    } finally {
+      setLoading(false);
+    }
   };
 
-  useEffect(() => {
-    void refreshStatus();
-  }, [allOrderIds.join(',')]);
+  const [statusRowsDirect, setStatusRowsDirect] = useState<Map<string, any>>(new Map());
 
-  // --- Section 1: Venda orders with liberado_comercial → send to Gerência ---
-  const s1Orders = useMemo(() => {
-    return orders
-      .filter(o => statusByPedidoId.get(o.id)?.status_atual === 'liberado_comercial')
-      .sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || String(a.id).localeCompare(String(b.id)));
-  }, [orders, statusByPedidoId]);
+  useEffect(() => { void refreshOrders(); }, []);
 
-  // --- Section 2: Venda orders with aguardando_gerencia → mark confirmed by Gerência ---
-  const s2Orders = useMemo(() => {
-    return orders
-      .filter(o => statusByPedidoId.get(o.id)?.status_atual === 'aguardando_gerencia')
-      .sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || String(a.id).localeCompare(String(b.id)));
-  }, [orders, statusByPedidoId]);
+  const s1Orders = useMemo(() =>
+    directOrders.filter(o => statusRowsDirect.get(o.id)?.status_atual === 'liberado_comercial')
+      .sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || String(a.id).localeCompare(String(b.id))),
+  [directOrders, statusRowsDirect]);
 
-  // --- Section 3: Carga atual (Venda confirmado_gerencia + Suporte liberado_comercial) ---
+  const s2Orders = useMemo(() =>
+    directOrders.filter(o => statusRowsDirect.get(o.id)?.status_atual === 'aguardando_gerencia')
+      .sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || String(a.id).localeCompare(String(b.id))),
+  [directOrders, statusRowsDirect]);
+
+  // --- Section 3: Carga atual ---
   const [loadIds, setLoadIds] = useState<string[]>([]);
-  // Track locally sent-to-gerencia and confirmed, so they move between sections immediately
-  const [sentToGerenciaIds, setSentToGerenciaIds] = useState<Set<string>>(new Set());
-  const [confirmedGerenciaIds, setConfirmedGerenciaIds] = useState<Set<string>>(new Set());
   const [liberatedToProducaoIds, setLiberatedToProducaoIds] = useState<Set<string>>(new Set());
 
-  // Candidates for Section 3 (the "add to load" bucket)
-  // Venda: confirmado_gerencia status; Suporte: liberado_comercial status
-  const s3Candidates = useMemo(() => {
-    return orders
+  const s3Candidates = useMemo(() =>
+    directOrders
       .filter(o => {
         if (liberatedToProducaoIds.has(o.id)) return false;
         if (loadIds.includes(o.id)) return false;
-        const st = statusByPedidoId.get(o.id)?.status_atual;
-        return st === 'confirmado_gerencia';
+        return statusRowsDirect.get(o.id)?.status_atual === 'confirmado_gerencia';
       })
       .map(toUnified)
-      .sort((a, b) =>
-        (a.expiryDate || '').localeCompare(b.expiryDate || '') || a.id.localeCompare(b.id)
-      );
-  }, [orders, statusByPedidoId, loadIds, liberatedToProducaoIds]);
+      .sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || a.id.localeCompare(b.id)),
+  [directOrders, statusRowsDirect, loadIds, liberatedToProducaoIds]);
 
   const s3LoadOrders = useMemo(() => {
-    const vendaMap = new Map(orders.map(o => [o.id, toUnified(o)] as const));
-    const suporteMap = new Map(supportOrders.map(o => [o.id, toUnifiedSuport(o)] as const));
-    return loadIds.map(id => vendaMap.get(id) || suporteMap.get(id)).filter(Boolean) as UnifiedOrder[];
-  }, [loadIds, orders, supportOrders]);
+    const map = new Map(directOrders.map(o => [o.id, toUnified(o)] as const));
+    return loadIds.map(id => map.get(id)).filter(Boolean) as UnifiedOrder[];
+  }, [loadIds, directOrders]);
 
   // --- Filters for sections ---
   const [s1Selected, setS1Selected] = useState<string[]>([]);
@@ -145,33 +176,9 @@ const ComercialLiberacao = () => {
     { key: 'representante', getter: (o) => o.representativeName },
     { key: 'cidadeUf', getter: (o) => o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '' },
     { key: 'validade', getter: (o) => o.expiryDate },
+    { key: 'grupo', getter: (o) => o.grupoCliente || '' },
   ], []);
 
-  const s1ColSlots = useMemo<ColFilterSlot[]>(() => [
-    { type: 'none' },
-    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
-    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
-    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
-    { key: 'validade', type: 'date' },
-  ], []);
-
-  const s2ColSlots = useMemo<ColFilterSlot[]>(() => [
-    { type: 'none' },
-    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
-    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
-    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
-    { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar cidade/UF...' },
-    { key: 'validade', type: 'date' },
-  ], []);
-
-  const s3ColSlots = useMemo<ColFilterSlot[]>(() => [
-    { key: 'pedido', type: 'text', placeholder: 'Filtrar pedido...' },
-    { key: 'cliente', type: 'text', placeholder: 'Filtrar cliente...' },
-    { key: 'representante', type: 'text', placeholder: 'Filtrar representante...' },
-    { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar cidade/UF...' },
-    { key: 'validade', type: 'date' },
-    { type: 'none' },
-  ], []);
 
   const textGetters: Array<(o: UnifiedOrder) => unknown> = [
     (o) => o.id, (o) => o.clientCode, (o) => o.clientName, (o) => o.representativeName, (o) => o.clientCity, (o) => o.clientUF,
@@ -183,6 +190,7 @@ const ComercialLiberacao = () => {
     representante: (o) => (o.representativeName || '').toLowerCase(),
     cidadeUf: (o) => `${o.clientCity || ''} - ${o.clientUF || ''}`,
     validade: (o) => o.expiryDate || '',
+    grupo: (o) => (o.grupoCliente || '').toLowerCase(),
   };
 
   const s1Unified = useMemo(() => s1Orders.map(toUnified), [s1Orders]);
@@ -241,10 +249,10 @@ const ComercialLiberacao = () => {
         { header: 'Mês Referência', key: 'mes', width: 23, align: 'center' },
         { header: 'Cliente', key: 'cliente', width: 81.71 },
         { header: 'Valor Total', key: 'valor', width: 17.29, numFmt: '"R$ "#,##0.00' },
-        { header: 'Data Carregamento', key: 'carregamento', width: 24.43, align: 'center' },
+        { header: 'Prev. Embarque', key: 'carregamento', width: 24.43, align: 'center' },
         { header: 'Cidade', key: 'cidade', width: 23.29 },
         { header: 'Nº Pedido', key: 'pedido', width: 13.29, align: 'center' },
-        { header: 'Qtd Kits', key: 'kits', width: 11.29, align: 'center' },
+        { header: 'Volume m³', key: 'kits', width: 11.29, align: 'center' },
         { header: 'Observação', key: 'obs', width: 57.57 },
       ],
       rows,
@@ -274,8 +282,7 @@ const ComercialLiberacao = () => {
       });
     }
 
-    setSentToGerenciaIds(prev => { const next = new Set(prev); s1Selected.forEach(id => next.add(id)); return next; });
-    await refreshStatus();
+    await refreshOrders();
     setS1Selected([]);
     showToast(`${s1Selected.length} pedido(s) enviado(s) para a gerência`);
   };
@@ -294,8 +301,7 @@ const ComercialLiberacao = () => {
       });
     }
 
-    setConfirmedGerenciaIds(prev => { const next = new Set(prev); s2Selected.forEach(id => next.add(id)); return next; });
-    await refreshStatus();
+    await refreshOrders();
     setS2Selected([]);
     showToast(`${s2Selected.length} pedido(s) confirmados pela gerência`);
   };
@@ -312,7 +318,11 @@ const ComercialLiberacao = () => {
     if (!loadIds.length) { showToast('Nenhum pedido na carga', 'error'); return; }
     const username = user?.username || null;
 
+    // Agrupar por representante para enviar uma mensagem por rep
+    const byRep = new Map<string, { orders: Order[]; phone: string | null }>();
     for (const id of loadIds) {
+      const order = directOrders.find(o => o.id === id);
+      if (!order) continue;
       await updatePedidoStatus({
         pedidoId: id,
         numeroPedido: id,
@@ -320,10 +330,35 @@ const ComercialLiberacao = () => {
         alteradoPor: username,
         observacao: 'Liberado para produção pelo comercial',
       });
+      const repKey = String(order.representativeName || order.representativeId || '').trim();
+      if (!byRep.has(repKey)) {
+        const contact = await findRepresentanteContato(repKey);
+        const phone = contact?.telefone || order.representativePhone || null;
+        byRep.set(repKey, { orders: [], phone });
+      }
+      byRep.get(repKey)!.orders.push(order);
     }
 
-    setLiberatedToProducaoIds(prev => { const next = new Set(prev); loadIds.forEach(id => next.add(id)); return next; });
-    await refreshStatus();
+    // Enviar notificação por representante
+    for (const [, { orders, phone }] of byRep.entries()) {
+      if (!phone) continue;
+      const phoneE164 = normalizePhoneToE164(phone);
+      if (!phoneE164) continue;
+
+      const repName = orders[0].representativeName || '-';
+      const hora = new Date().getHours();
+      const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
+      let msg = `${saudacao}, ${repName}!\n\n`;
+      msg += `Os seguintes pedidos foram *liberados para produção*:\n\n`;
+      for (const o of orders) {
+        msg += `· Pedido *${o.id}* — ${o.clientName || o.clientCode || 'Cliente'}\n`;
+      }
+      msg += `\nEm breve iniciaremos a fabricação. Qualquer dúvida, estamos à disposição.`;
+
+      await sendEvolutionText(phoneE164, msg);
+    }
+
+    await refreshOrders();
     setLoadIds([]);
     showToast('Carga liberada para Produção');
   };
@@ -336,6 +371,10 @@ const ComercialLiberacao = () => {
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
+          <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">
+            <ArrowLeft className="h-4 w-4" />
+            Voltar
+          </button>
           <h1 className="text-2xl font-bold font-display text-foreground">Liberação de Pedidos</h1>
           <p className="text-sm text-muted-foreground">Confirme, monte a carga e libere para a produção</p>
         </div>
@@ -344,6 +383,27 @@ const ComercialLiberacao = () => {
             <FileSpreadsheet className="h-4 w-4" />
             Exportar Planilha
           </button>
+        </div>
+      </div>
+
+      {/* Abas */}
+      <div className="border-b border-border">
+        <div className="flex gap-1">
+          {ALL_TABS.map((tab) => (
+            <button
+              key={tab}
+              type="button"
+              onClick={() => setTab(tab)}
+              className={cn(
+                'px-4 py-3 text-sm font-semibold transition-colors border-b-2 -mb-px',
+                activeTab === tab
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground',
+              )}
+            >
+              {TAB_LABELS[tab]}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -369,8 +429,8 @@ const ComercialLiberacao = () => {
         </div>
       )}
 
-      {/* Sessão 1: Pedidos liberados pela logística → enviar para gerência */}
-      <div className="space-y-3">
+      {/* Aba 1: Enviar para Gerência */}
+      {activeTab === 'gerencia' && <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Pedidos Liberados — Enviar para Gerência</h2>
           <button className={btnPrimary} onClick={() => void enviarParaGerencia()} disabled={!s1Selected.length}>
@@ -378,12 +438,16 @@ const ComercialLiberacao = () => {
             Enviar para Gerência ({s1Selected.length})
           </button>
         </div>
-        <QuickFilterBar query={s1Filter.query} onQueryChange={s1Filter.setQuery} placeholder="Buscar pedidos liberados..." />
+        <div className="flex items-center gap-3">
+          <input type="text" value={s1ColFilter.values['pedido'] || ''} onChange={(e) => s1ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s1ColFilter.values['cliente'] || ''} onChange={(e) => s1ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s1ColFilter.values['representante'] || ''} onChange={(e) => s1ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s1ColFilter.values['grupo'] || ''} onChange={(e) => s1ColFilter.setFilter('grupo', e.target.value)} placeholder="Filtrar grupo..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+        </div>
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <ColumnFilterRow columns={s1ColSlots} values={s1ColFilter.values} onChange={s1ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <th className="py-4 px-6 text-center w-[56px]">
                     <input type="checkbox" checked={s1Selected.length === s1Processed.length && s1Processed.length > 0} onChange={() => toggleAll(s1Selected, setS1Selected, s1Processed.map(o => o.id))} />
@@ -391,12 +455,13 @@ const ComercialLiberacao = () => {
                   <SortableHeader columnKey="pedido" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
                   <SortableHeader columnKey="cliente" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                   <SortableHeader columnKey="representante" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
+                  <SortableHeader columnKey="grupo" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Grupo</SortableHeader>
                   <SortableHeader columnKey="validade" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s1Processed.length === 0 ? (
-                  <tr><td colSpan={5} className="py-10 text-center text-muted-foreground italic">Nenhum pedido aguardando envio para gerência.</td></tr>
+                  <tr><td colSpan={6} className="py-10 text-center text-muted-foreground italic">Nenhum pedido aguardando envio para gerência.</td></tr>
                 ) : s1Processed.map(o => (
                   <tr key={o.id} className="hover:bg-muted/20 transition-colors">
                     <td className="py-4 px-6 text-center">
@@ -408,6 +473,7 @@ const ComercialLiberacao = () => {
                       <span className="ml-2 font-display font-semibold text-foreground">{o.clientName || '-'}</span>
                     </td>
                     <td className="py-4 px-6">{o.representativeName || '-'}</td>
+                    <td className="py-4 px-6 text-muted-foreground">{o.grupoCliente || '-'}</td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">{formatDateBR(o.expiryDate)}</td>
                   </tr>
                 ))}
@@ -415,10 +481,10 @@ const ComercialLiberacao = () => {
             </table>
           </div>
         </div>
-      </div>
+      </div>}
 
-      {/* Sessão 2: Pedidos aguardando gerência → confirmar */}
-      <div className="space-y-3">
+      {/* Aba 2: Confirmar Gerência */}
+      {activeTab === 'confirmar' && <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Aguardando Gerência — Confirmar Aprovação</h2>
           <button className={btnPrimary} onClick={() => void confirmarGerencia()} disabled={!s2Selected.length}>
@@ -426,12 +492,15 @@ const ComercialLiberacao = () => {
             Confirmar Gerência ({s2Selected.length})
           </button>
         </div>
-        <QuickFilterBar query={s2Filter.query} onQueryChange={s2Filter.setQuery} placeholder="Buscar pedidos aguardando gerência..." />
+        <div className="flex items-center gap-3">
+          <input type="text" value={s2ColFilter.values['pedido'] || ''} onChange={(e) => s2ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s2ColFilter.values['cliente'] || ''} onChange={(e) => s2ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s2ColFilter.values['representante'] || ''} onChange={(e) => s2ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+        </div>
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <ColumnFilterRow columns={s2ColSlots} values={s2ColFilter.values} onChange={s2ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <th className="py-4 px-6 text-center w-[56px]">
                     <input type="checkbox" checked={s2Selected.length === s2Processed.length && s2Processed.length > 0} onChange={() => toggleAll(s2Selected, setS2Selected, s2Processed.map(o => o.id))} />
@@ -465,22 +534,22 @@ const ComercialLiberacao = () => {
             </table>
           </div>
         </div>
-      </div>
+      </div>}
 
-      {/* Sessão 3A: Candidatos para carga (Venda confirmado_gerencia + Suporte liberado_comercial) */}
-      <div className="space-y-3">
+      {/* Aba 3: Prontos para Produção (montar carga + carga atual) */}
+      {activeTab === 'producao' && <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Prontos para Produção — Montar Carga</h2>
+          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Prontos para Produção</h2>
         </div>
-        <QuickFilterBar query={s3CandFilter.query} onQueryChange={s3CandFilter.setQuery} placeholder="Buscar pedidos prontos...">
-          <FilterTriggerButton count={s3Conditions.length} onClick={() => setS3FiltersOpen(true)} />
-        </QuickFilterBar>
-        <ActiveFiltersChips fields={filterFields} conditions={s3Conditions} onRemove={(id) => setS3Conditions(prev => prev.filter(c => c.id !== id))} onClear={() => setS3Conditions([])} />
+        <div className="flex items-center gap-3">
+          <input type="text" value={s3CandColFilter.values['pedido'] || ''} onChange={(e) => s3CandColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s3CandColFilter.values['cliente'] || ''} onChange={(e) => s3CandColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s3CandColFilter.values['representante'] || ''} onChange={(e) => s3CandColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+        </div>
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <ColumnFilterRow columns={s3ColSlots} values={s3CandColFilter.values} onChange={s3CandColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <SortableHeader columnKey="pedido" sortState={s3CandSort.sortState} onToggle={s3CandSort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
                   <SortableHeader columnKey="cliente" sortState={s3CandSort.sortState} onToggle={s3CandSort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
@@ -517,23 +586,25 @@ const ComercialLiberacao = () => {
             </table>
           </div>
         </div>
-      </div>
 
-      {/* Sessão 3B: Carga atual */}
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Carga Atual — Liberados para Produção</h2>
+          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Liberar para Produção</h2>
+
           <button className={btnPrimary} onClick={() => void liberarParaProducao()}>
             <CheckCircle2 className="h-4 w-4" />
             Confirmar Liberação
           </button>
         </div>
-        <QuickFilterBar query={s3Filter.query} onQueryChange={s3Filter.setQuery} placeholder="Buscar na carga..." />
+        <div className="flex items-center gap-3">
+          <input type="text" value={s3ColFilter.values['pedido'] || ''} onChange={(e) => s3ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s3ColFilter.values['cliente'] || ''} onChange={(e) => s3ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" value={s3ColFilter.values['representante'] || ''} onChange={(e) => s3ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+        </div>
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
           <div className="overflow-x-auto">
             <table className="w-full text-sm text-left">
               <thead>
-                <ColumnFilterRow columns={s3ColSlots} values={s3ColFilter.values} onChange={s3ColFilter.setFilter} />
                 <tr className="border-b border-border bg-muted/30">
                   <SortableHeader columnKey="pedido" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
                   <SortableHeader columnKey="cliente" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
@@ -571,6 +642,7 @@ const ComercialLiberacao = () => {
           </div>
         </div>
       </div>
+      </div>}
 
       <FilterConfiguratorDialog open={s2FiltersOpen} onOpenChange={setS2FiltersOpen} fields={filterFields} value={s2Conditions} onApply={setS2Conditions} />
       <FilterConfiguratorDialog open={s3FiltersOpen} onOpenChange={setS3FiltersOpen} fields={filterFields} value={s3Conditions} onApply={setS3Conditions} />

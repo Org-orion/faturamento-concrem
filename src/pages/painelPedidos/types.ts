@@ -6,6 +6,11 @@ export type UnifiedPedido = {
   cliente: string;
   representante: string;
   valor: number;
+  identificacao?: string;
+  grupoCliente?: string;
+  previsaoEmbarque?: string;
+  cidade?: string;
+  uf?: string;
 };
 
 export type PedidoStatusById = Map<string, PedidoStatusRow>;

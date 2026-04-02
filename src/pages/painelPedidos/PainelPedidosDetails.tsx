@@ -62,6 +62,10 @@ export function PainelPedidosDetails({
                 <div className="text-lg font-mono-data font-bold text-primary truncate">{pedido.numero}</div>
                 <div className="mt-1 text-sm font-bold text-foreground truncate">{pedido.cliente}</div>
                 <div className="text-xs text-muted-foreground truncate">{pedido.representante}</div>
+                {pedido.identificacao && <div className="text-xs text-muted-foreground mt-1">Identificação: <span className="font-semibold text-foreground">{pedido.identificacao}</span></div>}
+                {pedido.grupoCliente && <div className="text-xs text-muted-foreground">Grupo: <span className="font-semibold text-foreground">{pedido.grupoCliente}</span></div>}
+                {pedido.cidade && <div className="text-xs text-muted-foreground">{pedido.cidade}{pedido.uf ? ` - ${pedido.uf}` : ''}</div>}
+                {pedido.previsaoEmbarque && <div className="text-xs text-muted-foreground">Prev. Embarque: <span className="font-semibold text-foreground">{pedido.previsaoEmbarque}</span></div>}
               </div>
               <div className="text-right">
                 <div className="text-xs text-muted-foreground font-bold uppercase tracking-tight">Valor</div>
@@ -77,13 +81,13 @@ export function PainelPedidosDetails({
             <div className="text-xs font-bold uppercase tracking-tight text-muted-foreground">Datas do Pedido</div>
             <div className="mt-3 space-y-2 text-sm">
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Aprovação</span><span className="font-mono-data">{fmtDateTime(stageDates.dataAprovacao)}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Integração</span><span className="font-mono-data">{fmtDateTime(stageDates.dataIntegracao)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Lib. Comercial</span><span className="font-mono-data">{fmtDateTime(stageDates.dataLiberacaoComercial)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Mapeamento</span><span className="font-mono-data">{fmtDateTime(stageDates.dataMapeamento)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Ferragem</span><span className="font-mono-data">{fmtDateTime(stageDates.dataFerragem)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Liberação p/ Produção</span><span className="font-mono-data">{fmtDateTime(stageDates.dataLiberacaoProducao)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Conclusão Produção</span><span className="font-mono-data">{fmtDateTime(stageDates.dataConclusaoProducao)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Faturamento</span><span className="font-mono-data">{fmtDateTime(stageDates.dataFaturamento)}</span></div>
-              <div className="flex items-center justify-between"><span className="text-muted-foreground">Expedição</span><span className="font-mono-data">{fmtDateTime(stageDates.dataExpedicao)}</span></div>
+              <div className="flex items-center justify-between"><span className="text-muted-foreground">Em Rota</span><span className="font-mono-data">{fmtDateTime(stageDates.dataExpedicao)}</span></div>
               <div className="flex items-center justify-between"><span className="text-muted-foreground">Entrega</span><span className="font-mono-data">{fmtDateTime(stageDates.dataEntrega)}</span></div>
             </div>
           </div>

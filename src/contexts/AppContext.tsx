@@ -31,7 +31,7 @@ import {
 } from '@/lib/opsRepo';
 import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
-import { ensurePedidosStatusInitializedBatch, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps } from '@/lib/pedidosStatusRepo';
+import { ensurePedidosStatusInitializedBatch, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 
 interface AppState {
   clients: Client[];
@@ -294,9 +294,7 @@ export const suporteOr = [
 ].join(',');
 
 export const tableColumns =
-  // Adicionar grupo_cliente aqui quando a coluna existir no Supabase:
-  // 'numero_pedido, ..., grupo_cliente'
-  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_qtd_m3, cliente_cidade, cliente_uf, representante, ped_compra_cliente, previsao_embarque';
+  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete';
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [clients, setClients] = useState<Client[]>(sampleClients);
@@ -326,12 +324,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const columns = tableColumns;
 
       try {
-        vendasRes = await supabasePedidos.from(table).select(columns).or(vendasOr);
+        vendasRes = await supabasePedidos.from(table).select(columns).or(vendasOr).limit(5000);
       } catch (e: any) {
         vendasRes = { data: null, error: { message: e?.message || String(e) } };
       }
       try {
-        suporteRes = await supabasePedidos.from(table).select(columns).or(suporteOr);
+        suporteRes = await supabasePedidos.from(table).select(columns).or(suporteOr).limit(5000);
       } catch (e: any) {
         suporteRes = { data: null, error: { message: e?.message || String(e) } };
       }
@@ -414,6 +412,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       });
 
       setLoads(mapped);
+
+      // Sincronizar contador de IDs com o maior existente no banco
+      for (const load of mapped) {
+        const match = String(load.id).match(/^EMB-(\d+)$/);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (num > counters.load) counters.load = num;
+        }
+      }
     };
 
     loadOps();
@@ -431,6 +438,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         const mappedDrivers: Driver[] = opsDrivers.map(d => ({
           id: d.id,
           name: d.nome || '',
+          cpf: d.cpf || undefined,
           cnh: d.cnh_numero || '',
           cnhCategory: d.cnh_categoria || '',
           phone: d.telefone || '',
@@ -438,7 +446,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           vehicleVolume: d.volume_suportado_m3 || undefined,
           vehicleWeight: d.peso_suportado_kg || undefined,
           plate: d.placa_veiculo || '',
-          status: 'Disponível', // Podemos derivar do estado das entregas se necessário no futuro
+          status: 'Disponível',
         }));
         setDrivers(mappedDrivers);
       } catch (e) {
@@ -1153,7 +1161,21 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const entry: FreightEntry = { ...e, id: num, createdAt: new Date().toISOString() };
     setFreightEntries((prev) => [entry, ...prev]);
     void upsertLancamentoFinanceiro(entry);
-  }, []);
+    // Lançamento concluído → todos os pedidos do carregamento recebem Finalizado
+    if (entry.status === 'Lançado') {
+      const load = entry.loadId ? loads.find(l => l.id === entry.loadId) : null;
+      const orderIds = load ? load.orderIds : [entry.orderId];
+      for (const oid of orderIds) {
+        void updatePedidoStatus({
+          pedidoId: oid,
+          numeroPedido: oid,
+          statusNovo: 'finalizado',
+          alteradoPor: null,
+          observacao: 'Despesas de frete lançadas no financeiro',
+        });
+      }
+    }
+  }, [loads]);
 
   const updateFreightEntry = useCallback((id: string, patch: Partial<Omit<FreightEntry, 'id' | 'createdAt'>>) => {
     setFreightEntries((prev) => {

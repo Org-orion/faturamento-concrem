@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, ClipboardList } from 'lucide-react';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { PedidoStatusRow, PedidoStatusHistoricoRow, PedidoStatusValue } from '@/types';
-import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, listPedidosStatusHistorico } from '@/lib/pedidosStatusRepo';
+import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, listPedidosStatusHistorico } from '@/lib/pedidosStatusRepo'; // listPedidosStatusByPedidoIds used as fallback
 import { pedidoStatusFlow, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
-import { supabaseOps } from '@/lib/supabase';
+import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { rowToOrder } from '@/lib/pedidoMapper';
 import { cn } from '@/lib/utils';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -32,6 +33,13 @@ const PainelPedidos = () => {
   const { orders, supportOrders, user } = useApp();
   const { showToast } = useToast();
 
+  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const [extraPedidos, setExtraPedidos] = useState<UnifiedPedido[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   const pedidos = useMemo(() => {
     const venda: UnifiedPedido[] = (orders || []).map((o) => ({
       id: o.id,
@@ -39,6 +47,11 @@ const PainelPedidos = () => {
       cliente: o.clientName || o.clientCode || 'Cliente',
       representante: o.representativeName || '-',
       valor: o.totalPedidoVenda ?? 0,
+      identificacao: o.pedCompraCliente,
+      grupoCliente: o.grupoCliente,
+      previsaoEmbarque: o.previsaoCarregamento,
+      cidade: o.clientCity,
+      uf: o.clientUF,
     }));
     const sup: UnifiedPedido[] = (supportOrders || []).map((o) => ({
       id: o.id,
@@ -46,21 +59,20 @@ const PainelPedidos = () => {
       cliente: o.clientName || o.clientCode || 'Cliente',
       representante: o.representativeName || '-',
       valor: o.totalPedidoVenda ?? 0,
+      identificacao: o.pedCompraCliente,
+      grupoCliente: o.grupoCliente,
+      previsaoEmbarque: o.previsaoCarregamento,
+      cidade: o.clientCity,
+      uf: o.clientUF,
     }));
     const map = new Map<string, UnifiedPedido>();
-    for (const p of [...venda, ...sup]) map.set(p.id, p);
+    for (const p of [...venda, ...sup, ...extraPedidos]) map.set(p.id, p);
     return Array.from(map.values()).sort((a, b) => a.numero.localeCompare(b.numero));
-  }, [orders, supportOrders]);
+  }, [orders, supportOrders, extraPedidos]);
 
   const { query, setQuery, activeStatus, setActiveStatus, filterItems } = useQuickFilter<UnifiedPedido>();
   const { sortState, setSortState, sortItems } = useTableSort();
   const colFilter = useColumnFilters();
-
-  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
-  const [historyLoading, setHistoryLoading] = useState(false);
 
   const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [r.pedido_id, r] as const)), [statusRows]);
 
@@ -76,10 +88,36 @@ const PainelPedidos = () => {
     try {
       const payload = pedidos.map((p) => ({ pedidoId: p.id, numeroPedido: p.numero }));
       await ensurePedidosStatusInitializedBatch(payload, user?.username || null);
-      const rows = await listPedidosStatusByPedidoIds(payload.map((p) => p.pedidoId));
-      setStatusRows(rows);
+
+      // Buscar todos os status do banco (inclui pedidos que não estão no AppContext)
+      let allRows: PedidoStatusRow[] = [];
+      if (supabaseOps) {
+        const { data } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
+        allRows = (data || []) as PedidoStatusRow[];
+      } else {
+        allRows = await listPedidosStatusByPedidoIds(payload.map((p) => p.pedidoId));
+      }
+
+      // Pedidos extras: estão no banco mas não no AppContext
+      if (supabasePedidos && allRows.length > 0) {
+        const knownIds = new Set(payload.map((p) => p.pedidoId));
+        const missingIds = allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id));
+        if (missingIds.length > 0) {
+          const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+          const { data: extraData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
+          const extras: UnifiedPedido[] = ((extraData || []) as any[]).map((row: any) => {
+            const o = rowToOrder(row, 'CLI-001');
+            return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
+          });
+          setExtraPedidos(extras);
+        } else {
+          setExtraPedidos([]);
+        }
+      }
+
+      setStatusRows(allRows);
     } catch (e: any) {
-      console.error(e);
+      console.error('[PainelPedidos] refresh error:', e);
       showToast('Erro ao carregar status dos pedidos.', 'error');
     } finally {
       setLoading(false);
@@ -88,7 +126,7 @@ const PainelPedidos = () => {
 
   useEffect(() => {
     void refresh();
-  }, [pedidos.length]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Realtime subscription: auto-refresh when pedidos_status changes
   useEffect(() => {

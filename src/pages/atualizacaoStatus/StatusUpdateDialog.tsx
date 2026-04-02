@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { PedidoStatusValue } from '@/types';
 import { formatStatusWhatsappMessage, setPedidoStatusWithOptionalNotify } from '@/lib/pedidosStatusRepo';
 import { getNextManualStatuses } from '@/lib/pedidoStatusFlow';
+import { findRepresentanteContato } from '@/lib/opsRepo';
 
 export function StatusUpdateDialog({
   open,
@@ -20,7 +21,7 @@ export function StatusUpdateDialog({
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
-  pedido: { id: string; numero: string; cliente: string; repPhone?: string | null } | null;
+  pedido: { id: string; numero: string; cliente: string; representante?: string; repPhone?: string | null } | null;
   statusAtual: PedidoStatusValue | null;
   userName: string | null;
   onSaved: (newStatus?: PedidoStatusValue) => Promise<void>;
@@ -30,6 +31,7 @@ export function StatusUpdateDialog({
   const [obs, setObs] = useState('');
   const [notify, setNotify] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [resolvedPhone, setResolvedPhone] = useState<string | null>(null);
 
   const manualOptions = useMemo(() => {
     if (!statusAtual) return [];
@@ -37,12 +39,20 @@ export function StatusUpdateDialog({
   }, [statusAtual]);
 
   useEffect(() => {
-    if (open) {
-      setNovoStatus('');
-      setObs('');
-      setNotify(Boolean(pedido?.repPhone));
-    }
-  }, [open, pedido?.repPhone]);
+    if (!open || !pedido) return;
+    setNovoStatus('');
+    setObs('');
+    setResolvedPhone(null);
+
+    // Buscar telefone do cadastro de representantes
+    const repName = pedido.representante || '';
+    void (async () => {
+      let contact = repName ? await findRepresentanteContato(repName) : null;
+      const phone = contact?.telefone || pedido.repPhone || null;
+      setResolvedPhone(phone);
+      setNotify(Boolean(phone));
+    })();
+  }, [open, pedido?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const previewMessage = useMemo(() => {
     if (!pedido || !statusAtual || !novoStatus) return '';
@@ -69,7 +79,7 @@ export function StatusUpdateDialog({
         alteradoPor: userName,
         observacao: obs || null,
         notifyRepresentante: Boolean(notify),
-        representantePhoneRaw: pedido.repPhone || null,
+        representantePhoneRaw: resolvedPhone || pedido.repPhone || null,
         clienteNome: pedido.cliente,
       });
 
@@ -117,7 +127,10 @@ export function StatusUpdateDialog({
                 <div className="text-sm font-semibold text-foreground">WhatsApp</div>
                 <Switch checked={notify} onCheckedChange={setNotify} />
               </div>
-              {!pedido?.repPhone && <div className="text-[11px] text-muted-foreground">Pedido sem telefone do representante.</div>}
+              {resolvedPhone
+                ? <div className="text-[11px] text-muted-foreground">{resolvedPhone}</div>
+                : <div className="text-[11px] text-muted-foreground">Representante sem telefone cadastrado.</div>
+              }
             </div>
           </div>
 

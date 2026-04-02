@@ -12,7 +12,7 @@ import { SortableHeader } from '@/components/table/SortableHeader';
 import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
 
-const emptyDriver = { name: '', cnh: '', cnhCategory: 'B', phone: '', vehicleType: 'Carreta Bau', vehicleVolume: 0, vehicleWeight: 0, plate: '', status: 'Disponível' as const };
+const emptyDriver = { name: '', cpf: '', cnh: '', cnhCategory: 'B', phone: '', vehicleType: 'Carreta Bau', vehicleVolume: 0, vehicleWeight: 0, plate: '', status: 'Disponível' as const };
 
 const DriversPage = () => {
   const { showToast } = useToast();
@@ -36,6 +36,7 @@ const DriversPage = () => {
         const next: Driver[] = rows.map((r) => ({
           id: r.id,
           name: r.nome || '',
+          cpf: r.cpf || '',
           cnh: r.cnh_numero || '',
           cnhCategory: r.cnh_categoria || 'B',
           phone: r.telefone || '',
@@ -86,20 +87,21 @@ const DriversPage = () => {
   );
 
   const openNew = () => { setEditing(null); setForm(emptyDriver); setModalOpen(true); };
-  const openEdit = (d: Driver) => { 
-    setEditing(d); 
-    setForm({ 
-      name: d.name, 
-      cnh: d.cnh, 
-      cnhCategory: d.cnhCategory, 
-      phone: d.phone, 
-      vehicleType: d.vehicleType || 'Carreta Bau', 
+  const openEdit = (d: Driver) => {
+    setEditing(d);
+    setForm({
+      name: d.name,
+      cpf: d.cpf || '',
+      cnh: d.cnh,
+      cnhCategory: d.cnhCategory,
+      phone: d.phone,
+      vehicleType: d.vehicleType || 'Carreta Bau',
       vehicleVolume: d.vehicleVolume || 0,
       vehicleWeight: d.vehicleWeight || 0,
-      plate: d.plate, 
-      status: d.status 
-    }); 
-    setModalOpen(true); 
+      plate: d.plate,
+      status: d.status
+    });
+    setModalOpen(true);
   };
 
   const save = () => {
@@ -109,6 +111,7 @@ const DriversPage = () => {
         try {
           const row = await updateMotorista(editing.id, {
             nome: form.name.trim(),
+            cpf: (form.cpf || '').trim() || null,
             telefone: form.phone.trim(),
             cnh_numero: form.cnh.trim(),
             cnh_categoria: String(form.cnhCategory || 'B'),
@@ -120,6 +123,7 @@ const DriversPage = () => {
           const updatedDriver: Driver = {
             id: editing.id,
             name: row.nome || '',
+            cpf: row.cpf || '',
             phone: row.telefone || '',
             cnh: row.cnh_numero || '',
             cnhCategory: row.cnh_categoria || 'B',
@@ -144,6 +148,7 @@ const DriversPage = () => {
         try {
           const row = await insertMotorista({
             nome: form.name.trim(),
+            cpf: (form.cpf || '').trim() || null,
             telefone: form.phone.trim(),
             cnh_numero: form.cnh.trim(),
             cnh_categoria: String(form.cnhCategory || 'B'),
@@ -155,6 +160,7 @@ const DriversPage = () => {
           const newDriver: Driver = {
             id: row.id,
             name: row.nome || '',
+            cpf: row.cpf || '',
             cnh: row.cnh_numero || '',
             cnhCategory: row.cnh_categoria || 'B',
             phone: row.telefone || '',
@@ -252,6 +258,10 @@ const DriversPage = () => {
         <div className="space-y-4">
           <FormField label="Nome"><input className={inputClass} value={form.name} onChange={e => setField('name', e.target.value)} /></FormField>
           <div className="grid grid-cols-2 gap-4">
+            <FormField label="CPF"><input className={inputClass} value={form.cpf || ''} onChange={e => setField('cpf', e.target.value)} placeholder="000.000.000-00" /></FormField>
+            <FormField label="Telefone"><input className={inputClass} value={form.phone} onChange={e => setField('phone', e.target.value)} /></FormField>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
             <FormField label="CNH"><input className={inputClass} value={form.cnh} onChange={e => setField('cnh', e.target.value)} /></FormField>
             <FormField label="Categoria">
               <select className={inputClass} value={form.cnhCategory} onChange={e => setField('cnhCategory', e.target.value)}>
@@ -259,7 +269,6 @@ const DriversPage = () => {
               </select>
             </FormField>
           </div>
-          <FormField label="Telefone"><input className={inputClass} value={form.phone} onChange={e => setField('phone', e.target.value)} /></FormField>
           <div className="grid grid-cols-2 gap-4">
             <FormField label="Tipo de Veículo">
               <select className={inputClass} value={form.vehicleType} onChange={e => setField('vehicleType', e.target.value)}>
