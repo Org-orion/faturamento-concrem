@@ -159,10 +159,20 @@ const PainelPedidos = () => {
     return () => { void supabaseOps.removeChannel(ch); };
   }, []);
 
-  const pedidosComStatus = useMemo(
-    () => pedidos.filter((p) => statusByPedidoId.has(p.id)),
-    [pedidos, statusByPedidoId],
-  );
+  const pedidosComStatus = useMemo(() => {
+    // Pedidos do AppContext que têm registro de status
+    const fromContext = pedidos.filter((p) => statusByPedidoId.has(p.id));
+    const knownIds = new Set(fromContext.map((p) => p.id));
+    // Pedidos que estão em pedidos_status mas não vieram do AppContext (ex: filtrados pelo ERP)
+    const fromStatusOnly: UnifiedPedido[] = [];
+    for (const row of statusRows) {
+      const id = String(row.pedido_id);
+      if (!knownIds.has(id) && row.status_atual !== 'finalizado') {
+        fromStatusOnly.push({ id, numero: id, cliente: '-', representante: '-', valor: 0 });
+      }
+    }
+    return [...fromContext, ...fromStatusOnly];
+  }, [pedidos, statusByPedidoId, statusRows]);
 
   const filtered = useMemo(() => {
     const colFiltered = colFilter.filterItems(pedidosComStatus, colDefs);
