@@ -36,6 +36,7 @@ const PainelPedidos = () => {
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
   const [extraPedidos, setExtraPedidos] = useState<UnifiedPedido[]>([]);
   const [loading, setLoading] = useState(false);
+  const initialRefreshDone = React.useRef(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -124,9 +125,15 @@ const PainelPedidos = () => {
     }
   };
 
+  // Aguarda os pedidos do AppContext carregarem antes de fazer o refresh inicial,
+  // para que ensurePedidosStatusInitializedBatch receba a lista completa.
   useEffect(() => {
+    if (initialRefreshDone.current) return;
+    const total = (orders?.length ?? 0) + (supportOrders?.length ?? 0);
+    if (total === 0) return;
+    initialRefreshDone.current = true;
     void refresh();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [orders, supportOrders]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Realtime subscription: auto-refresh when pedidos_status changes
   useEffect(() => {
