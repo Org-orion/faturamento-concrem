@@ -152,14 +152,19 @@ const PainelPedidos = () => {
     return () => { void supabaseOps.removeChannel(ch); };
   }, []);
 
+  const pedidosComStatus = useMemo(
+    () => pedidos.filter((p) => statusByPedidoId.has(p.id)),
+    [pedidos, statusByPedidoId],
+  );
+
   const filtered = useMemo(() => {
-    const colFiltered = colFilter.filterItems(pedidos, colDefs);
+    const colFiltered = colFilter.filterItems(pedidosComStatus, colDefs);
     return filterItems(
       colFiltered,
       [(p) => p.numero, (p) => p.cliente, (p) => p.representante],
       (p) => statusByPedidoId.get(p.id)?.status_atual ?? null,
     );
-  }, [pedidos, filterItems, statusByPedidoId, colFilter, colDefs]);
+  }, [pedidosComStatus, filterItems, statusByPedidoId, colFilter, colDefs]);
 
   const selected = useMemo(() => (selectedId ? pedidos.find((p) => p.id === selectedId) || null : null), [pedidos, selectedId]);
   const selectedStatus = (selectedId && statusByPedidoId.get(selectedId)?.status_atual) || null;

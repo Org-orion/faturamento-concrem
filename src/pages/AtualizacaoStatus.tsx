@@ -69,15 +69,19 @@ const AtualizacaoStatus = () => {
   const refresh = async () => {
     try {
       let allRows: PedidoStatusRow[] = [];
+      const knownIdList = [
+        ...(orders || []).map((o) => o.id),
+        ...(supportOrders || []).map((o) => o.id),
+      ];
       if (supabaseOps) {
         const { data } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
         allRows = (data || []) as PedidoStatusRow[];
       } else {
-        allRows = await listPedidosStatusByPedidoIds(payload.map((p) => p.pedidoId));
+        allRows = await listPedidosStatusByPedidoIds(knownIdList);
       }
 
       if (supabasePedidos && allRows.length > 0) {
-        const knownIds = new Set(payload.map((p) => p.pedidoId));
+        const knownIds = new Set(knownIdList);
         const missingIds = allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id));
         if (missingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
