@@ -289,7 +289,7 @@ const PainelPedidos = () => {
               placeholder="Buscar por cliente, representante ou n. do pedido..."
               statuses={statusButtons}
               activeStatus={activeStatus}
-              onStatusChange={setActiveStatus}
+              onStatusChange={(s) => { setActiveStatus(s); colFilter.setFilter('status', '', true); }}
             >
               {/* Sort dropdown */}
               <select
@@ -331,7 +331,7 @@ const PainelPedidos = () => {
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Status</label>
-                <select value={colFilter.values.status || ''} onChange={e => colFilter.setFilter('status', e.target.value, true)} className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors">
+                <select value={colFilter.values.status || ''} onChange={e => { colFilter.setFilter('status', e.target.value, true); if (e.target.value) setActiveStatus(null); }} className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors">
                   <option value="">Todos</option>
                   {pedidoStatusFlow.map((s) => (
                     <option key={s.value} value={s.value}>{s.label}</option>
