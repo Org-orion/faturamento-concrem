@@ -207,6 +207,16 @@ const PainelPedidos = () => {
     return [...fromContext, ...fromStatusOnly];
   }, [pedidos, statusByPedidoId, statusRows]);
 
+  const uniqueClientes = useMemo(() => {
+    const set = new Set(pedidosComStatus.map((p) => p.cliente).filter((c) => c && c !== '-'));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pedidosComStatus]);
+
+  const uniqueRepresentantes = useMemo(() => {
+    const set = new Set(pedidosComStatus.map((p) => p.representante).filter((r) => r && r !== '-'));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pedidosComStatus]);
+
   const filtered = useMemo(() => {
     const colFiltered = colFilter.filterItems(pedidosComStatus, colDefs);
     return filterItems(
@@ -323,11 +333,17 @@ const PainelPedidos = () => {
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Cliente</label>
-                <input type="text" value={colFilter.values.cliente || ''} onChange={e => colFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+                <input type="text" list="painel-clientes-list" value={colFilter.values.cliente || ''} onChange={e => colFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+                <datalist id="painel-clientes-list">
+                  {uniqueClientes.map((c) => <option key={c} value={c} />)}
+                </datalist>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Representante</label>
-                <input type="text" value={colFilter.values.representante || ''} onChange={e => colFilter.setFilter('representante', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+                <input type="text" list="painel-representantes-list" value={colFilter.values.representante || ''} onChange={e => colFilter.setFilter('representante', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+                <datalist id="painel-representantes-list">
+                  {uniqueRepresentantes.map((r) => <option key={r} value={r} />)}
+                </datalist>
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Status</label>
