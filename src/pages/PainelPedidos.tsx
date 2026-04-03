@@ -93,7 +93,11 @@ const PainelPedidos = () => {
       // Buscar todos os status do banco (inclui pedidos que não estão no AppContext)
       let allRows: PedidoStatusRow[] = [];
       if (supabaseOps) {
-        const { data } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
+        const { data, error } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
+        if (error) {
+          console.error('[PainelPedidos] refresh query error:', error.message);
+          return;
+        }
         allRows = (data || []) as PedidoStatusRow[];
       } else {
         allRows = await listPedidosStatusByPedidoIds(payload.map((p) => p.pedidoId));
@@ -103,16 +107,21 @@ const PainelPedidos = () => {
       if (supabasePedidos && allRows.length > 0) {
         const knownIds = new Set(payload.map((p) => p.pedidoId));
         const missingIds = allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id));
+        const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
         if (missingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
           const { data: extraData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
-          const extras: UnifiedPedido[] = ((extraData || []) as any[]).map((row: any) => {
+          const fetched: UnifiedPedido[] = ((extraData || []) as any[]).map((row: any) => {
             const o = rowToOrder(row, 'CLI-001');
             return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
           });
-          setExtraPedidos(extras);
+          setExtraPedidos((prev) => {
+            const map = new Map(prev.filter((p) => activeIds.has(p.id)).map((p) => [p.id, p]));
+            for (const e of fetched) map.set(e.id, e);
+            return Array.from(map.values());
+          });
         } else {
-          setExtraPedidos([]);
+          setExtraPedidos((prev) => prev.filter((p) => activeIds.has(p.id)));
         }
       }
 

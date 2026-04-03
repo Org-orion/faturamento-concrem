@@ -74,7 +74,11 @@ const AtualizacaoStatus = () => {
         ...(supportOrders || []).map((o) => o.id),
       ];
       if (supabaseOps) {
-        const { data } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
+        const { data, error } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
+        if (error) {
+          console.error('[AtualizacaoStatus] refresh query error:', error.message);
+          return; // não sobrescreve o estado com dados vazios em caso de erro
+        }
         allRows = (data || []) as PedidoStatusRow[];
       } else {
         allRows = await listPedidosStatusByPedidoIds(knownIdList);
@@ -86,13 +90,21 @@ const AtualizacaoStatus = () => {
         if (missingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
           const { data: extraData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
-          const extras: UnifiedPedido[] = ((extraData || []) as any[]).map((row: any) => {
+          const fetched: UnifiedPedido[] = ((extraData || []) as any[]).map((row: any) => {
             const o = rowToOrder(row, 'CLI-001');
             return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', repPhone: o.representativePhone || null };
           });
-          setExtraPedidos(extras);
+          // Preserva extras já adicionados via busca pontual; mescla com os recém-buscados
+          const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
+          setExtraPedidos((prev) => {
+            const map = new Map(prev.filter((p) => activeIds.has(p.id)).map((p) => [p.id, p]));
+            for (const e of fetched) map.set(e.id, e);
+            return Array.from(map.values());
+          });
         } else {
-          setExtraPedidos([]);
+          // Preserva extras que ainda têm registro de status ativo
+          const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
+          setExtraPedidos((prev) => prev.filter((p) => activeIds.has(p.id)));
         }
       }
 
