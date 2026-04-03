@@ -125,6 +125,30 @@ const PainelPedidos = () => {
     }
   };
 
+  // Busca pontual no ERP quando o pedido não está na lista
+  const searchErpByNumero = async (numero: string) => {
+    if (!supabasePedidos || !numero.trim()) return;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const { data } = await supabasePedidos.from(table).select(tableColumns).eq('numero_pedido', numero.trim()).limit(1);
+    if (!data?.length) return;
+    const o = rowToOrder((data as any[])[0], 'CLI-001');
+    const found: UnifiedPedido = { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
+    setExtraPedidos((prev) => {
+      if (prev.some((p) => p.id === found.id)) return prev;
+      return [...prev, found];
+    });
+    if (supabaseOps) {
+      await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero }], user?.username || null);
+      const { data: statusData } = await supabaseOps.from('pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
+      if (statusData?.length) {
+        setStatusRows((prev) => {
+          const exists = prev.some((r) => r.pedido_id === found.id);
+          return exists ? prev : [...prev, (statusData as any[])[0] as PedidoStatusRow];
+        });
+      }
+    }
+  };
+
   // Aguarda os pedidos do AppContext carregarem antes de fazer o refresh inicial,
   // para que ensurePedidosStatusInitializedBatch receba a lista completa.
   useEffect(() => {
@@ -286,7 +310,7 @@ const PainelPedidos = () => {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Nº Pedido</label>
-                <input type="text" value={colFilter.values.pedido || ''} onChange={e => colFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+                <input type="text" value={colFilter.values.pedido || ''} onChange={e => { const v = e.target.value; colFilter.setFilter('pedido', v); if (v.length >= 4) void searchErpByNumero(v); }} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Cliente</label>
