@@ -123,6 +123,16 @@ const PedidoSuporteLiberacao = () => {
     validade: (o) => o.expiryDate,
   }), []);
 
+  const uniqueClientes = useMemo(() => {
+    const set = new Set(supportOrders.map((o) => `${o.clientCode || ''} ${o.clientName || ''}`.trim()).filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [supportOrders]);
+
+  const uniqueRepresentantes = useMemo(() => {
+    const set = new Set(supportOrders.map((o) => o.representativeName || '').filter(Boolean));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [supportOrders]);
+
   const s12FilterFields = useMemo(() => [
     { id: 'pedido', label: 'Número do pedido', type: 'text', getValue: (o: SupportOrder) => o.id, placeholder: 'Ex: SUP-001' },
     { id: 'cliente', label: 'Cliente', type: 'text', getValue: (o: SupportOrder) => `${o.clientCode || ''} ${o.clientName || ''}`.trim(), placeholder: 'Código ou nome...' },
@@ -231,8 +241,10 @@ const PedidoSuporteLiberacao = () => {
 
         <div className="flex items-center gap-3">
           <input type="text" value={s2ColFilter.values['pedido'] || ''} onChange={(e) => s2ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
-          <input type="text" value={s2ColFilter.values['cliente'] || ''} onChange={(e) => s2ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
-          <input type="text" value={s2ColFilter.values['representante'] || ''} onChange={(e) => s2ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" list="psl-clientes-list-s2" value={s2ColFilter.values['cliente'] || ''} onChange={(e) => s2ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <datalist id="psl-clientes-list-s2">{uniqueClientes.map((c) => <option key={c} value={c} />)}</datalist>
+          <input type="text" list="psl-reps-list-s2" value={s2ColFilter.values['representante'] || ''} onChange={(e) => s2ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <datalist id="psl-reps-list-s2">{uniqueRepresentantes.map((r) => <option key={r} value={r} />)}</datalist>
         </div>
 
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
@@ -298,8 +310,10 @@ const PedidoSuporteLiberacao = () => {
 
         <div className="flex items-center gap-3">
           <input type="text" value={s3ColFilter.values['pedido'] || ''} onChange={(e) => s3ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
-          <input type="text" value={s3ColFilter.values['cliente'] || ''} onChange={(e) => s3ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
-          <input type="text" value={s3ColFilter.values['representante'] || ''} onChange={(e) => s3ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <input type="text" list="psl-clientes-list-s3" value={s3ColFilter.values['cliente'] || ''} onChange={(e) => s3ColFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar cliente..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <datalist id="psl-clientes-list-s3">{uniqueClientes.map((c) => <option key={c} value={c} />)}</datalist>
+          <input type="text" list="psl-reps-list-s3" value={s3ColFilter.values['representante'] || ''} onChange={(e) => s3ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <datalist id="psl-reps-list-s3">{uniqueRepresentantes.map((r) => <option key={r} value={r} />)}</datalist>
         </div>
 
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">

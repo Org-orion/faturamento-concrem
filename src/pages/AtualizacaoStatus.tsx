@@ -157,6 +157,11 @@ const AtualizacaoStatus = () => {
     });
   }, [pedidos, statusByPedidoId]);
 
+  const uniqueClientes = useMemo(() => {
+    const set = new Set(logisticaPedidos.map((p) => p.cliente).filter((c) => c && c !== '-'));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [logisticaPedidos]);
+
   const colDefs: ColDef<UnifiedPedido>[] = useMemo(() => [
     { key: 'numero', getter: (p) => p.numero },
     { key: 'cliente', getter: (p) => p.cliente },
@@ -307,7 +312,10 @@ const AtualizacaoStatus = () => {
           </div>
           <div>
             <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Cliente</label>
-            <input type="text" value={colFilter.values.cliente || ''} onChange={e => colFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+            <input type="text" list="status-clientes-list" value={colFilter.values.cliente || ''} onChange={e => colFilter.setFilter('cliente', e.target.value)} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+            <datalist id="status-clientes-list">
+              {uniqueClientes.map((c) => <option key={c} value={c} />)}
+            </datalist>
           </div>
           <div>
             <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Status</label>
