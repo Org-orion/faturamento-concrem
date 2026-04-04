@@ -139,6 +139,28 @@ export function getStageState(currentStatus: PedidoStatusValue, stageId: number)
   return def.order >= completionOrder ? 'done' : 'current';
 }
 
+/**
+ * Returns the effective status to use for timeline display.
+ * Uses whichever status has the highest order across currentStatus + history.
+ * This ensures stages that were historically completed stay 'done' even if
+ * status_atual was rolled back.
+ */
+export function getEffectiveStatusForTimeline(
+  currentStatus: PedidoStatusValue,
+  history: Array<{ status_novo: PedidoStatusValue }>,
+): PedidoStatusValue {
+  let maxOrder = getPedidoStatusDef(currentStatus).order;
+  let effective = currentStatus;
+  for (const h of history) {
+    const o = getPedidoStatusDef(h.status_novo).order;
+    if (o > maxOrder) {
+      maxOrder = o;
+      effective = h.status_novo;
+    }
+  }
+  return effective;
+}
+
 export function clampToKnownStatus(value: string | null | undefined): PedidoStatusValue | null {
   const v = String(value || '').trim();
   const def = pedidoStatusFlow.find((x) => x.value === v);

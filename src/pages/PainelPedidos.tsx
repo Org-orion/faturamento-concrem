@@ -142,20 +142,27 @@ const PainelPedidos = () => {
     if (!data?.length) return;
     const o = rowToOrder((data as any[])[0], 'CLI-001');
     const found: UnifiedPedido = { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
+
+    // Buscar/inicializar status ANTES de adicionar ao extraPedidos para evitar
+    // que o pedido apareça sem status (causando flash de 0 resultados)
+    let statusRow: PedidoStatusRow | null = null;
+    if (supabaseOps) {
+      await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero, grupoCliente: found.grupoCliente }], user?.username || null);
+      const { data: statusData } = await supabaseOps.from('pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
+      if (statusData?.length) statusRow = (statusData as any[])[0] as PedidoStatusRow;
+    }
+
+    // Atualizar statusRows e extraPedidos juntos para evitar estado intermediário
+    if (statusRow) {
+      setStatusRows((prev) => {
+        const exists = prev.some((r) => r.pedido_id === found.id);
+        return exists ? prev : [...prev, statusRow!];
+      });
+    }
     setExtraPedidos((prev) => {
       if (prev.some((p) => p.id === found.id)) return prev;
       return [...prev, found];
     });
-    if (supabaseOps) {
-      await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero, grupoCliente: found.grupoCliente }], user?.username || null);
-      const { data: statusData } = await supabaseOps.from('pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
-      if (statusData?.length) {
-        setStatusRows((prev) => {
-          const exists = prev.some((r) => r.pedido_id === found.id);
-          return exists ? prev : [...prev, (statusData as any[])[0] as PedidoStatusRow];
-        });
-      }
-    }
   };
 
   // Aguarda os pedidos do AppContext carregarem antes de fazer o refresh inicial,
@@ -356,7 +363,7 @@ const PainelPedidos = () => {
               </div>
             </div>
           </div>
-          <PainelPedidosList pedidos={sortedForPanel} statusByPedidoId={statusByPedidoId} selectedId={selectedId} onSelect={setSelectedId} />
+          <PainelPedidosList pedidos={sortedForPanel} statusByPedidoId={statusByPedidoId} selectedId={selectedId} selectedHistory={history} onSelect={setSelectedId} />
         </div>
 
         <div className="lg:col-span-4 space-y-4">

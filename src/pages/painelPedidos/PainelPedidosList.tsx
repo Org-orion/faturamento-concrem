@@ -1,7 +1,7 @@
 import React from 'react';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { PedidoTimelineStages } from '@/components/pedidos/PedidoTimelineStages';
-import { PedidoStatusValue } from '@/types';
+import { PedidoStatusValue, PedidoStatusHistoricoRow } from '@/types';
 import { cn } from '@/lib/utils';
 import { UnifiedPedido, PedidoStatusById } from './types';
 import { fmtDateTime } from '@/lib/dateUtils';
@@ -16,11 +16,13 @@ export function PainelPedidosList({
   pedidos,
   statusByPedidoId,
   selectedId,
+  selectedHistory,
   onSelect,
 }: {
   pedidos: UnifiedPedido[];
   statusByPedidoId: PedidoStatusById;
   selectedId: string | null;
+  selectedHistory?: PedidoStatusHistoricoRow[];
   onSelect: (id: string) => void;
 }) {
   if (!pedidos.length) {
@@ -65,7 +67,10 @@ export function PainelPedidosList({
             </div>
             <div className="mt-4 overflow-x-auto">
               <div className="min-w-[620px]">
-                <PedidoTimelineStages statusAtual={st} />
+                <PedidoTimelineStages
+                  statusAtual={st}
+                  history={selected ? selectedHistory : undefined}
+                />
               </div>
             </div>
           </button>

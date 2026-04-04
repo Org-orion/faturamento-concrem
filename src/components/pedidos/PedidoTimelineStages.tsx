@@ -1,14 +1,24 @@
 import React from 'react';
 import { Check, Clock3 } from 'lucide-react';
 import { PedidoStatusValue } from '@/types';
-import { getStageState, panelTimelineStages } from '@/lib/pedidoStatusFlow';
+import { getStageState, getEffectiveStatusForTimeline, panelTimelineStages } from '@/lib/pedidoStatusFlow';
 import { cn } from '@/lib/utils';
 
-export function PedidoTimelineStages({ statusAtual }: { statusAtual: PedidoStatusValue }) {
+export function PedidoTimelineStages({
+  statusAtual,
+  history,
+}: {
+  statusAtual: PedidoStatusValue;
+  history?: Array<{ status_novo: PedidoStatusValue }>;
+}) {
+  const effectiveStatus = history?.length
+    ? getEffectiveStatusForTimeline(statusAtual, history)
+    : statusAtual;
+
   return (
     <div className="flex items-center gap-3">
       {panelTimelineStages.map((st, idx) => {
-        const state = getStageState(statusAtual, st.id);
+        const state = getStageState(effectiveStatus, st.id);
         const circle =
           state === 'done'
             ? 'bg-emerald-500 text-white border-emerald-500'
