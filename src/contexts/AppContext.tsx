@@ -599,8 +599,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!supabaseOps) return;
     const payload = [
-      ...(orders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id })),
-      ...(supportOrders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id })),
+      ...(orders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: o.grupoCliente })),
+      ...(supportOrders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: o.grupoCliente })),
     ];
     void ensurePedidosStatusInitializedBatch(payload, user?.username || null);
   }, [orders, supportOrders, user?.username]);

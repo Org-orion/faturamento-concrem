@@ -80,6 +80,7 @@ export function StatusUpdateDialog({
         observacao: obs || null,
         notifyRepresentante: Boolean(notify),
         representantePhoneRaw: resolvedPhone || pedido.repPhone || null,
+        representanteNome: pedido.representante || null,
         clienteNome: pedido.cliente,
       });
 

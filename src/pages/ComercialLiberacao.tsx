@@ -16,7 +16,7 @@ import { applyFilters } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 
 
-import { updatePedidoStatus, normalizePhoneToE164 } from '@/lib/pedidosStatusRepo';
+import { updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 import { fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { findRepresentanteContato } from '@/lib/opsRepo';
@@ -350,18 +350,23 @@ const ComercialLiberacao = () => {
       byRep.get(repKey)!.orders.push(order);
     }
 
-    // Enviar notificação por representante
+    // Enviar notificação por representante (skip LEROY)
     for (const [, { orders, phone }] of byRep.entries()) {
       if (!phone) continue;
+      const repName = orders[0].representativeName || '-';
+
+      // Filtra pedidos LEROY (cliente ou representante)
+      const notifiable = orders.filter((o) => !isLeroy(o.clientName || o.clientCode, repName));
+      if (!notifiable.length) continue;
+
       const phoneE164 = normalizePhoneToE164(phone);
       if (!phoneE164) continue;
 
-      const repName = orders[0].representativeName || '-';
       const hora = currentHourBR();
       const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
       let msg = `${saudacao}, ${repName}!\n\n`;
       msg += `Os seguintes pedidos foram *liberados para produção*:\n\n`;
-      for (const o of orders) {
+      for (const o of notifiable) {
         msg += `· Pedido *${o.id}* — ${o.clientName || o.clientCode || 'Cliente'}\n`;
       }
       msg += `\nEm breve iniciaremos a fabricação. Qualquer dúvida, estamos à disposição.`;

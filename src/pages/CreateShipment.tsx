@@ -17,7 +17,7 @@ import {
 import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas } from '@/lib/opsRepo';
-import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164 } from '@/lib/pedidosStatusRepo';
+import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 import { todayBR, fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText, sendEvolutionMedia } from '@/lib/evolutionApi';
 import type { FilterCondition, FilterField } from '@/lib/filters';
@@ -48,6 +48,8 @@ const CreateShipment = () => {
   type ShipmentStatus = 'Aguardando Despacho' | 'Despachado' | 'Em Rota' | 'Entregue' | 'Cancelado';
   const [shipmentStatus, setShipmentStatus] = useState<ShipmentStatus>('Aguardando Despacho');
   const [freightValue, setFreightValue] = useState(0);
+  const [freightManual, setFreightManual] = useState(false);
+  const [freightRaw, setFreightRaw] = useState('');
   const [shipmentDate, setShipmentStatusDate] = useState(todayBR());
   const [previsaoEntregaDate, setPrevisaoEntregaDate] = useState(todayBR());
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
@@ -153,7 +155,9 @@ const CreateShipment = () => {
         setDriverId(loadToEdit.driverId);
         setShipmentStatus(loadToEdit.shipmentStatus);
         setSelectedOrderIds(loadToEdit.orderIds);
-        // freightValue será recalculado automaticamente pelo useEffect de soma
+        setFreightValue(loadToEdit.freightValue || 0);
+        setFreightRaw(loadToEdit.freightValue ? String(loadToEdit.freightValue).replace('.', ',') : '');
+        setFreightManual(true);
         setShipmentStatusDate(loadToEdit.plannedDate || todayBR());
       } else {
         showToast('Carregamento não encontrado.', 'error');
@@ -229,14 +233,17 @@ const CreateShipment = () => {
   const [directPedidos, setDirectPedidos] = useState<Order[]>([]);
 
   useEffect(() => {
+    if (freightManual) return;
     const totalFreight = selectedOrderIds.reduce((acc, orderId) => {
       const order = orders.find(o => o.id === orderId)
         ?? (supportOrders as unknown as Order[]).find(o => o.id === orderId)
         ?? directPedidos.find(o => o.id === orderId);
       return acc + (order?.freightValue || 0);
     }, 0);
-    setFreightValue(Math.round(totalFreight * 100) / 100);
-  }, [selectedOrderIds, orders, supportOrders, directPedidos]);
+    const rounded = Math.round(totalFreight * 100) / 100;
+    setFreightValue(rounded);
+    setFreightRaw(rounded > 0 ? String(rounded).replace('.', ',') : '');
+  }, [freightManual, selectedOrderIds, orders, supportOrders, directPedidos]);
 
   const selectedDriver = drivers.find(d => d.id === driverId);
   const [pedidoStatusRows, setPedidoStatusRows] = useState<import('@/types').PedidoStatusRow[]>([]);
@@ -658,9 +665,10 @@ const CreateShipment = () => {
       document.body.removeChild(container);
     }
 
-    // Formulário gerado → pedido Em Rota (somente se NF e boleto também estiverem anexados)
+    // Formulário gerado → pedido Em Rota (somente se NF e boleto também estiverem anexados; nunca para LEROY)
     const attachs = orderAttachments[orderId] || {};
-    if (attachs.nf?.url && attachs.boleto?.url) {
+    const orderForStatus = allCandidates.find((o) => o.id === orderId);
+    if (attachs.nf?.url && attachs.boleto?.url && !isLeroy(orderForStatus?.clientName || orderForStatus?.clientCode, orderForStatus?.representativeName)) {
       void updatePedidoStatus({
         pedidoId: orderId,
         numeroPedido: orderId,
@@ -732,6 +740,9 @@ const CreateShipment = () => {
         // comprovante de entrega NÃO é enviado ao representante
       }
 
+      // LEROY: não enviar nenhuma mensagem WhatsApp
+      if (isLeroy(repOrders[0]?.clientName || repOrders[0]?.clientCode, repName)) continue;
+
       // Enviar via Evolution API
       if (repPhoneRaw) {
         const phoneE164 = normalizePhoneToE164(repPhoneRaw);
@@ -788,7 +799,7 @@ const CreateShipment = () => {
       const order = orders.find(o => o.id === orderId) ?? (supportOrders as unknown as Order[]).find(o => o.id === orderId) ?? directPedidos.find(o => o.id === orderId);
       if (!order) return acc;
       const orderVolume = order.totalQtdM3 || 0;
-      const orderWeight = order.pesoLiquidoItem || 0;
+      const orderWeight = (order.pesoLiquidoItem || 0) * (order.totalQtd || 0);
       return {
         volume: acc.volume + orderVolume,
         weight: acc.weight + orderWeight
@@ -841,8 +852,9 @@ const CreateShipment = () => {
         },
       }));
 
-      // Comprovante anexado → status Entregue
-      if (type === 'comprovante') {
+      // Comprovante anexado → status Entregue (nunca para LEROY)
+      const orderForComp = allCandidates.find((o) => o.id === orderId);
+      if (type === 'comprovante' && !isLeroy(orderForComp?.clientName || orderForComp?.clientCode, orderForComp?.representativeName)) {
         await updatePedidoStatus({
           pedidoId: orderId,
           numeroPedido: orderId,
@@ -1068,6 +1080,8 @@ const CreateShipment = () => {
       if (targetStatus) {
         const username = user?.username || null;
         for (const orderId of selectedOrderIds) {
+          const orderForBulk = allCandidates.find((o) => o.id === orderId);
+          if (isLeroy(orderForBulk?.clientName || orderForBulk?.clientCode, orderForBulk?.representativeName)) continue;
           await updatePedidoStatus({
             pedidoId: orderId,
             numeroPedido: orderId,
@@ -1153,11 +1167,17 @@ const CreateShipment = () => {
                 type="text"
                 className={inputClass}
                 placeholder="0,00"
-                value={freightValue === 0 ? '' : freightValue.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                value={freightRaw}
                 onChange={e => {
+                  setFreightRaw(e.target.value);
+                  setFreightManual(true);
+                }}
+                onBlur={e => {
                   const raw = e.target.value.replace(/\./g, '').replace(',', '.');
                   const num = parseFloat(raw);
-                  setFreightValue(isNaN(num) ? 0 : num);
+                  const val = isNaN(num) ? 0 : num;
+                  setFreightValue(val);
+                  setFreightRaw(val > 0 ? val.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
                 }}
               />
             </FormField>

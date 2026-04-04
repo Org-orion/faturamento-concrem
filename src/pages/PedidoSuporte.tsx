@@ -99,6 +99,16 @@ const PedidoSuporte = () => {
     return serverOrders.filter(o => !liberatedIds.has(o.id));
   }, [serverOrders, liberatedIds]);
 
+  const uniqueClientes = useMemo(() => {
+    const set = new Set(serverOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [serverOrders]);
+
+  const uniqueRepresentantes = useMemo(() => {
+    const set = new Set(serverOrders.map((o) => o.representativeName).filter((r): r is string => Boolean(r)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [serverOrders]);
+
   // Reset page when sort changes
   useEffect(() => { setPage(1); }, [sortState]);
 
@@ -422,15 +432,23 @@ const PedidoSuporte = () => {
             value={filterCliente}
             onChange={(e) => { setFilterCliente(e.target.value); setPage(1); }}
             placeholder="Filtrar cliente..."
+            list="ps-clientes-list"
             className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
           />
+          <datalist id="ps-clientes-list">
+            {uniqueClientes.map((c) => <option key={c} value={c} />)}
+          </datalist>
           <input
             type="text"
             value={filterRep}
             onChange={(e) => { setFilterRep(e.target.value); setPage(1); }}
             placeholder="Filtrar representante..."
+            list="ps-reps-list"
             className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
           />
+          <datalist id="ps-reps-list">
+            {uniqueRepresentantes.map((r) => <option key={r} value={r} />)}
+          </datalist>
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
         </div>
         <ActiveFiltersChips

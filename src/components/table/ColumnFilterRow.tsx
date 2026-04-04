@@ -5,6 +5,7 @@ export type ColFilterSlot =
       key: string;
       type: 'text' | 'number' | 'date';
       placeholder?: string;
+      datalistId?: string;
     }
   | {
       key: string;
@@ -60,6 +61,7 @@ export function ColumnFilterRow({
               value={values[col.key] || ''}
               onChange={(e) => onChange(col.key, e.target.value)}
               placeholder={col.placeholder || 'Filtrar...'}
+              list={col.type !== 'date' && col.datalistId ? col.datalistId : undefined}
               className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors"
             />
           </th>

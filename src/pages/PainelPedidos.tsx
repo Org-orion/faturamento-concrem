@@ -87,7 +87,7 @@ const PainelPedidos = () => {
   const refresh = async () => {
     setLoading(true);
     try {
-      const payload = pedidos.map((p) => ({ pedidoId: p.id, numeroPedido: p.numero }));
+      const payload = pedidos.map((p) => ({ pedidoId: p.id, numeroPedido: p.numero, grupoCliente: p.grupoCliente }));
       await ensurePedidosStatusInitializedBatch(payload, user?.username || null);
 
       // Buscar todos os status do banco (inclui pedidos que não estão no AppContext)
@@ -147,7 +147,7 @@ const PainelPedidos = () => {
       return [...prev, found];
     });
     if (supabaseOps) {
-      await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero }], user?.username || null);
+      await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero, grupoCliente: found.grupoCliente }], user?.username || null);
       const { data: statusData } = await supabaseOps.from('pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
       if (statusData?.length) {
         setStatusRows((prev) => {

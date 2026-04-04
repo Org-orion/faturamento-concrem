@@ -120,8 +120,20 @@ export async function ensurePedidoStatusInitialized(pedidoId: string, numeroPedi
   }
 }
 
+/** Check if a grupo_cliente value indicates REVENDA */
+export function isRevenda(grupoCliente?: string | null): boolean {
+  return Boolean(grupoCliente && grupoCliente.toUpperCase().includes('REVENDA'));
+}
+
+/** Check if client or representative name contains LEROY (skip WhatsApp) */
+export function isLeroy(clienteNome?: string | null, representanteNome?: string | null): boolean {
+  const c = (clienteNome || '').toUpperCase();
+  const r = (representanteNome || '').toUpperCase();
+  return c.includes('LEROY') || r.includes('LEROY');
+}
+
 export async function ensurePedidosStatusInitializedBatch(
-  pedidos: Array<{ pedidoId: string; numeroPedido: string }>,
+  pedidos: Array<{ pedidoId: string; numeroPedido: string; grupoCliente?: string | null }>,
   userName: string | null,
 ): Promise<void> {
   if (!supabaseOps) return;
@@ -141,7 +153,7 @@ export async function ensurePedidosStatusInitializedBatch(
     let batchData: any[] | null = null;
     let batchErr: { message: string } | null = null;
     try {
-      const res = await supabaseOps.from('pedidos_status').select('pedido_id').in('pedido_id', idBatch).limit(500);
+      const res = await supabaseOps.from('pedidos_status').select('pedido_id, status_atual').in('pedido_id', idBatch).limit(500);
       batchData = res.data as any;
       batchErr = res.error as any;
     } catch (err) {
@@ -155,12 +167,42 @@ export async function ensurePedidosStatusInitializedBatch(
     existing.push(...(batchData || []));
   }
 
-  const existingSet = new Set((existing || []).map((r: any) => String(r.pedido_id)));
-  const missing = ids.filter((id) => !existingSet.has(id)).map((id) => unique.get(id)!).filter(Boolean);
-  if (!missing.length) return;
+  const existingMap = new Map((existing || []).map((r: any) => [String(r.pedido_id), r.status_atual as string]));
+  const missing = ids.filter((id) => !existingMap.has(id)).map((id) => unique.get(id)!).filter(Boolean);
 
+  // Upgrade REVENDA orders that are still in aguardando_avaliacao → liberado_comercial
   const now = new Date().toISOString();
-  const statusNovo: PedidoStatusValue = 'aguardando_avaliacao';
+  const revendaToUpgrade = ids
+    .filter((id) => existingMap.get(id) === 'aguardando_avaliacao' && isRevenda(unique.get(id)?.grupoCliente))
+    .map((id) => unique.get(id)!);
+
+  for (const p of revendaToUpgrade) {
+    try {
+      const res = await supabaseOps.from('pedidos_status').update({
+        status_atual: 'liberado_comercial',
+        atualizado_em: now,
+        atualizado_por: userName,
+      }).eq('pedido_id', p.pedidoId);
+      if (res.error) {
+        console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upgrade revenda:', res.error.message);
+        continue;
+      }
+      await supabaseOps.from('pedidos_status_historico').insert({
+        pedido_id: p.pedidoId,
+        numero_pedido: p.numeroPedido,
+        status_anterior: 'aguardando_avaliacao',
+        status_novo: 'liberado_comercial',
+        alterado_em: now,
+        alterado_por: userName,
+        observacao: 'REVENDA — liberado automaticamente para o comercial',
+        notificado_representante: false,
+      } as any);
+    } catch (err) {
+      console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upgrade revenda (fetch):', err);
+    }
+  }
+
+  if (!missing.length) return;
 
   const chunk = <T,>(arr: T[], size: number): T[][] => {
     const out: T[][] = [];
@@ -174,13 +216,16 @@ export async function ensurePedidosStatusInitializedBatch(
       const res = await supabaseOps
         .from('pedidos_status')
         .upsert(
-          batch.map((p) => ({
-            pedido_id: p.pedidoId,
-            numero_pedido: p.numeroPedido,
-            status_atual: statusNovo,
-            atualizado_em: now,
-            atualizado_por: userName,
-          })) as any,
+          batch.map((p) => {
+            const status: PedidoStatusValue = isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aguardando_avaliacao';
+            return {
+              pedido_id: p.pedidoId,
+              numero_pedido: p.numeroPedido,
+              status_atual: status,
+              atualizado_em: now,
+              atualizado_por: userName,
+            };
+          }) as any,
           { onConflict: 'pedido_id', ignoreDuplicates: true },
         );
       if (res.error) {
@@ -193,16 +238,21 @@ export async function ensurePedidosStatusInitializedBatch(
 
     try {
       const res = await supabaseOps.from('pedidos_status_historico').insert(
-        batch.map((p) => ({
-          pedido_id: p.pedidoId,
-          numero_pedido: p.numeroPedido,
-          status_anterior: null,
-          status_novo: statusNovo,
-          alterado_em: now,
-          alterado_por: userName,
-          observacao: 'Status inicial criado automaticamente',
-          notificado_representante: false,
-        })) as any,
+        batch.map((p) => {
+          const status: PedidoStatusValue = isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aguardando_avaliacao';
+          return {
+            pedido_id: p.pedidoId,
+            numero_pedido: p.numeroPedido,
+            status_anterior: null,
+            status_novo: status,
+            alterado_em: now,
+            alterado_por: userName,
+            observacao: isRevenda(p.grupoCliente)
+              ? 'REVENDA — liberado automaticamente para o comercial'
+              : 'Status inicial criado automaticamente',
+            notificado_representante: false,
+          };
+        }) as any,
       );
       if (res.error) {
         console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch insert historico:', res.error.message);
@@ -291,6 +341,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
   observacao?: string | null;
   notifyRepresentante: boolean;
   representantePhoneRaw?: string | null;
+  representanteNome?: string | null;
   clienteNome: string;
 }): Promise<{ ok: boolean; previous: PedidoStatusValue | null; notified: boolean; notifyError: string | null }> {
   if (!supabaseOps) return { ok: false, previous: null, notified: false, notifyError: 'Supabase OPS não configurado.' };
@@ -307,7 +358,10 @@ export async function setPedidoStatusWithOptionalNotify(params: {
   let providerMessageId: string | null = null;
   let notifiedEm: string | null = null;
 
-  if (params.notifyRepresentante) {
+  // LEROY: skip WhatsApp notification
+  const shouldNotify = params.notifyRepresentante && !isLeroy(params.clienteNome, params.representanteNome);
+
+  if (shouldNotify) {
     const to = normalizePhoneToE164(params.representantePhoneRaw);
     if (!to) {
       notifyError = 'Telefone do representante inválido ou não informado.';
@@ -370,6 +424,7 @@ export async function syncEntregaStatusFromOps(params: {
   alteradoPor: string | null;
   clienteNome: string;
   representantePhoneRaw?: string | null;
+  representanteNome?: string | null;
 }): Promise<{ ok: boolean; target: PedidoStatusValue | null }> {
   if (!supabaseOps) return { ok: false, target: null };
 
@@ -402,6 +457,7 @@ export async function syncEntregaStatusFromOps(params: {
     observacao: null,
     notifyRepresentante: true,
     representantePhoneRaw: params.representantePhoneRaw,
+    representanteNome: params.representanteNome,
     clienteNome: params.clienteNome,
   });
   return { ok: res.ok, target };

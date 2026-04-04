@@ -63,8 +63,8 @@ const ComercialConfirmacao = () => {
   const colFilterSlots: ColFilterSlot[] = useMemo(() => [
     { type: 'none' },
     { key: 'pedido', type: 'text', placeholder: 'Filtrar...' },
-    { key: 'cliente', type: 'text', placeholder: 'Filtrar...' },
-    { key: 'representante', type: 'text', placeholder: 'Filtrar...' },
+    { key: 'cliente', type: 'text', placeholder: 'Filtrar...', datalistId: 'cc-clientes-list' },
+    { key: 'representante', type: 'text', placeholder: 'Filtrar...', datalistId: 'cc-reps-list' },
     { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar...' },
     { key: 'emissao', type: 'date' },
     { key: 'validade', type: 'date' },
@@ -140,6 +140,16 @@ const ComercialConfirmacao = () => {
   }, [awaitingOrders, confirmedIds]);
 
   const hasGrupoCliente = useMemo(() => pendingOrders.some((o) => Boolean((o as any).grupoCliente)), [pendingOrders]);
+
+  const uniqueClientes = useMemo(() => {
+    const set = new Set(pendingOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pendingOrders]);
+
+  const uniqueRepresentantes = useMemo(() => {
+    const set = new Set(pendingOrders.map((o) => o.representativeName).filter((r): r is string => Boolean(r)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pendingOrders]);
 
   const filterFields = useMemo(() => {
     const base: Array<FilterField<Order>> = [
@@ -464,6 +474,13 @@ const ComercialConfirmacao = () => {
         onRemove={(id) => setConditions((prev) => prev.filter((c) => c.id !== id))}
         onClear={() => setConditions([])}
       />
+
+      <datalist id="cc-clientes-list">
+        {uniqueClientes.map((c) => <option key={c} value={c} />)}
+      </datalist>
+      <datalist id="cc-reps-list">
+        {uniqueRepresentantes.map((r) => <option key={r} value={r} />)}
+      </datalist>
 
       {/* Table */}
       <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
