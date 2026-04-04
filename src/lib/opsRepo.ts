@@ -191,13 +191,19 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
   const key = String(representanteIdOrName || '').trim();
   if (!key) return null;
 
-  const digits = key.replace(/\D+/g, '');
+  // Parse "CODE - NAME" format, e.g. "40054798 - DISTRIBUIDORA / DANILO 12"
+  // Use only the leading numeric code for digit search to avoid picking up digits from the name part
+  const separatorMatch = key.match(/^(\d+)\s*[-–]\s*(.+)$/);
+  const codeKey = separatorMatch ? separatorMatch[1].trim() : key;
+  const nameKey = separatorMatch ? separatorMatch[2].trim() : key;
+
+  const digits = codeKey.replace(/\D+/g, '');
   const digitsNoZero = digits.replace(/^0+/, '');
   const select = 'codigo_representante,nome,telefone_whatsapp,endereco';
 
   if (digits) {
     const orParts = [
-      `codigo_representante.eq.${key}`,
+      `codigo_representante.eq.${codeKey}`,
       `codigo_representante.eq.${digits}`,
       digitsNoZero ? `codigo_representante.eq.${digitsNoZero}` : '',
       `codigo_representante.ilike.%${digits}`,
@@ -211,7 +217,8 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
       .limit(20);
 
     if (!error && data && data.length) {
-      const keyLower = key.toLowerCase();
+      const codeKeyLower = codeKey.toLowerCase();
+      const nameKeyLower = nameKey.toLowerCase();
       const ranked = data
         .map((r: any) => {
           const code = String(r.codigo_representante || '').trim();
@@ -221,12 +228,13 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
           const nameLower = name.toLowerCase();
 
           let score = 0;
-          if (code === key) score += 100;
+          if (code === codeKey) score += 100;
           if (digits && codeDigits === digits) score += 90;
           if (digitsNoZero && codeNoZero === digitsNoZero) score += 80;
           if (digits && codeDigits.endsWith(digits)) score += 70;
           if (digitsNoZero && codeNoZero.endsWith(digitsNoZero)) score += 60;
-          if (nameLower && keyLower && nameLower.includes(keyLower)) score += 30;
+          if (nameLower && nameKeyLower && nameLower.includes(nameKeyLower)) score += 30;
+          if (nameLower && codeKeyLower && nameLower.includes(codeKeyLower)) score += 20;
 
           return { r, score };
         })
@@ -247,7 +255,7 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
   const { data: byName, error: nameError } = await supabaseOps
     .from('representantes')
     .select(select)
-    .ilike('nome', `%${key}%`)
+    .ilike('nome', `%${nameKey}%`)
     .limit(5);
 
   if (!nameError && byName && byName.length) {
