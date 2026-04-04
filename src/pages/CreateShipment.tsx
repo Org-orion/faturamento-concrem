@@ -1045,6 +1045,10 @@ const CreateShipment = () => {
       return;
     }
 
+    // Parse freightRaw at save time to capture values typed without blurring first
+    const parsedRaw = parseFloat(freightRaw.replace(/\./g, '').replace(',', '.'));
+    const finalFreightValue = !isNaN(parsedRaw) ? parsedRaw : freightValue;
+
     try {
       if (isEditing && id) {
         const old = loads.find((x) => x.id === id);
@@ -1056,7 +1060,7 @@ const CreateShipment = () => {
           plannedDate: shipmentDate,
           shipmentStatus: shipmentStatus,
           estimatedWeight: totals.weight,
-          freightValue,
+          freightValue: finalFreightValue,
         });
         showToast('Programação atualizada com sucesso!');
         return; // Permanecer na página de edição
@@ -1069,7 +1073,7 @@ const CreateShipment = () => {
           productionStatus: 'Aguardando Produção',
           shipmentStatus: shipmentStatus,
           estimatedWeight: totals.weight,
-          freightValue,
+          freightValue: finalFreightValue,
         });
         showToast('Programação criada com sucesso!');
       }
