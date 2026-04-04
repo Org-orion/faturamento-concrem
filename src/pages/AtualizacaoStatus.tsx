@@ -64,7 +64,7 @@ const AtualizacaoStatus = () => {
   const { sortState, setSortState, sortItems } = useTableSort();
   const colFilter = useColumnFilters();
 
-  const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [r.pedido_id, r] as const)), [statusRows]);
+  const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [String(r.pedido_id), r] as const)), [statusRows]);
 
   const refresh = async () => {
     try {
@@ -144,15 +144,28 @@ const AtualizacaoStatus = () => {
     if (presetId) setSelectedId(presetId);
   }, [presetId]);
 
+  // Pedidos do AppContext/extraPedidos que têm status + pedidos que só estão no banco (fromStatusOnly)
+  const allPedidosComStatus = useMemo(() => {
+    const fromContext = pedidos.filter((p) => statusByPedidoId.has(p.id));
+    const knownIds = new Set(fromContext.map((p) => p.id));
+    const fromStatusOnly: UnifiedPedido[] = [];
+    for (const row of statusRows) {
+      const id = String(row.pedido_id);
+      if (!knownIds.has(id) && row.status_atual !== 'finalizado') {
+        fromStatusOnly.push({ id, numero: id, cliente: '-', representante: '-', repPhone: null });
+      }
+    }
+    return [...fromContext, ...fromStatusOnly];
+  }, [pedidos, statusByPedidoId, statusRows]);
+
   // Mostrar apenas pedidos que já têm registro de status (exceto finalizados)
-  // Pedidos novos são adicionados via busca pontual no campo "Nº Pedido"
   const logisticaPedidos = useMemo(() => {
-    return pedidos.filter((p) => {
+    return allPedidosComStatus.filter((p) => {
       const st = statusByPedidoId.get(p.id)?.status_atual;
       if (!st) return false;
       return st !== 'finalizado';
     });
-  }, [pedidos, statusByPedidoId]);
+  }, [allPedidosComStatus, statusByPedidoId]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(logisticaPedidos.map((p) => p.cliente).filter((c) => c && c !== '-'));
@@ -183,7 +196,7 @@ const AtualizacaoStatus = () => {
     });
   }, [filtered, sortItems, statusByPedidoId]);
 
-  const selected = useMemo(() => (selectedId ? pedidos.find((p) => p.id === selectedId) || null : null), [pedidos, selectedId]);
+  const selected = useMemo(() => (selectedId ? allPedidosComStatus.find((p) => p.id === selectedId) || null : null), [allPedidosComStatus, selectedId]);
   const selectedStatus = (selectedId && statusByPedidoId.get(selectedId)?.status_atual) || null;
 
   useEffect(() => {

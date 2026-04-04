@@ -75,7 +75,7 @@ const PainelPedidos = () => {
   const { sortState, setSortState, sortItems } = useTableSort();
   const colFilter = useColumnFilters();
 
-  const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [r.pedido_id, r] as const)), [statusRows]);
+  const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [String(r.pedido_id), r] as const)), [statusRows]);
 
   const colDefs: ColDef<UnifiedPedido>[] = useMemo(() => [
     { key: 'pedido', getter: (p) => p.numero },
@@ -233,7 +233,7 @@ const PainelPedidos = () => {
     );
   }, [pedidosComStatus, filterItems, statusByPedidoId, colFilter, colDefs]);
 
-  const selected = useMemo(() => (selectedId ? pedidos.find((p) => p.id === selectedId) || null : null), [pedidos, selectedId]);
+  const selected = useMemo(() => (selectedId ? pedidosComStatus.find((p) => p.id === selectedId) || null : null), [pedidosComStatus, selectedId]);
   const selectedStatus = (selectedId && statusByPedidoId.get(selectedId)?.status_atual) || null;
 
   useEffect(() => {
