@@ -144,8 +144,7 @@ const LoadsPage = () => {
   ];
 
   const filteredAndSorted = useMemo(() => {
-    const active = loads.filter(l => l.shipmentStatus !== 'Entregue');
-    const colFiltered = colFilter.filterItems(active, colDefs);
+    const colFiltered = colFilter.filterItems(loads, colDefs);
     const filtered = filterItems(
       colFiltered,
       textGetters,
