@@ -101,10 +101,7 @@ const AtualizacaoStatus = () => {
             for (const e of fetched) map.set(e.id, e);
             return Array.from(map.values());
           });
-        } else {
-          // Preserva extras que ainda têm registro de status ativo
-          const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
-          setExtraPedidos((prev) => prev.filter((p) => activeIds.has(p.id)));
+          // No missingIds: extraPedidos already in AppContext, preserve as-is
         }
       }
 
@@ -212,6 +209,16 @@ const AtualizacaoStatus = () => {
 
   const onSaved = async (newStatus?: PedidoStatusValue) => {
     if (newStatus && selectedId) {
+      // Optimistically update status so the pedido stays visible during async operations
+      const nowStr = new Date().toISOString();
+      setStatusRows((prev) =>
+        prev.map((r) =>
+          String(r.pedido_id) === String(selectedId)
+            ? { ...r, status_atual: newStatus, atualizado_em: nowStr }
+            : r,
+        ),
+      );
+
       const pedido = pedidos.find(p => p.id === selectedId);
 
       // Auto follow-up genérico

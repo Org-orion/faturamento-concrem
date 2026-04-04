@@ -6,7 +6,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Button } from '@/components/ui/button';
 import { PedidoStatusValue } from '@/types';
-import { formatStatusWhatsappMessage, setPedidoStatusWithOptionalNotify } from '@/lib/pedidosStatusRepo';
+import { formatStatusWhatsappMessage, setPedidoStatusWithOptionalNotify, isLeroy } from '@/lib/pedidosStatusRepo';
 import { getNextManualStatuses } from '@/lib/pedidoStatusFlow';
 import { findRepresentanteContato } from '@/lib/opsRepo';
 
@@ -72,19 +72,22 @@ export function StatusUpdateDialog({
 
     setSaving(true);
     try {
+      const leroy = isLeroy(pedido.cliente, pedido.representante);
+      const shouldNotify = Boolean(notify) && !leroy;
+
       const res = await setPedidoStatusWithOptionalNotify({
         pedidoId: pedido.id,
         numeroPedido: pedido.numero,
         statusNovo: novoStatus,
         alteradoPor: userName,
         observacao: obs || null,
-        notifyRepresentante: Boolean(notify),
+        notifyRepresentante: shouldNotify,
         representantePhoneRaw: resolvedPhone || pedido.repPhone || null,
         representanteNome: pedido.representante || null,
         clienteNome: pedido.cliente,
       });
 
-      onNotifyResult({ attempted: Boolean(notify), ok: res.notified, error: res.notifyError });
+      onNotifyResult({ attempted: shouldNotify, ok: res.notified, error: res.notifyError });
 
       if (!res.ok) return;
       await onSaved(novoStatus);
