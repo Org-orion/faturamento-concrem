@@ -390,11 +390,6 @@ const LoadsPage = () => {
                 const loadOrders = allAvailable.filter((o) => load.orderIds.includes(o.id));
                 const totalOrderValue = loadOrders.reduce((acc, o) => acc + (o.totalPedidoVenda || getOrderTotal(o)), 0);
 
-                // Derivar productionStatus real dos pedidos_status
-                const prodStatusValues = load.orderIds.map((id) => pedidoStatusMap.get(id)?.status_atual);
-                const allFinalized = prodStatusValues.every((s) => s === 'producao_finalizada' || s === 'faturado' || s === 'em_entrega' || s === 'entregue' || s === 'finalizado');
-                const anyInProd = prodStatusValues.some((s) => s === 'em_producao' || s === 'mapeamento_andamento' || s === 'mapeamento_concluido' || s === 'aguardando_ferragem' || s === 'ferragem_recebida');
-                const derivedProdStatus = allFinalized ? 'Produção Concluída' : anyInProd ? 'Em Produção' : load.productionStatus;
 
                 return (
                   <tr key={`${load.id}-${index}`} className="hover:bg-muted/30 transition-colors group">
@@ -424,10 +419,7 @@ const LoadsPage = () => {
                       {formatCurrency(load.freightValue || 0)}
                     </td>
                     <td className="py-4 px-6">
-                      <div className="flex flex-col gap-2">
-                        <StatusBadge status={derivedProdStatus} colorMap={loadStatusColors} />
-                        <StatusBadge status={load.shipmentStatus} colorMap={loadStatusColors} />
-                      </div>
+                      <StatusBadge status={load.shipmentStatus} colorMap={loadStatusColors} />
                     </td>
                     <td className="py-4 px-6 text-right">
                       <Link
