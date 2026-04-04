@@ -155,9 +155,12 @@ const CreateShipment = () => {
         setDriverId(loadToEdit.driverId);
         setShipmentStatus(loadToEdit.shipmentStatus);
         setSelectedOrderIds(loadToEdit.orderIds);
-        setFreightValue(loadToEdit.freightValue || 0);
-        setFreightRaw(loadToEdit.freightValue ? String(loadToEdit.freightValue).replace('.', ',') : '');
-        setFreightManual(true);
+        const storedFreight = loadToEdit.freightValue ?? 0;
+        setFreightValue(storedFreight);
+        setFreightRaw(storedFreight > 0 ? storedFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
+        // Only lock manual if there's an actual stored freight value;
+        // otherwise let auto-calc fill it from the orders
+        setFreightManual(storedFreight > 0);
         setShipmentStatusDate(loadToEdit.plannedDate || todayBR());
       } else {
         showToast('Carregamento não encontrado.', 'error');
