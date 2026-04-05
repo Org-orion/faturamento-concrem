@@ -1,302 +1,420 @@
 import React, { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { formatCurrency } from '@/components/shared';
 import { todayBR, fmtDate } from '@/lib/dateUtils';
-import { Truck, DollarSign, Weight, Package, TrendingUp, Calendar } from 'lucide-react';
-import {
-  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  PieChart, Pie, Cell, Legend,
-  AreaChart, Area,
-} from 'recharts';
+import { ChevronLeft, ChevronRight, Truck, Package, DollarSign, Weight } from 'lucide-react';
+import type { Load } from '@/types';
 
-type Period = 'today' | 'week' | 'month' | 'all' | 'custom';
+type ViewMode = 'semana' | 'mes' | 'lista';
 
-const PERIOD_LABELS: Record<Exclude<Period, 'custom'>, string> = {
-  today: 'Hoje',
-  week: 'Semana',
-  month: 'Mês',
-  all: 'Todos',
+const VIEW_LABELS: Record<ViewMode, string> = {
+  semana: 'Semana',
+  mes: 'Mês',
+  lista: 'Lista',
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  'Aguardando Despacho': '#f59e0b',
-  'Despachado': '#3b82f6',
-  'Em Rota': '#8b5cf6',
-  'Entregue': '#22c55e',
-  'Cancelado': '#ef4444',
+  'Aguardando Despacho': 'bg-amber-100 text-amber-800 border-amber-200',
+  'Despachado':          'bg-blue-100 text-blue-800 border-blue-200',
+  'Em Rota':             'bg-purple-100 text-purple-800 border-purple-200',
+  'Entregue':            'bg-emerald-100 text-emerald-800 border-emerald-200',
+  'Cancelado':           'bg-red-100 text-red-800 border-red-200',
 };
 
-function startOfWeek(dateStr: string): string {
-  const d = new Date(dateStr + 'T12:00:00');
-  const day = d.getDay();
-  const diff = day === 0 ? 6 : day - 1; // Monday-based week
-  d.setDate(d.getDate() - diff);
+const STATUS_LEFT: Record<string, string> = {
+  'Aguardando Despacho': 'bg-amber-400',
+  'Despachado':          'bg-blue-500',
+  'Em Rota':             'bg-purple-500',
+  'Entregue':            'bg-emerald-500',
+  'Cancelado':           'bg-red-500',
+};
+
+const DAYS_BR = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
+const MONTHS_BR = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+// ── date helpers ──────────────────────────────────────────────────────────────
+
+function parseISO(d: string) {
+  return new Date(d + 'T12:00:00');
+}
+
+function toISO(d: Date) {
   return d.toISOString().slice(0, 10);
 }
 
-function startOfMonth(dateStr: string): string {
+function mondayOfWeek(dateStr: string) {
+  const d = parseISO(dateStr);
+  const day = d.getDay(); // 0=sun
+  const diff = day === 0 ? 6 : day - 1;
+  d.setDate(d.getDate() - diff);
+  return toISO(d);
+}
+
+function addDays(dateStr: string, n: number) {
+  const d = parseISO(dateStr);
+  d.setDate(d.getDate() + n);
+  return toISO(d);
+}
+
+function addMonths(dateStr: string, n: number) {
+  const d = parseISO(dateStr);
+  d.setMonth(d.getMonth() + n);
+  return toISO(d);
+}
+
+function firstDayOfMonth(dateStr: string) {
   return dateStr.slice(0, 7) + '-01';
 }
 
-const CarregamentoDashboard = () => {
-  const { loads, drivers, orders, supportOrders } = useApp();
-  const [period, setPeriod] = useState<Period>('month');
-  const [dateFrom, setDateFrom] = useState('');
-  const [dateTo, setDateTo] = useState('');
+function daysInMonth(dateStr: string) {
+  const d = parseISO(dateStr);
+  return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+}
 
-  const today = todayBR();
+// ── sub-components ────────────────────────────────────────────────────────────
 
-  const filtered = useMemo(() => {
-    if (period === 'custom') {
-      if (!dateFrom && !dateTo) return loads;
-      return loads.filter((l) => {
-        const d = l.plannedDate?.slice(0, 10);
-        if (!d) return false;
-        if (dateFrom && d < dateFrom) return false;
-        if (dateTo && d > dateTo) return false;
-        return true;
-      });
-    }
-    if (period === 'all') return loads;
-    const todayDate = new Date(today + 'T12:00:00');
-    return loads.filter((l) => {
-      const d = l.plannedDate?.slice(0, 10);
-      if (!d) return false;
-      if (period === 'today') return d === today;
-      if (period === 'week') {
-        const loadDate = new Date(d + 'T12:00:00');
-        const diff = (todayDate.getTime() - loadDate.getTime()) / 86400000;
-        return diff >= 0 && diff < 7;
-      }
-      // month
-      return d.slice(0, 7) === today.slice(0, 7);
-    });
-  }, [loads, period, today, dateFrom, dateTo]);
+interface LoadCardProps {
+  load: Load;
+  driverName: string;
+  compact?: boolean;
+}
 
-  // KPIs
-  const totalLoads = filtered.length;
-  const totalFreight = filtered.reduce((s, l) => s + (l.freightValue || 0), 0);
-  const totalWeight = filtered.reduce((s, l) => s + (l.estimatedWeight || 0), 0);
-  const totalOrders = filtered.reduce((s, l) => s + l.orderIds.length, 0);
-  const avgOrdersPerLoad = totalLoads > 0 ? (totalOrders / totalLoads).toFixed(1) : '0';
+function LoadCard({ load, driverName, compact }: LoadCardProps) {
+  const status = load.shipmentStatus || 'Aguardando Despacho';
+  const colorClass = STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+  const leftClass = STATUS_LEFT[status] || 'bg-gray-400';
 
-  // Status distribution (pie)
-  const statusData = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const l of filtered) {
-      const s = l.shipmentStatus || 'Aguardando Despacho';
-      map.set(s, (map.get(s) || 0) + 1);
-    }
-    return Array.from(map, ([name, value]) => ({ name, value }));
-  }, [filtered]);
-
-  // Loads over time (bar)
-  const loadsOverTime = useMemo(() => {
-    const map = new Map<string, { date: string; count: number; freight: number }>();
-    for (const l of filtered) {
-      const d = l.plannedDate?.slice(0, 10);
-      if (!d) continue;
-      const key = period === 'all' ? d.slice(0, 7) : d;
-      if (!map.has(key)) map.set(key, { date: key, count: 0, freight: 0 });
-      const entry = map.get(key)!;
-      entry.count += 1;
-      entry.freight += l.freightValue || 0;
-    }
-    return Array.from(map.values()).sort((a, b) => a.date.localeCompare(b.date));
-  }, [filtered, period]);
-
-  // Top drivers (bar)
-  const topDrivers = useMemo(() => {
-    const map = new Map<string, { name: string; count: number; freight: number }>();
-    for (const l of filtered) {
-      const driver = drivers.find((d) => d.id === l.driverId);
-      const name = driver?.name || 'Sem motorista';
-      if (!map.has(name)) map.set(name, { name, count: 0, freight: 0 });
-      const entry = map.get(name)!;
-      entry.count += 1;
-      entry.freight += l.freightValue || 0;
-    }
-    return Array.from(map.values())
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 8);
-  }, [filtered, drivers]);
-
-  const formatDateLabel = (d: string) => {
-    if (d.length === 7) {
-      const [y, m] = d.split('-');
-      const months = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-      return `${months[Number(m) - 1]}/${y.slice(2)}`;
-    }
-    return fmtDate(d);
-  };
-
-  const tooltipStyle = {
-    contentStyle: { background: 'hsl(var(--card))', border: '1px solid hsl(var(--border))', borderRadius: '8px', fontSize: '12px' },
-    labelStyle: { fontWeight: 600 },
-  };
+  if (compact) {
+    return (
+      <Link
+        to={`/carregamento/editar/${load.id}`}
+        className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-semibold truncate ${colorClass} hover:opacity-80 transition-opacity`}
+        title={`${driverName} — ${formatCurrency(load.freightValue || 0)}`}
+      >
+        <Truck className="h-2.5 w-2.5 shrink-0" />
+        <span className="truncate">{driverName}</span>
+      </Link>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Period filter */}
-      <div className="flex flex-wrap items-center gap-2">
-        <Calendar className="h-4 w-4 text-muted-foreground" />
-        <span className="text-sm font-semibold text-muted-foreground">Período:</span>
-        <div className="flex flex-wrap gap-1">
-          {(Object.keys(PERIOD_LABELS) as Exclude<Period, 'custom'>[]).map((p) => (
+    <Link
+      to={`/carregamento/editar/${load.id}`}
+      className="flex rounded-lg border border-border bg-card overflow-hidden hover:shadow-md transition-shadow group"
+    >
+      <div className={`w-1 shrink-0 ${leftClass}`} />
+      <div className="flex-1 p-3 min-w-0">
+        <div className="flex items-start justify-between gap-2 mb-1.5">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <Truck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+            <span className="text-xs font-semibold truncate text-foreground group-hover:text-primary">{driverName}</span>
+          </div>
+          <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${colorClass}`}>{status}</span>
+        </div>
+        <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          <span className="flex items-center gap-1"><Package className="h-3 w-3" />{load.orderIds.length} pedido{load.orderIds.length !== 1 ? 's' : ''}</span>
+          <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatCurrency(load.freightValue || 0)}</span>
+          {(load.estimatedWeight || 0) > 0 && (
+            <span className="flex items-center gap-1"><Weight className="h-3 w-3" />{(load.estimatedWeight || 0).toLocaleString('pt-BR')} kg</span>
+          )}
+        </div>
+      </div>
+    </Link>
+  );
+}
+
+// ── day column (week view) ────────────────────────────────────────────────────
+
+function DayColumn({ dateStr, loads, driverMap, today }: { dateStr: string; loads: Load[]; driverMap: Map<string, string>; today: string }) {
+  const d = parseISO(dateStr);
+  const dayName = DAYS_BR[d.getDay()];
+  const dayNum = d.getDate();
+  const isToday = dateStr === today;
+  const totalFreight = loads.reduce((s, l) => s + (l.freightValue || 0), 0);
+
+  return (
+    <div className={`flex flex-col min-h-[120px] ${isToday ? 'bg-primary/5 rounded-xl ring-1 ring-primary/30' : ''}`}>
+      <div className={`px-2 py-2 text-center border-b border-border ${isToday ? 'border-primary/20' : ''}`}>
+        <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{dayName}</div>
+        <div className={`text-lg font-bold leading-none mt-0.5 ${isToday ? 'text-primary' : 'text-foreground'}`}>{dayNum}</div>
+        {loads.length > 0 && (
+          <div className="text-[9px] font-semibold text-emerald-600 mt-1">{formatCurrency(totalFreight)}</div>
+        )}
+      </div>
+      <div className="flex flex-col gap-1.5 p-2">
+        {loads.length === 0 ? (
+          <div className="text-[10px] text-muted-foreground/50 text-center py-2">—</div>
+        ) : (
+          loads.map((l) => (
+            <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} />
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── month cell ────────────────────────────────────────────────────────────────
+
+function MonthCell({ dateStr, loads, driverMap, today, currentMonth }: { dateStr: string; loads: Load[]; driverMap: Map<string, string>; today: string; currentMonth: string }) {
+  const d = parseISO(dateStr);
+  const dayNum = d.getDate();
+  const isToday = dateStr === today;
+  const isCurrentMonth = dateStr.slice(0, 7) === currentMonth;
+  const totalFreight = loads.reduce((s, l) => s + (l.freightValue || 0), 0);
+
+  return (
+    <div className={`min-h-[90px] p-1.5 border-b border-r border-border/50 ${!isCurrentMonth ? 'bg-muted/30' : ''}`}>
+      <div className={`flex items-center justify-between mb-1`}>
+        <span className={`text-xs font-bold w-6 h-6 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-primary-foreground' : isCurrentMonth ? 'text-foreground' : 'text-muted-foreground/40'}`}>
+          {dayNum}
+        </span>
+        {loads.length > 0 && isCurrentMonth && (
+          <span className="text-[9px] font-semibold text-emerald-600">{formatCurrency(totalFreight)}</span>
+        )}
+      </div>
+      <div className="flex flex-col gap-0.5">
+        {loads.slice(0, 3).map((l) => (
+          <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} compact />
+        ))}
+        {loads.length > 3 && (
+          <span className="text-[10px] text-muted-foreground font-semibold pl-1">+{loads.length - 3} mais</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── main component ────────────────────────────────────────────────────────────
+
+const CarregamentoDashboard = () => {
+  const { loads, drivers } = useApp();
+  const today = todayBR();
+
+  const [view, setView] = useState<ViewMode>('semana');
+  const [anchor, setAnchor] = useState(today); // week: monday, month: first of month, list: any
+
+  const driverMap = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const d of drivers) m.set(d.id, d.name);
+    return m;
+  }, [drivers]);
+
+  // ── week view ──
+  const weekStart = useMemo(() => mondayOfWeek(anchor), [anchor]);
+  const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+
+  // ── month view ──
+  const monthStr = useMemo(() => anchor.slice(0, 7), [anchor]);
+  const monthFirst = useMemo(() => firstDayOfMonth(anchor), [anchor]);
+  const calendarCells = useMemo(() => {
+    const first = parseISO(monthFirst);
+    const startDay = first.getDay(); // 0=sun
+    const startOffset = startDay === 0 ? 6 : startDay - 1; // monday-based
+    const total = daysInMonth(monthFirst);
+    const cells: string[] = [];
+    for (let i = startOffset; i > 0; i--) cells.push(addDays(monthFirst, -i));
+    for (let i = 0; i < total; i++) cells.push(addDays(monthFirst, i));
+    while (cells.length % 7 !== 0) cells.push(addDays(cells[cells.length - 1], 1));
+    return cells;
+  }, [monthFirst]);
+
+  // ── loads by date ──
+  const loadsByDate = useMemo(() => {
+    const m = new Map<string, Load[]>();
+    for (const l of loads) {
+      const d = l.plannedDate?.slice(0, 10);
+      if (!d) continue;
+      if (!m.has(d)) m.set(d, []);
+      m.get(d)!.push(l);
+    }
+    return m;
+  }, [loads]);
+
+  // ── list view: all dates with loads, sorted ──
+  const listDates = useMemo(() => {
+    return Array.from(loadsByDate.keys()).sort();
+  }, [loadsByDate]);
+
+  // ── navigation ──
+  function prev() {
+    if (view === 'semana') setAnchor(addDays(weekStart, -7));
+    else if (view === 'mes') setAnchor(addMonths(monthFirst, -1));
+    else setAnchor(addDays(anchor, -30));
+  }
+  function next() {
+    if (view === 'semana') setAnchor(addDays(weekStart, 7));
+    else if (view === 'mes') setAnchor(addMonths(monthFirst, 1));
+    else setAnchor(addDays(anchor, 30));
+  }
+  function goToday() { setAnchor(today); }
+
+  function periodLabel() {
+    if (view === 'semana') {
+      const from = parseISO(weekStart);
+      const to = parseISO(addDays(weekStart, 6));
+      if (from.getMonth() === to.getMonth()) {
+        return `${from.getDate()} – ${to.getDate()} de ${MONTHS_BR[from.getMonth()]} ${from.getFullYear()}`;
+      }
+      return `${from.getDate()} ${MONTHS_BR[from.getMonth()].slice(0, 3)} – ${to.getDate()} ${MONTHS_BR[to.getMonth()].slice(0, 3)} ${to.getFullYear()}`;
+    }
+    if (view === 'mes') {
+      const d = parseISO(monthFirst);
+      return `${MONTHS_BR[d.getMonth()]} ${d.getFullYear()}`;
+    }
+    return 'Todos os carregamentos';
+  }
+
+  // ── week totals ──
+  const weekTotals = useMemo(() => {
+    const wLoads = weekDays.flatMap((d) => loadsByDate.get(d) || []);
+    return {
+      count: wLoads.length,
+      freight: wLoads.reduce((s, l) => s + (l.freightValue || 0), 0),
+      orders: wLoads.reduce((s, l) => s + l.orderIds.length, 0),
+    };
+  }, [weekDays, loadsByDate]);
+
+  return (
+    <div className="space-y-4">
+      {/* Toolbar */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* View mode */}
+        <div className="flex rounded-lg border border-border overflow-hidden">
+          {(Object.keys(VIEW_LABELS) as ViewMode[]).map((v) => (
             <button
-              key={p}
+              key={v}
               type="button"
-              onClick={() => setPeriod(p)}
-              className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-                period === p
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
+              onClick={() => setView(v)}
+              className={`px-3 py-1.5 text-xs font-semibold transition-colors ${
+                view === v ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'
               }`}
             >
-              {PERIOD_LABELS[p]}
+              {VIEW_LABELS[v]}
             </button>
           ))}
-          <button
-            type="button"
-            onClick={() => setPeriod('custom')}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors ${
-              period === 'custom'
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-muted text-muted-foreground hover:bg-muted/80'
-            }`}
-          >
-            Personalizado
-          </button>
         </div>
-        {period === 'custom' && (
-          <div className="flex items-center gap-2 ml-1">
-            <input
-              type="date"
-              value={dateFrom}
-              onChange={(e) => setDateFrom(e.target.value)}
-              className="h-7 px-2 text-xs rounded-lg border border-border bg-background text-foreground"
-            />
-            <span className="text-xs text-muted-foreground">até</span>
-            <input
-              type="date"
-              value={dateTo}
-              onChange={(e) => setDateTo(e.target.value)}
-              className="h-7 px-2 text-xs rounded-lg border border-border bg-background text-foreground"
-            />
+
+        {/* Navigation */}
+        {view !== 'lista' && (
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={prev}
+              className="h-7 w-7 flex items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"
+            >
+              <ChevronLeft className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={goToday}
+              className="h-7 px-3 text-xs font-semibold rounded-lg border border-border hover:bg-muted transition-colors"
+            >
+              Hoje
+            </button>
+            <button
+              type="button"
+              onClick={next}
+              className="h-7 w-7 flex items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors"
+            >
+              <ChevronRight className="h-4 w-4" />
+            </button>
+            <span className="ml-2 text-sm font-semibold text-foreground">{periodLabel()}</span>
+          </div>
+        )}
+
+        {/* Week summary chips */}
+        {view === 'semana' && weekTotals.count > 0 && (
+          <div className="flex gap-2 ml-auto">
+            <Chip icon={Truck} value={String(weekTotals.count)} label="carreg." />
+            <Chip icon={Package} value={String(weekTotals.orders)} label="pedidos" />
+            <Chip icon={DollarSign} value={formatCurrency(weekTotals.freight)} label="frete" color="text-emerald-600" />
           </div>
         )}
       </div>
 
-      {/* KPI cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <KpiCard icon={Truck} label="Carregamentos" value={String(totalLoads)} color="text-primary" />
-        <KpiCard icon={DollarSign} label="Frete Total" value={formatCurrency(totalFreight)} color="text-emerald-600" />
-        <KpiCard icon={Weight} label="Peso Total" value={`${totalWeight.toLocaleString('pt-BR')} kg`} color="text-blue-600" />
-        <KpiCard icon={Package} label="Pedidos" value={String(totalOrders)} color="text-orange-600" />
-        <KpiCard icon={TrendingUp} label="Méd. Pedidos/Carreg." value={avgOrdersPerLoad} color="text-purple-600" />
-      </div>
+      {/* ── WEEK VIEW ── */}
+      {view === 'semana' && (
+        <div className="grid grid-cols-7 gap-1 rounded-xl border border-border overflow-hidden bg-card">
+          {weekDays.map((d) => (
+            <DayColumn
+              key={d}
+              dateStr={d}
+              loads={loadsByDate.get(d) || []}
+              driverMap={driverMap}
+              today={today}
+            />
+          ))}
+        </div>
+      )}
 
-      {/* Charts row 1 */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* Status pie chart */}
-        <div className="bg-card rounded-xl p-4 border border-border shadow-card">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Status dos Carregamentos</h3>
-          {statusData.length === 0 ? (
-            <EmptyChart />
+      {/* ── MONTH VIEW ── */}
+      {view === 'mes' && (
+        <div className="rounded-xl border border-border overflow-hidden bg-card">
+          {/* Day headers */}
+          <div className="grid grid-cols-7 border-b border-border bg-muted/40">
+            {DAYS_BR.slice(1).concat(DAYS_BR[0]).map((d) => (
+              <div key={d} className="px-2 py-2 text-[11px] font-semibold text-muted-foreground text-center">{d}</div>
+            ))}
+          </div>
+          {/* Cells */}
+          <div className="grid grid-cols-7">
+            {calendarCells.map((d) => (
+              <MonthCell
+                key={d}
+                dateStr={d}
+                loads={loadsByDate.get(d) || []}
+                driverMap={driverMap}
+                today={today}
+                currentMonth={monthStr}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── LIST VIEW ── */}
+      {view === 'lista' && (
+        <div className="space-y-6">
+          {listDates.length === 0 ? (
+            <div className="text-sm text-muted-foreground text-center py-12">Nenhum carregamento cadastrado.</div>
           ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <PieChart>
-                <Pie data={statusData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} innerRadius={40} paddingAngle={2}>
-                  {statusData.map((entry) => (
-                    <Cell key={entry.name} fill={STATUS_COLORS[entry.name] || '#94a3b8'} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend iconType="circle" iconSize={8} wrapperStyle={{ fontSize: '11px' }} />
-              </PieChart>
-            </ResponsiveContainer>
+            listDates.map((d) => {
+              const dayLoads = loadsByDate.get(d) || [];
+              const totalFreight = dayLoads.reduce((s, l) => s + (l.freightValue || 0), 0);
+              const totalOrders = dayLoads.reduce((s, l) => s + l.orderIds.length, 0);
+              return (
+                <div key={d}>
+                  <div className="flex items-center gap-3 mb-2">
+                    <span className={`text-sm font-bold ${d === today ? 'text-primary' : 'text-foreground'}`}>
+                      {fmtDate(d)}
+                      {d === today && <span className="ml-2 text-[10px] bg-primary text-primary-foreground px-2 py-0.5 rounded-full">Hoje</span>}
+                    </span>
+                    <span className="text-xs text-muted-foreground">{dayLoads.length} carreg. · {totalOrders} pedidos · {formatCurrency(totalFreight)}</span>
+                    <div className="flex-1 h-px bg-border" />
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
+                    {dayLoads.map((l) => (
+                      <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} />
+                    ))}
+                  </div>
+                </div>
+              );
+            })
           )}
         </div>
-
-        {/* Loads over time */}
-        <div className="bg-card rounded-xl p-4 border border-border shadow-card lg:col-span-2">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Carregamentos por Período</h3>
-          {loadsOverTime.length === 0 ? (
-            <EmptyChart />
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={loadsOverTime}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tickFormatter={formatDateLabel} tick={{ fontSize: 11 }} />
-                <YAxis allowDecimals={false} tick={{ fontSize: 11 }} />
-                <Tooltip {...tooltipStyle} labelFormatter={formatDateLabel} formatter={(v: number) => [v, 'Carregamentos']} />
-                <Bar dataKey="count" fill="hsl(var(--primary))" radius={[4, 4, 0, 0]} maxBarSize={40} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
-
-      {/* Charts row 2 */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Freight value over time */}
-        <div className="bg-card rounded-xl p-4 border border-border shadow-card">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Valor de Frete por Período</h3>
-          {loadsOverTime.length === 0 ? (
-            <EmptyChart />
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={loadsOverTime}>
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis dataKey="date" tickFormatter={formatDateLabel} tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `R$ ${(v / 1000).toFixed(0)}k`} />
-                <Tooltip {...tooltipStyle} labelFormatter={formatDateLabel} formatter={(v: number) => [formatCurrency(v), 'Frete']} />
-                <Area type="monotone" dataKey="freight" fill="hsl(var(--primary) / 0.15)" stroke="hsl(var(--primary))" strokeWidth={2} />
-              </AreaChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* Top drivers */}
-        <div className="bg-card rounded-xl p-4 border border-border shadow-card">
-          <h3 className="text-sm font-semibold text-foreground mb-3">Top Motoristas</h3>
-          {topDrivers.length === 0 ? (
-            <EmptyChart />
-          ) : (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={topDrivers} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                <XAxis type="number" allowDecimals={false} tick={{ fontSize: 11 }} />
-                <YAxis dataKey="name" type="category" width={100} tick={{ fontSize: 10 }} />
-                <Tooltip {...tooltipStyle} formatter={(v: number, name: string) => [name === 'freight' ? formatCurrency(v) : v, name === 'freight' ? 'Frete' : 'Carregamentos']} />
-                <Bar dataKey="count" fill="#3b82f6" radius={[0, 4, 4, 0]} maxBarSize={24} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-      </div>
+      )}
     </div>
   );
 };
 
-function KpiCard({ icon: Icon, label, value, color }: { icon: React.ElementType; label: string; value: string; color: string }) {
+function Chip({ icon: Icon, value, label, color = 'text-foreground' }: { icon: React.ElementType; value: string; label: string; color?: string }) {
   return (
-    <div className="bg-card rounded-xl p-4 border border-border shadow-card flex items-center gap-3">
-      <div className={`p-2.5 rounded-lg bg-muted ${color}`}>
-        <Icon className="h-5 w-5" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate">{label}</p>
-        <p className="text-lg font-bold text-foreground truncate">{value}</p>
-      </div>
-    </div>
-  );
-}
-
-function EmptyChart() {
-  return (
-    <div className="h-[220px] flex items-center justify-center text-sm text-muted-foreground">
-      Nenhum dado para o período selecionado.
+    <div className="flex items-center gap-1 px-2.5 py-1 rounded-lg bg-muted text-xs font-semibold">
+      <Icon className={`h-3 w-3 ${color}`} />
+      <span className={color}>{value}</span>
+      <span className="text-muted-foreground">{label}</span>
     </div>
   );
 }
