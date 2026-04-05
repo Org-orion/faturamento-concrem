@@ -207,7 +207,7 @@ const PainelPedidos = () => {
     const fromStatusOnly: UnifiedPedido[] = [];
     for (const row of statusRows) {
       const id = String(row.pedido_id);
-      if (!knownIds.has(id) && row.status_atual !== 'finalizado') {
+      if (!knownIds.has(id)) {
         fromStatusOnly.push({ id, numero: id, cliente: '-', representante: '-', valor: 0 });
       }
     }
@@ -302,7 +302,7 @@ const PainelPedidos = () => {
           <div className="bg-card rounded-xl p-4 border border-border shadow-card space-y-3">
             <QuickFilterBar
               query={query}
-              onQueryChange={setQuery}
+              onQueryChange={(v) => { setQuery(v); if (/^\d{4,}$/.test(v.trim())) void searchErpByNumero(v.trim()); }}
               placeholder="Buscar por cliente, representante ou n. do pedido..."
               statuses={statusButtons}
               activeStatus={activeStatus}

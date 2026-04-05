@@ -14,7 +14,7 @@ import {
   FreightEntry,
   FreightEntryStatus,
 } from '@/types';
-import { UserRole } from '@/utils/access';
+import { UserRole, PagePermission } from '@/utils/access';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder, rowToSupportOrder } from '@/lib/pedidoMapper';
 import {
@@ -73,7 +73,7 @@ interface AppState {
   deleteFreightEntry: (id: string) => void;
   setFreightEntryStatus: (id: string, status: FreightEntryStatus) => void;
   isAuthenticated: boolean;
-  user: { name: string; username: string; role: UserRole } | null;
+  user: { name: string; username: string; role: UserRole; permissions: PagePermission[] | null } | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   addUser: (u: Omit<AppUser, 'id'>) => void;
@@ -526,16 +526,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return sessionStorage.getItem('auth_token') === 'true';
   });
-  const [user, setUser] = useState<{ name: string; username: string; role: UserRole } | null>(() => {
+  const [user, setUser] = useState<{ name: string; username: string; role: UserRole; permissions: PagePermission[] | null } | null>(() => {
     const savedUser = sessionStorage.getItem('auth_user');
     if (!savedUser) return null;
     try {
-      const parsed = JSON.parse(savedUser) as { name?: string; username?: string; role?: UserRole };
+      const parsed = JSON.parse(savedUser) as { name?: string; username?: string; role?: UserRole; permissions?: PagePermission[] | null };
       if (parsed && parsed.username) {
         return {
           name: parsed.name || parsed.username,
           username: parsed.username,
           role: parsed.role || 'ADMIN',
+          permissions: Array.isArray(parsed.permissions) ? parsed.permissions : null,
         };
       }
       return null;
@@ -566,7 +567,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               logistica: 'LOGISTICA',
             };
             const role = roleMap[data.perfil_acesso] || 'COMERCIAL';
-            const newUser = { name: data.nome, username: data.email, role };
+            const permissions: PagePermission[] | null =
+              Array.isArray(data.paginas_acesso) && data.paginas_acesso.length > 0
+                ? (data.paginas_acesso as PagePermission[])
+                : null;
+            const newUser = { name: data.nome, username: data.email, role, permissions };
             setUser(newUser);
             sessionStorage.setItem('auth_token', 'true');
             sessionStorage.setItem('auth_user', JSON.stringify(newUser));
@@ -582,7 +587,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (!found) return false;
 
     setIsAuthenticated(true);
-    const newUser = { name: found.name, username: found.username, role: found.role };
+    const newUser = { name: found.name, username: found.username, role: found.role, permissions: null as PagePermission[] | null };
     setUser(newUser);
     sessionStorage.setItem('auth_token', 'true');
     sessionStorage.setItem('auth_user', JSON.stringify(newUser));

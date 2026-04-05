@@ -322,9 +322,21 @@ const CreateShipment = () => {
     });
   }, [selectedOrderIds, allCandidates]);
 
+  // IDs de pedidos que já estão em outro carregamento (não o que está sendo editado)
+  const idsInOtherLoads = useMemo(() => {
+    const set = new Set<string>();
+    for (const l of loads) {
+      if (isEditing && l.id === id) continue;
+      for (const oid of l.orderIds) set.add(oid);
+    }
+    return set;
+  }, [loads, isEditing, id]);
+
   const availableOrders = allCandidates.filter(o => {
     const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
-    const isAllowedStatus = pedidoStatus ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !o.carregamentoId : false;
+    const isAllowedStatus = pedidoStatus
+      ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id)
+      : false;
     const isCurrentInEdit = isEditing && selectedOrderIds.includes(o.id);
 
     if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;

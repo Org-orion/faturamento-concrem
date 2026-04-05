@@ -285,7 +285,7 @@ const AtualizacaoStatus = () => {
       <div className="bg-card rounded-xl p-4 border border-border shadow-card">
         <QuickFilterBar
           query={query}
-          onQueryChange={setQuery}
+          onQueryChange={(v) => { setQuery(v); if (/^\d{4,}$/.test(v.trim())) void searchErpByNumero(v.trim()); }}
           placeholder="Filtrar por cliente, representante ou n. do pedido..."
           statuses={statusButtons}
           activeStatus={activeStatus}

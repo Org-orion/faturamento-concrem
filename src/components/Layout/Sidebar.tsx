@@ -40,8 +40,8 @@ type MenuLink = { title: string; href: string; icon: LucideIcon };
 type MenuGroup = { title: string; icon: LucideIcon; children: MenuChild[] };
 type SidebarNavItem = MenuLink | MenuGroup;
 
-const asMenuItems = (role: UserRole | undefined): SidebarNavItem[] => {
-  const items: MenuItem[] = getMenuForRole(role || 'ADMIN');
+const asMenuItems = (role: UserRole | undefined, permissions?: import('@/utils/access').PagePermission[] | null): SidebarNavItem[] => {
+  const items: MenuItem[] = getMenuForRole(role || 'ADMIN', permissions);
   return items.map((it): SidebarNavItem => {
     if (it.type === 'link') {
       return { title: it.label, href: it.href, icon: iconMap[it.icon] };
@@ -58,7 +58,7 @@ export const Sidebar: React.FC = () => {
   const { isCollapsed, toggleSidebar } = useSidebar();
   const { user, logout } = useApp();
   const location = useLocation();
-  const menuItems = asMenuItems(user?.role);
+  const menuItems = asMenuItems(user?.role, user?.permissions);
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
     'Cadastro': true,
     'Operacional': true

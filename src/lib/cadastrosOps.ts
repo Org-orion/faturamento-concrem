@@ -36,6 +36,7 @@ export type UsuarioRow = {
   senha_hash: string | null;
   perfil_acesso: UsuarioPerfilAcesso | null;
   ativo: boolean;
+  paginas_acesso: Array<{ route: string; actions: string[] }> | null;
   criado_em: string;
   atualizado_em: string;
 };
@@ -131,11 +132,23 @@ export async function deleteMotorista(id: string) {
 
 export async function listUsuarios() {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
+  // Try with paginas_acesso first; fall back if the column doesn't exist yet
   const { data, error } = await supabaseOps
     .from('usuarios')
-    .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
     .order('nome', { ascending: true });
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.message?.includes('paginas_acesso')) {
+      // Column not yet created — fetch without it
+      const fallback = await supabaseOps
+        .from('usuarios')
+        .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+        .order('nome', { ascending: true });
+      if (fallback.error) throw new Error(fallback.error.message);
+      return ((fallback.data || []) as any[]).map((r) => ({ ...r, paginas_acesso: null })) as UsuarioRow[];
+    }
+    throw new Error(error.message);
+  }
   return (data || []) as UsuarioRow[];
 }
 
@@ -144,9 +157,21 @@ export async function insertUsuario(payload: Partial<UsuarioRow>) {
   const { data, error } = await supabaseOps
     .from('usuarios')
     .insert([payload])
-    .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
     .single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.message?.includes('paginas_acesso')) {
+      const { paginas_acesso: _pa, ...rest } = payload as any;
+      const fallback = await supabaseOps
+        .from('usuarios')
+        .insert([rest])
+        .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+        .single();
+      if (fallback.error) throw new Error(fallback.error.message);
+      return { ...(fallback.data as any), paginas_acesso: null } as UsuarioRow;
+    }
+    throw new Error(error.message);
+  }
   return data as UsuarioRow;
 }
 
@@ -156,9 +181,22 @@ export async function updateUsuario(id: string, payload: Partial<UsuarioRow>) {
     .from('usuarios')
     .update(payload)
     .eq('id', id)
-    .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
     .single();
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.message?.includes('paginas_acesso')) {
+      const { paginas_acesso: _pa, ...rest } = payload as any;
+      const fallback = await supabaseOps
+        .from('usuarios')
+        .update(rest)
+        .eq('id', id)
+        .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+        .single();
+      if (fallback.error) throw new Error(fallback.error.message);
+      return { ...(fallback.data as any), paginas_acesso: null } as UsuarioRow;
+    }
+    throw new Error(error.message);
+  }
   return data as UsuarioRow;
 }
 

@@ -150,8 +150,12 @@ const LoadsPage = () => {
       textGetters,
       (l) => l.shipmentStatus,
     );
-    return sortItems(filtered, sortGetters);
-  }, [loads, filterItems, textGetters, sortItems, sortGetters, colFilter.filterItems, colDefs]);
+    const sorted = sortItems(filtered, sortGetters);
+    if (!sortState.key) {
+      return [...sorted].sort((a, b) => (b.plannedDate || '').localeCompare(a.plannedDate || ''));
+    }
+    return sorted;
+  }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs]);
 
   const reportRows = useMemo((): ReportRow[] => {
     const selected = loads.filter((l) => selectedIds.includes(l.id));

@@ -11,7 +11,7 @@ const Login = lazy(() => import('@/pages/Login'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const ClientsPage = lazy(() => import('@/pages/Clients'));
 const DriversPage = lazy(() => import('@/pages/Drivers'));
-const LoadsPage = lazy(() => import('@/pages/Loads'));
+const CarregamentosHub = lazy(() => import('@/pages/CarregamentosHub'));
 const CreateCarregamento = lazy(() => import('@/pages/CreateShipment'));
 const FinancialPage = lazy(() => import('@/pages/Financial'));
 const CommercialPage = lazy(() => import('@/pages/Commercial'));
@@ -35,7 +35,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (user && !canAccessRoute(user.role, location.pathname)) {
+  if (user && !canAccessRoute(user.role, location.pathname, user.permissions)) {
     return <Navigate to="/acesso-negado" replace />;
   }
 
@@ -61,7 +61,7 @@ const AppRoutes = () => {
         <Route path="/pedidos" element={<ProtectedRoute><PedidosPage /></ProtectedRoute>} />
         <Route path="/painel-pedidos" element={<ProtectedRoute><PainelPedidosPage /></ProtectedRoute>} />
         <Route path="/atualizacao-status" element={<ProtectedRoute><AtualizacaoStatusPage /></ProtectedRoute>} />
-        <Route path="/carregamento" element={<ProtectedRoute><LoadsPage /></ProtectedRoute>} />
+        <Route path="/carregamento" element={<ProtectedRoute><CarregamentosHub /></ProtectedRoute>} />
         <Route path="/carregamento/novo" element={<ProtectedRoute><CreateCarregamento /></ProtectedRoute>} />
         <Route path="/carregamento/editar/:id" element={<ProtectedRoute><CreateCarregamento /></ProtectedRoute>} />
         <Route path="/financeiro" element={<ProtectedRoute><FinancialPage /></ProtectedRoute>} />
