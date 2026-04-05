@@ -403,20 +403,6 @@ const PedidoSuporte = () => {
         )}
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-card border border-border rounded-xl p-5 shadow-card">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Total aguardando</p>
-          <p className="text-2xl font-bold mt-2">{totals.awaitingCount}</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-5 shadow-card">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Liberados hoje</p>
-          <p className="text-2xl font-bold mt-2">{totals.releasedTodayCount}</p>
-        </div>
-        <div className="bg-card border border-border rounded-xl p-5 shadow-card">
-          <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Valor em análise</p>
-          <p className="text-2xl font-bold mt-2">{formatCurrency(totals.inAnalysisValue)}</p>
-        </div>
-      </div>
 
       <div className="space-y-2">
         <div className="flex items-center gap-3">
