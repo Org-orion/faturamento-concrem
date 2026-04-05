@@ -2,16 +2,18 @@ import React, { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import LoadsPage from '@/pages/Loads';
-import CarregamentoDashboard from '@/pages/CarregamentoDashboard';
+import CarregamentoCronograma from '@/pages/CarregamentoDashboard';
+import CarregamentosStats from '@/pages/CarregamentosStats';
 
-type TabKey = 'carregamentos' | 'dashboard';
+type TabKey = 'carregamentos' | 'cronograma' | 'dashboard';
 
 const TAB_LABELS: Record<TabKey, string> = {
   carregamentos: 'Carregamentos',
+  cronograma: 'Cronograma',
   dashboard: 'Dashboard',
 };
 
-const ALL_TABS: TabKey[] = ['carregamentos', 'dashboard'];
+const ALL_TABS: TabKey[] = ['carregamentos', 'cronograma', 'dashboard'];
 
 const CarregamentosHub = () => {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -49,7 +51,8 @@ const CarregamentosHub = () => {
       </div>
 
       {activeTab === 'carregamentos' && <LoadsPage />}
-      {activeTab === 'dashboard' && <CarregamentoDashboard />}
+      {activeTab === 'cronograma' && <CarregamentoCronograma />}
+      {activeTab === 'dashboard' && <CarregamentosStats />}
     </div>
   );
 };
