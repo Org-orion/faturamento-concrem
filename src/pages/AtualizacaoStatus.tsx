@@ -66,7 +66,8 @@ const AtualizacaoStatus = () => {
 
   const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [String(r.pedido_id), r] as const)), [statusRows]);
 
-  const refresh = async () => {
+  // preserveId: garante que o status row desse pedido nunca seja perdido no refresh
+  const refresh = async (preserveId?: string | null) => {
     try {
       let allRows: PedidoStatusRow[] = [];
       const knownIdList = [
@@ -87,6 +88,10 @@ const AtualizacaoStatus = () => {
       if (supabasePedidos && allRows.length > 0) {
         const knownIds = new Set(knownIdList);
         const missingIds = allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id));
+        // Sempre inclui o pedido preservado nos missingIds se não estiver no AppContext
+        if (preserveId && !knownIds.has(preserveId) && !missingIds.includes(preserveId)) {
+          missingIds.push(preserveId);
+        }
         if (missingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
           const { data: extraData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
@@ -96,16 +101,26 @@ const AtualizacaoStatus = () => {
           });
           // Preserva extras já adicionados via busca pontual; mescla com os recém-buscados
           const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
+          // Garante que o pedido preservado fique no activeIds mesmo que não esteja em allRows
+          if (preserveId) activeIds.add(preserveId);
           setExtraPedidos((prev) => {
             const map = new Map(prev.filter((p) => activeIds.has(p.id)).map((p) => [p.id, p]));
             for (const e of fetched) map.set(e.id, e);
             return Array.from(map.values());
           });
-          // No missingIds: extraPedidos already in AppContext, preserve as-is
         }
       }
 
-      setStatusRows(allRows);
+      // Se o pedido preservado sumiu do allRows (race condition ou limite de 5000),
+      // mantém o status row que já tínhamos localmente para ele
+      setStatusRows((prev) => {
+        const freshIds = new Set(allRows.map((r) => String(r.pedido_id)));
+        if (preserveId && !freshIds.has(preserveId)) {
+          const existing = prev.find((r) => String(r.pedido_id) === preserveId);
+          return existing ? [...allRows, existing] : allRows;
+        }
+        return allRows;
+      });
     } catch (e) {
       console.error('[AtualizacaoStatus] refresh error:', e);
     }
@@ -274,7 +289,7 @@ const AtualizacaoStatus = () => {
       }
     }
 
-    await refresh();
+    await refresh(selectedId);
     if (!selectedId) return;
     const items = await listPedidosStatusHistorico(selectedId);
     setHistory(items);
