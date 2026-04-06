@@ -994,36 +994,30 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       ),
     );
 
-    // Se o embarque estava em estado avançado, reverter status dos pedidos no banco
-    // 'Em Rota' → pedido estava em em_entrega/faturado; 'Entregue'/'Despachado' → estados finais
-    const statusesQueRevertam: Load['shipmentStatus'][] = ['Em Rota', 'Despachado', 'Entregue'];
-    if (statusesQueRevertam.includes(load.shipmentStatus)) {
-      const all = [...orders, ...supportOrders];
-      await Promise.all(
-        load.orderIds.map(async (pedidoId) => {
-          const o: any = all.find((x: any) => x.id === pedidoId);
-          await updatePedidoStatus({
-            pedidoId,
-            numeroPedido: pedidoId,
-            statusNovo: 'liberado_producao',
-            alteradoPor: user?.username || 'sistema',
-            observacao: `Embarque ${id} excluído — status revertido para liberado p/ produção`,
-          });
-        }),
-      );
-    }
+    // Sempre reverter status dos pedidos no banco para liberado_producao ao excluir embarque
+    await Promise.all(
+      load.orderIds.map((pedidoId) =>
+        updatePedidoStatus({
+          pedidoId,
+          numeroPedido: pedidoId,
+          statusNovo: 'liberado_producao',
+          alteradoPor: 'sistema',
+          observacao: `Embarque ${id} excluído — status revertido para liberado p/ produção`,
+        }).catch((e) => console.error('[deleteLoad] revert status error', pedidoId, e)),
+      ),
+    );
 
     // Liberar motorista se não tiver outras cargas ativas
-    const hasOtherActiveLoads = loads.some(l => 
-      l.id !== id && 
-      l.driverId === load.driverId && 
+    const hasOtherActiveLoads = loads.some(l =>
+      l.id !== id &&
+      l.driverId === load.driverId &&
       l.shipmentStatus !== 'Entregue' && l.shipmentStatus !== 'Cancelado'
     );
-    
+
     if (!hasOtherActiveLoads) {
-      setDrivers(prev => prev.map(d => 
-        d.id === load.driverId 
-          ? { ...d, status: 'Disponível' } 
+      setDrivers(prev => prev.map(d =>
+        d.id === load.driverId
+          ? { ...d, status: 'Disponível' }
           : d
       ));
     }
