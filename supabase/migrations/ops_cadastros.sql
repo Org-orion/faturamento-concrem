@@ -50,7 +50,7 @@ create table if not exists public.usuarios (
   criado_em timestamptz not null default now(),
   atualizado_em timestamptz not null default now(),
   constraint usuarios_perfil_acesso_chk check (
-    perfil_acesso is null or perfil_acesso in ('faturamento', 'administrador', 'comercial', 'producao')
+    perfil_acesso is null or perfil_acesso in ('faturamento', 'administrador', 'comercial', 'producao', 'logistica')
   )
 );
 
