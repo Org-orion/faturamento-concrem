@@ -86,10 +86,10 @@ const AtualizacaoStatus = () => {
       }
 
       if (supabasePedidos && allRows.length > 0) {
-        const knownIds = new Set(knownIdList);
-        const missingIds = allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id));
-        // Sempre inclui o pedido preservado nos missingIds se não estiver no AppContext
-        if (preserveId && !knownIds.has(preserveId) && !missingIds.includes(preserveId)) {
+        // Exclui IDs já conhecidos: AppContext + extraPedidos já buscados
+        const alreadyKnownIds = new Set([...knownIdList, ...extraPedidos.map((p) => p.id)]);
+        const missingIds = allRows.map((r) => String(r.pedido_id)).filter((id) => !alreadyKnownIds.has(id));
+        if (preserveId && !alreadyKnownIds.has(preserveId) && !missingIds.includes(preserveId)) {
           missingIds.push(preserveId);
         }
         if (missingIds.length > 0) {
@@ -99,27 +99,27 @@ const AtualizacaoStatus = () => {
             const o = rowToOrder(row, 'CLI-001');
             return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', repPhone: o.representativePhone || null };
           });
-          // Preserva extras já adicionados via busca pontual; mescla com os recém-buscados
-          const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
-          // Garante que o pedido preservado fique no activeIds mesmo que não esteja em allRows
-          if (preserveId) activeIds.add(preserveId);
-          setExtraPedidos((prev) => {
-            const map = new Map(prev.filter((p) => activeIds.has(p.id)).map((p) => [p.id, p]));
-            for (const e of fetched) map.set(e.id, e);
-            return Array.from(map.values());
-          });
+          if (fetched.length > 0) {
+            // Nunca remove extras existentes — apenas adiciona novos
+            setExtraPedidos((prev) => {
+              const map = new Map(prev.map((p) => [p.id, p]));
+              for (const e of fetched) map.set(e.id, e);
+              return Array.from(map.values());
+            });
+          }
         }
       }
 
-      // Se o pedido preservado sumiu do allRows (race condition ou limite de 5000),
-      // mantém o status row que já tínhamos localmente para ele
+      // Preserva status rows de pedidos buscados manualmente (extraPedidos) e do preserveId
+      // caso não constem no allRows (race condition, limite de 5000 ou inicialização pendente)
+      const extraIds = new Set(extraPedidos.map((p) => p.id));
       setStatusRows((prev) => {
         const freshIds = new Set(allRows.map((r) => String(r.pedido_id)));
-        if (preserveId && !freshIds.has(preserveId)) {
-          const existing = prev.find((r) => String(r.pedido_id) === preserveId);
-          return existing ? [...allRows, existing] : allRows;
-        }
-        return allRows;
+        const toPreserve = prev.filter((r) => {
+          const id = String(r.pedido_id);
+          return !freshIds.has(id) && (extraIds.has(id) || id === preserveId);
+        });
+        return toPreserve.length > 0 ? [...allRows, ...toPreserve] : allRows;
       });
     } catch (e) {
       console.error('[AtualizacaoStatus] refresh error:', e);
