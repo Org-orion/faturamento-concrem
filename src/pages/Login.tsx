@@ -33,14 +33,16 @@ const Login = () => {
     }
 
     let role: UserRole = 'ADMIN';
+    let permissions = null;
     try {
       const saved = sessionStorage.getItem('auth_user');
-      const parsed = saved ? (JSON.parse(saved) as { role?: UserRole }) : null;
+      const parsed = saved ? (JSON.parse(saved) as { role?: UserRole; permissions?: import('@/utils/access').PagePermission[] | null }) : null;
       if (parsed?.role) role = parsed.role;
+      if (Array.isArray(parsed?.permissions)) permissions = parsed.permissions;
     } catch {
       role = 'ADMIN';
     }
-    navigate(getHomePathForRole(role));
+    navigate(getHomePathForRole(role, permissions));
   };
 
   return (

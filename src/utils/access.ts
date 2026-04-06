@@ -196,18 +196,30 @@ export function canAccessRoute(
   return canDo(role, permissions ?? null, routeKey, 'view');
 }
 
+// Routes that live inside the /pedidos hub — always redirect to the hub itself
+const PEDIDOS_HUB_ROUTES: Set<AppRouteKey> = new Set([
+  'pedidos', 'comercial', 'comercial-liberacao',
+  'pedido-suporte', 'pedido-suporte-liberacao',
+  'painel-pedidos', 'atualizacao-status',
+]);
+
 export function getHomePathForRole(role: UserRole, permissions?: PagePermission[] | null): string {
   if (role === 'ADMIN') return '/';
   const effective = permissions ?? defaultPermissionsForRole(role);
   const priority: AppRouteKey[] = ['programacao', 'comercial', 'pedidos', 'painel-pedidos', 'atualizacao-status', 'financeiro', 'producao', 'dashboard'];
   for (const key of priority) {
     if (effective.some((p) => p.route === key && p.actions.includes('view'))) {
+      // Routes that are tabs inside the /pedidos hub → always go to /pedidos
+      if (PEDIDOS_HUB_ROUTES.has(key)) return '/pedidos';
       const def = ALL_MENU_ITEM_DEFS.find((d) => d.routeKey === key);
       if (def) return def.href;
     }
   }
   for (const def of ALL_MENU_ITEM_DEFS) {
-    if (effective.some((p) => p.route === def.routeKey && p.actions.includes('view'))) return def.href;
+    if (effective.some((p) => p.route === def.routeKey && p.actions.includes('view'))) {
+      if (PEDIDOS_HUB_ROUTES.has(def.routeKey)) return '/pedidos';
+      return def.href;
+    }
   }
   return '/pedidos';
 }
@@ -312,20 +324,33 @@ export function getMenuForRole(role: UserRole, permissions?: PagePermission[] | 
   // No custom permissions: return original menu unchanged
   if (!permissions) return base;
 
-  // Custom permissions: build menu from ALL available route defs so that
-  // routes granted to this user but outside the role's default menu are included.
+  // Custom permissions: build menu mirroring the admin structure.
+  // Routes that are tabs inside the /pedidos hub must never appear as individual
+  // sidebar links — if the user can access any of them, show a single "Pedidos" entry.
   const allowed = new Set(permissions.filter((p) => p.actions.includes('view')).map((p) => p.route));
   const links: MenuItem[] = [];
   const groups: Record<string, { label: string; href: string }[]> = {};
+  let hasPedidosHub = false;
 
   for (const def of ALL_MENU_ITEM_DEFS) {
     if (!allowed.has(def.routeKey)) continue;
+    if (PEDIDOS_HUB_ROUTES.has(def.routeKey)) {
+      hasPedidosHub = true;
+      continue; // will add a single "Pedidos" entry below
+    }
     if (def.group) {
       if (!groups[def.group]) groups[def.group] = [];
       groups[def.group].push({ label: def.label, href: def.href });
     } else {
       links.push({ type: 'link', label: def.label, href: def.href, icon: def.icon });
     }
+  }
+
+  // Insert "Pedidos" hub entry right after dashboard (same position as admin menu)
+  const dashIdx = links.findIndex((l) => 'href' in l && l.href === '/');
+  const pedidosItem: MenuItem = { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' };
+  if (hasPedidosHub) {
+    links.splice(dashIdx + 1, 0, pedidosItem);
   }
 
   const result: MenuItem[] = [...links];
