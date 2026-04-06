@@ -973,9 +973,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const load = loads.find(x => x.id === id);
     if (!load) return;
 
-    // Resetar pedidos
-    setOrders(prev => prev.map(o => 
-      load.orderIds.includes(o.id) 
+    // Resetar pedidos localmente
+    setOrders(prev => prev.map(o =>
+      load.orderIds.includes(o.id)
         ? (() => {
             const { carregamentoId, ...rest } = o;
             return { ...rest, driverId: null, status: 'Liberado p/ Produção' };
@@ -993,6 +993,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           : o,
       ),
     );
+
+    // Se o embarque estava em estado avançado, reverter status dos pedidos no banco
+    // 'Em Rota' → pedido estava em em_entrega/faturado; 'Entregue'/'Despachado' → estados finais
+    const statusesQueRevertam: Load['shipmentStatus'][] = ['Em Rota', 'Despachado', 'Entregue'];
+    if (statusesQueRevertam.includes(load.shipmentStatus)) {
+      const all = [...orders, ...supportOrders];
+      await Promise.all(
+        load.orderIds.map(async (pedidoId) => {
+          const o: any = all.find((x: any) => x.id === pedidoId);
+          await updatePedidoStatus({
+            pedidoId,
+            numeroPedido: pedidoId,
+            statusNovo: 'liberado_producao',
+            alteradoPor: user?.username || 'sistema',
+            observacao: `Embarque ${id} excluído — status revertido para liberado p/ produção`,
+          });
+        }),
+      );
+    }
 
     // Liberar motorista se não tiver outras cargas ativas
     const hasOtherActiveLoads = loads.some(l => 
