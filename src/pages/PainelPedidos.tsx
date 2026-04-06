@@ -302,7 +302,7 @@ const PainelPedidos = () => {
           <div className="bg-card rounded-xl p-4 border border-border shadow-card space-y-3">
             <QuickFilterBar
               query={query}
-              onQueryChange={(v) => { setQuery(v); if (/^\d{4,}$/.test(v.trim())) void searchErpByNumero(v.trim()); }}
+              onQueryChange={(v) => { setQuery(v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => /^\d{4,}$/.test(n)); nums.forEach(n => void searchErpByNumero(n)); }}
               placeholder="Buscar por cliente, representante ou n. do pedido..."
               statuses={statusButtons}
               activeStatus={activeStatus}
@@ -336,7 +336,7 @@ const PainelPedidos = () => {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Nº Pedido</label>
-                <input type="text" value={colFilter.values.pedido || ''} onChange={e => { const v = e.target.value; colFilter.setFilter('pedido', v); if (v.length >= 4) void searchErpByNumero(v); }} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+                <input type="text" value={colFilter.values.pedido || ''} onChange={e => { const v = e.target.value; colFilter.setFilter('pedido', v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => n.length >= 4); nums.forEach(n => void searchErpByNumero(n)); }} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Cliente</label>

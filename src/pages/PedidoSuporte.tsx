@@ -206,7 +206,12 @@ const PedidoSuporte = () => {
       }
 
       if (debouncedFilterPedido) {
-        query = query.ilike('numero_pedido', `%${debouncedFilterPedido}%`);
+        const nums = debouncedFilterPedido.split(/[,;]+/).map((v) => v.trim()).filter(Boolean);
+        if (nums.length > 1) {
+          query = query.or(nums.map((n) => `numero_pedido.ilike.%${n}%`).join(','));
+        } else {
+          query = query.ilike('numero_pedido', `%${debouncedFilterPedido}%`);
+        }
       }
       if (debouncedFilterCliente) {
         query = query.ilike('cliente_nome', `%${debouncedFilterCliente}%`);

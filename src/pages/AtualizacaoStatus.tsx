@@ -311,7 +311,7 @@ const AtualizacaoStatus = () => {
       <div className="bg-card rounded-xl p-4 border border-border shadow-card">
         <QuickFilterBar
           query={query}
-          onQueryChange={(v) => { setQuery(v); if (/^\d{4,}$/.test(v.trim())) void searchErpByNumero(v.trim()); }}
+          onQueryChange={(v) => { setQuery(v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => /^\d{4,}$/.test(n)); nums.forEach(n => void searchErpByNumero(n)); }}
           placeholder="Filtrar por cliente, representante ou n. do pedido..."
           statuses={statusButtons}
           activeStatus={activeStatus}
@@ -350,7 +350,7 @@ const AtualizacaoStatus = () => {
               onChange={e => {
                 const v = e.target.value;
                 colFilter.setFilter('numero', v);
-                if (v.length >= 4) void searchErpByNumero(v);
+                const nums = v.split(/[,;]+/).map((n: string) => n.trim()).filter((n: string) => n.length >= 4); nums.forEach((n: string) => void searchErpByNumero(n));
               }}
               placeholder="Filtrar..."
               className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors"

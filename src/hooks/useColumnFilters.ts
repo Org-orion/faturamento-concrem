@@ -56,7 +56,11 @@ export function useColumnFilters() {
           if (!def) return true;
           const cell = String(def.getter(item) ?? '').toLowerCase();
           const filter = val.toLowerCase();
-          return def.match === 'exact' ? cell === filter : cell.includes(filter);
+          if (def.match === 'exact') return cell === filter;
+          // Suporte a múltiplos valores separados por vírgula ou ponto-e-vírgula
+          const terms = filter.split(/[,;]+/).map((t) => t.trim()).filter(Boolean);
+          if (terms.length > 1) return terms.some((t) => cell.includes(t));
+          return cell.includes(filter);
         }),
       );
     },
