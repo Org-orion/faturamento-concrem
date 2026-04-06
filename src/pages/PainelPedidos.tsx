@@ -30,7 +30,7 @@ const sortOptions = [
 ] as const;
 
 const PainelPedidos = () => {
-  const { orders, supportOrders, user } = useApp();
+  const { orders, supportOrders, user, pedidoStatusVersion } = useApp();
   const { showToast } = useToast();
 
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
@@ -174,6 +174,12 @@ const PainelPedidos = () => {
     initialRefreshDone.current = true;
     void refresh();
   }, [orders, supportOrders]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Auto-refresh quando embarque é deletado ou status atualizado externamente
+  useEffect(() => {
+    if (pedidoStatusVersion === 0) return;
+    void refresh();
+  }, [pedidoStatusVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Realtime subscription: auto-refresh when pedidos_status changes
   useEffect(() => {

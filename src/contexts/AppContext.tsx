@@ -72,6 +72,7 @@ interface AppState {
   updateFreightEntry: (id: string, patch: Partial<Omit<FreightEntry, 'id' | 'createdAt'>>) => void;
   deleteFreightEntry: (id: string) => void;
   setFreightEntryStatus: (id: string, status: FreightEntryStatus) => void;
+  pedidoStatusVersion: number;
   isAuthenticated: boolean;
   user: { name: string; username: string; role: UserRole; permissions: PagePermission[] | null } | null;
   login: (username: string, password: string) => Promise<boolean>;
@@ -301,6 +302,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [orders, setOrders] = useState<Order[]>(sampleOrders);
   const [loads, setLoads] = useState<Load[]>(sampleLoads);
+  const [pedidoStatusVersion, setPedidoStatusVersion] = useState(0);
   const [invoices, setInvoices] = useState<Invoice[]>(sampleInvoices);
   const [supportOrders, setSupportOrders] = useState<SupportOrder[]>(sampleSupportOrders);
   const [productionSchedules, setProductionSchedules] = useState<ProductionSchedule[]>(sampleProductionSchedules);
@@ -1006,6 +1008,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }).catch((e) => console.error('[deleteLoad] revert status error', pedidoId, e)),
       ),
     );
+    setPedidoStatusVersion((v) => v + 1);
 
     // Liberar motorista se não tiver outras cargas ativas
     const hasOtherActiveLoads = loads.some(l =>
@@ -1225,6 +1228,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       addClient, updateClient, deleteClient,
       addDriver, updateDriver, deleteDriver,
       addOrder, updateOrder, updateOrderStatus, assignDriver,
+      pedidoStatusVersion,
       addLoad, updateLoad, deleteLoad,
       addInvoice, updateInvoiceStatus,
       addSupportOrder, updateSupportOrder, deleteSupportOrder,
