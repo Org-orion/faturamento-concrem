@@ -461,7 +461,7 @@ const ComercialLiberacao = () => {
           <input type="text" value={s1ColFilter.values['grupo'] || ''} onChange={(e) => s1ColFilter.setFilter('grupo', e.target.value)} placeholder="Filtrar grupo..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
         </div>
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+          <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
@@ -514,7 +514,7 @@ const ComercialLiberacao = () => {
           <input type="text" list="cl-reps-list-s2" value={s2ColFilter.values['representante'] || ''} onChange={(e) => s2ColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" /><datalist id="cl-reps-list-s2">{uniqueRepresentantes.map((r) => <option key={r} value={r} />)}</datalist>
         </div>
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+          <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">
@@ -563,7 +563,7 @@ const ComercialLiberacao = () => {
           <input type="text" list="cl-reps-list-s3c" value={s3CandColFilter.values['representante'] || ''} onChange={(e) => s3CandColFilter.setFilter('representante', e.target.value)} placeholder="Filtrar representante..." className="flex-1 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" /><datalist id="cl-reps-list-s3c">{uniqueRepresentantes.map((r) => <option key={r} value={r} />)}</datalist>
         </div>
         <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
-          <div className="overflow-x-auto max-h-[400px] overflow-y-auto">
+          <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
             <table className="w-full text-sm text-left">
               <thead>
                 <tr className="border-b border-border bg-muted/30">

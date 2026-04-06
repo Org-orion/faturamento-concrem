@@ -484,7 +484,7 @@ const ComercialConfirmacao = () => {
 
       {/* Table */}
       <div className="bg-card border border-border rounded-xl shadow-card overflow-hidden">
-        <div className="overflow-x-auto max-h-[420px] overflow-y-auto">
+        <div className="overflow-x-auto max-h-[65vh] overflow-y-auto">
           <table className="w-full text-sm text-left">
             <thead>
               <ColumnFilterRow columns={colFilterSlots} values={colFilter.values} onChange={colFilter.setFilter} />
