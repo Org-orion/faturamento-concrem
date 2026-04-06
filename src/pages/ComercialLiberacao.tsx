@@ -7,7 +7,8 @@ import { btnPrimary, btnSecondary, inputClass } from '@/components/shared';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { tableColumns } from '@/contexts/AppContext';
 import { rowToOrder } from '@/lib/pedidoMapper';
-import { ArrowLeft, CheckCircle2, FileSpreadsheet, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, FileSpreadsheet, Printer, Plus, Trash2 } from 'lucide-react';
+import logoProgramacao from '@/assets/logo-programacao.png';
 import { Order, SupportOrder } from '@/types';
 import { createBrandedWorkbook, downloadBuffer } from '@/lib/excelBranded';
 import type { FilterCondition, FilterField } from '@/lib/filters';
@@ -19,7 +20,7 @@ import { FilterConfiguratorDialog } from '@/components/filters/FilterConfigurato
 import { updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 import { fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
-import { findRepresentanteContato } from '@/lib/opsRepo';
+import { findRepresentanteContato, upsertComercialPedidoMeta } from '@/lib/opsRepo';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useColumnFilters } from '@/hooks/useColumnFilters';
@@ -31,12 +32,12 @@ const formatDateBR = (iso?: string) => {
   return fmtDate(iso);
 };
 
-type UnifiedOrder = { id: string; kind: 'VENDA' | 'SUPORTE'; clientCode?: string; clientName?: string; representativeName?: string; clientCity?: string; clientUF?: string; expiryDate?: string; totalPedidoVenda?: number; previsaoCarregamento?: string; grupoCliente?: string };
+type UnifiedOrder = { id: string; kind: 'VENDA' | 'SUPORTE'; clientCode?: string; clientName?: string; representativeName?: string; clientCity?: string; clientUF?: string; expiryDate?: string; totalPedidoVenda?: number; previsaoCarregamento?: string; grupoCliente?: string; totalQtd?: number };
 
 const toUnified = (o: Order): UnifiedOrder => ({
   id: o.id, kind: 'VENDA', clientCode: o.clientCode, clientName: o.clientName,
   representativeName: o.representativeName, clientCity: o.clientCity, clientUF: o.clientUF,
-  expiryDate: o.expiryDate, totalPedidoVenda: o.totalPedidoVenda, previsaoCarregamento: o.previsaoCarregamento, grupoCliente: o.grupoCliente,
+  expiryDate: o.expiryDate, totalPedidoVenda: o.totalPedidoVenda, previsaoCarregamento: o.previsaoCarregamento, grupoCliente: o.grupoCliente, totalQtd: o.totalQtd,
 });
 
 const toUnifiedSuport = (o: SupportOrder): UnifiedOrder => ({
@@ -241,6 +242,17 @@ const ComercialLiberacao = () => {
   const [showExportModal, setShowExportModal] = useState(false);
   const [exportMes, setExportMes] = useState('');
 
+  // --- PDF Programação ---
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [pdfMesRef, setPdfMesRef] = useState('');
+  const [pdfDataEmbarque, setPdfDataEmbarque] = useState('');
+  const [pdfDataLiberacao, setPdfDataLiberacao] = useState('');
+
+  // --- PDF Gerência ---
+  const [showPdfGerenciaModal, setShowPdfGerenciaModal] = useState(false);
+  const [pdfGerenciaMesRef, setPdfGerenciaMesRef] = useState('');
+  const [pdfGerenciaObs, setPdfGerenciaObs] = useState<Record<string, string>>({});
+
   const handleExportLiberacao = async () => {
     const mesLabel = exportMes.trim() || 'REF';
     const rows = s2Orders.map(o => ({
@@ -384,6 +396,177 @@ const ComercialLiberacao = () => {
     showToast('Carga liberada para Produção');
   };
 
+  const handleExportProgramacaoPDF = () => {
+    const pedidos = s3Processed;
+    if (pedidos.length === 0) { showToast('Nenhum pedido na carga para exportar.', 'error'); return; }
+    if (!pdfMesRef.trim()) { showToast('Informe o mês de referência.', 'error'); return; }
+    if (!pdfDataEmbarque || !pdfDataLiberacao) { showToast('Informe as datas de embarque e liberação.', 'error'); return; }
+
+    const now = new Date();
+    const mesRef = pdfMesRef.trim();
+
+    const dtEmbarque = new Date(pdfDataEmbarque + 'T00:00:00');
+    const dtLiberacao = new Date(pdfDataLiberacao + 'T00:00:00');
+    const diasCorridosVal = Math.max(0, Math.ceil((dtEmbarque.getTime() - dtLiberacao.getTime()) / 86400000));
+
+    const fmtCurrency = (v?: number) => v != null ? `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
+
+    let totalValor = 0;
+    let totalQtdKits = 0;
+    const rows = pedidos.map((o) => {
+      totalValor += o.totalPedidoVenda || 0;
+      totalQtdKits += o.totalQtd || 0;
+      return `<tr>
+        <td>${mesRef}</td>
+        <td style="text-align:center">${diasCorridosVal}</td>
+        <td>${o.clientName || o.clientCode || '-'}</td>
+        <td style="text-align:right">${fmtCurrency(o.totalPedidoVenda)}</td>
+        <td style="text-align:center;font-weight:700">${o.id}</td>
+        <td style="text-align:center">${o.totalQtd || '-'}</td>
+      </tr>`;
+    }).join('');
+
+    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Programação de Produção</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm 14mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; font-size: 11px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 3px solid #0a2315; margin-bottom: 12px; }
+  .header img { height: 52px; }
+  .header .title { text-align: right; }
+  .header .title h1 { font-size: 18px; color: #0a2315; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+  .header .title p { font-size: 11px; color: #666; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  thead th { background: #0a2315; color: #fff; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
+  tbody td { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; font-size: 11px; }
+  tbody tr:nth-child(even) { background: #f5f7f5; }
+  tbody tr:hover { background: #e8f0e8; }
+  tfoot td { padding: 10px; font-weight: 800; font-size: 12px; border-top: 3px solid #0a2315; background: #f0f2f0; }
+  .info { display: flex; gap: 24px; font-size: 10px; color: #555; margin-bottom: 8px; }
+  .info span { font-weight: 600; color: #0a2315; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+<script>window.onload = () => { window.focus(); window.print(); };</script>
+</head><body>
+<div class="header">
+  <img src="${logoProgramacao}" alt="Concrem" />
+  <div class="title">
+    <h1>Programação de Produção</h1>
+    <p>${mesRef} &mdash; ${pedidos.length} pedido(s) &mdash; ${diasCorridosVal} dias corridos</p>
+  </div>
+</div>
+<div class="info">
+  <div>Emissão: <span>${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div>
+  <div>Total Valor: <span>${fmtCurrency(totalValor)}</span></div>
+  <div>Total Kits: <span>${totalQtdKits || '-'}</span></div>
+</div>
+<table>
+  <thead><tr>
+    <th style="text-align:left">Mês Referência</th>
+    <th style="text-align:center">Dias Corridos</th>
+    <th style="text-align:left">Cliente</th>
+    <th style="text-align:right">Valor Pedido</th>
+    <th style="text-align:center">Nº Pedido</th>
+    <th style="text-align:center">Qtd Kits</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+  <tfoot><tr>
+    <td colspan="3" style="text-align:right">TOTAL</td>
+    <td style="text-align:right">${fmtCurrency(totalValor)}</td>
+    <td></td>
+    <td style="text-align:center">${totalQtdKits || '-'}</td>
+  </tr></tfoot>
+</table>
+</body></html>`;
+
+    const w = window.open('', '_blank', 'width=1100,height=700');
+    if (!w) { showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error'); return; }
+    w.document.open();
+    w.document.write(fullHtml);
+    w.document.close();
+    setShowPdfModal(false);
+  };
+
+  const handleExportGerenciaPDF = () => {
+    const pedidos = s1Processed.filter(o => s1Selected.includes(o.id));
+    if (pedidos.length === 0) { showToast('Selecione ao menos um pedido.', 'error'); return; }
+    if (!pdfGerenciaMesRef.trim()) { showToast('Informe o mês de referência.', 'error'); return; }
+
+    const now = new Date();
+    const mesRef = pdfGerenciaMesRef.trim();
+
+    const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+    const rows = pedidos.map((o) => {
+      const obs = pdfGerenciaObs[o.id] || '-';
+      return `<tr>
+        <td>${mesRef}</td>
+        <td style="text-align:center;font-weight:700">${o.id}</td>
+        <td>${o.clientName || o.clientCode || '-'}</td>
+        <td>${escHtml(obs)}</td>
+      </tr>`;
+    }).join('');
+
+    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Pedidos para Gerência</title>
+<style>
+  @page { size: A4 landscape; margin: 12mm 14mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; font-size: 11px; }
+  .header { display: flex; align-items: center; justify-content: space-between; padding: 16px 0; border-bottom: 3px solid #0a2315; margin-bottom: 12px; }
+  .header img { height: 52px; }
+  .header .title { text-align: right; }
+  .header .title h1 { font-size: 18px; color: #0a2315; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+  .header .title p { font-size: 11px; color: #666; margin-top: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+  thead th { background: #0a2315; color: #fff; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
+  tbody td { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; font-size: 11px; }
+  tbody tr:nth-child(even) { background: #f5f7f5; }
+  tbody tr:hover { background: #e8f0e8; }
+  .info { display: flex; gap: 24px; font-size: 10px; color: #555; margin-bottom: 8px; }
+  .info span { font-weight: 600; color: #0a2315; }
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+<script>window.onload = () => { window.focus(); window.print(); };</script>
+</head><body>
+<div class="header">
+  <img src="${logoProgramacao}" alt="Concrem" />
+  <div class="title">
+    <h1>Pedidos para Gerência</h1>
+    <p>${mesRef} &mdash; ${pedidos.length} pedido(s)</p>
+  </div>
+</div>
+<div class="info">
+  <div>Emissão: <span>${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div>
+</div>
+<table>
+  <thead><tr>
+    <th style="text-align:left">Mês Referência</th>
+    <th style="text-align:center">Nº Pedido</th>
+    <th style="text-align:left">Cliente</th>
+    <th style="text-align:left">Observação</th>
+  </tr></thead>
+  <tbody>${rows}</tbody>
+</table>
+</body></html>`;
+
+    const w = window.open('', '_blank', 'width=1100,height=700');
+    if (!w) { showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error'); return; }
+    w.document.open();
+    w.document.write(fullHtml);
+    w.document.close();
+
+    // Persist observations
+    for (const o of pedidos) {
+      const obs = pdfGerenciaObs[o.id]?.trim();
+      if (obs) void upsertComercialPedidoMeta({ pedido_id: o.id, observacao: obs, atualizado_por: user?.name || null });
+    }
+
+    setShowPdfGerenciaModal(false);
+    setPdfGerenciaObs({});
+  };
+
   const toggleAll = (current: string[], setter: (v: string[]) => void, ids: string[]) => {
     setter(current.length === ids.length ? [] : ids);
   };
@@ -450,14 +633,98 @@ const ComercialLiberacao = () => {
         </div>
       )}
 
+      {showPdfModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+            <h2 className="text-lg font-bold font-display text-foreground">Exportar Programação de Produção</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Mês de Referência</label>
+                <input className={inputClass} placeholder="ex: Março/2026" value={pdfMesRef} onChange={(e) => setPdfMesRef(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Data de Liberação para Produção</label>
+                <input type="date" className={inputClass} value={pdfDataLiberacao} onChange={(e) => setPdfDataLiberacao(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Data de Embarque</label>
+                <input type="date" className={inputClass} value={pdfDataEmbarque} onChange={(e) => setPdfDataEmbarque(e.target.value)} />
+              </div>
+              {pdfDataEmbarque && pdfDataLiberacao && (
+                <p className="text-sm text-muted-foreground">
+                  Dias corridos: <strong className="text-foreground">{Math.max(0, Math.ceil((new Date(pdfDataEmbarque + 'T00:00:00').getTime() - new Date(pdfDataLiberacao + 'T00:00:00').getTime()) / 86400000))}</strong>
+                </p>
+              )}
+              <p className="text-xs text-muted-foreground">Serão exportados <strong>{s3Processed.length}</strong> pedido(s) prontos para produção.</p>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button className={btnSecondary} onClick={() => setShowPdfModal(false)}>Cancelar</button>
+              <button className={btnPrimary} onClick={handleExportProgramacaoPDF}>
+                <Printer className="h-4 w-4" />
+                Gerar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPdfGerenciaModal && (() => {
+        const selectedOrders = s1Processed.filter(o => s1Selected.includes(o.id));
+        return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-5 max-h-[85vh] overflow-y-auto">
+            <h2 className="text-lg font-bold font-display text-foreground">Exportar PDF — Pedidos para Gerência</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Mês de Referência</label>
+                <input className={inputClass} placeholder="ex: Março/2026" value={pdfGerenciaMesRef} onChange={(e) => setPdfGerenciaMesRef(e.target.value)} />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">Observações por Pedido</label>
+                <div className="space-y-2 max-h-[40vh] overflow-y-auto border border-border rounded-lg p-3">
+                  {selectedOrders.map(o => (
+                    <div key={o.id} className="flex items-center gap-3">
+                      <span className="font-mono-data font-bold text-primary text-sm w-20 shrink-0">{o.id}</span>
+                      <span className="text-sm text-muted-foreground truncate w-40 shrink-0">{o.clientName || o.clientCode || '-'}</span>
+                      <input
+                        type="text"
+                        className="flex-1 px-2 py-1.5 rounded border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                        placeholder="Observação..."
+                        value={pdfGerenciaObs[o.id] || ''}
+                        onChange={(e) => setPdfGerenciaObs(prev => ({ ...prev, [o.id]: e.target.value }))}
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <p className="text-xs text-muted-foreground">Serão exportados <strong>{selectedOrders.length}</strong> pedido(s) selecionado(s).</p>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button className={btnSecondary} onClick={() => { setShowPdfGerenciaModal(false); setPdfGerenciaObs({}); }}>Cancelar</button>
+              <button className={btnPrimary} onClick={handleExportGerenciaPDF}>
+                <Printer className="h-4 w-4" />
+                Gerar PDF
+              </button>
+            </div>
+          </div>
+        </div>
+        );
+      })()}
+
       {/* Aba 1: Enviar para Gerência */}
       {activeTab === 'gerencia' && <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Pedidos Liberados — Enviar para Gerência</h2>
-          <button className={btnPrimary} onClick={() => void enviarParaGerencia()} disabled={!s1Selected.length}>
-            <CheckCircle2 className="h-4 w-4" />
-            Enviar para Gerência ({s1Selected.length})
-          </button>
+          <div className="flex items-center gap-2">
+            <button className={btnSecondary} onClick={() => { setPdfGerenciaObs({}); setShowPdfGerenciaModal(true); }} disabled={!s1Selected.length}>
+              <Printer className="h-4 w-4" />
+              Exportar PDF ({s1Selected.length})
+            </button>
+            <button className={btnPrimary} onClick={() => void enviarParaGerencia()} disabled={!s1Selected.length}>
+              <CheckCircle2 className="h-4 w-4" />
+              Enviar para Gerência ({s1Selected.length})
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <input type="text" value={s1ColFilter.values['pedido'] || ''} onChange={(e) => s1ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
@@ -623,10 +890,16 @@ const ComercialLiberacao = () => {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Liberar para Produção</h2>
 
-          <button className={btnPrimary} onClick={() => void liberarParaProducao()}>
-            <CheckCircle2 className="h-4 w-4" />
-            Confirmar Liberação
-          </button>
+          <div className="flex items-center gap-2">
+            <button className={btnSecondary} onClick={() => setShowPdfModal(true)}>
+              <Printer className="h-4 w-4" />
+              Exportar PDF
+            </button>
+            <button className={btnPrimary} onClick={() => void liberarParaProducao()}>
+              <CheckCircle2 className="h-4 w-4" />
+              Confirmar Liberação
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <input type="text" value={s3ColFilter.values['pedido'] || ''} onChange={(e) => s3ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />

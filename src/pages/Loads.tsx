@@ -7,7 +7,7 @@ import { rowToOrder } from '@/lib/pedidoMapper';
 import type { Order, PedidoStatusRow } from '@/types';
 import { Edit2, Plus, Package, FileText, Download } from 'lucide-react';
 import * as XLSX from 'xlsx';
-import logoSrc from '@/assets/logo.png';
+import logoSrc from '@/assets/logo-programacao.png';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useColumnFilters, ColDef } from '@/hooks/useColumnFilters';
@@ -24,6 +24,13 @@ type ReportRow = {
   company: string;
   uf: string;
   value: number;
+};
+
+type ReportGroup = {
+  loadId: string;
+  driverName: string;
+  date: string;
+  rows: { orderId: string; company: string; uf: string; value: number }[];
 };
 
 const formatDateBR = (iso?: string) => {
@@ -157,52 +164,68 @@ const LoadsPage = () => {
     return sorted;
   }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs]);
 
-  const reportRows = useMemo((): ReportRow[] => {
+  const reportGroups = useMemo((): ReportGroup[] => {
     const selected = loads.filter((l) => selectedIds.includes(l.id));
-    const rows: ReportRow[] = [];
+    const groups: ReportGroup[] = [];
 
     for (const load of selected) {
       const driver = drivers.find((d) => d.id === load.driverId);
       const driverName = (driver?.name || '-').toUpperCase();
       const dateStr = formatDateBR(load.plannedDate);
+      const orderRows: ReportGroup['rows'] = [];
 
       for (const orderId of load.orderIds) {
         const order = orders.find((o) => o.id === orderId);
         const supOrder = order ? undefined : supportOrders.find((o) => o.id === orderId);
-        const src = order || supOrder;
+        const extra = (order || supOrder) ? undefined : extraOrders.find((o) => o.id === orderId);
+        const src = order || supOrder || extra;
         if (!src) continue;
 
-        rows.push({
-          driverName,
-          date: dateStr,
+        orderRows.push({
           orderId: src.id,
-          company: `${src.clientCode || ''} - ${src.clientName || ''}`.toUpperCase(),
+          company: (src.clientName || src.clientCode || '-').toUpperCase(),
           uf: (src.clientUF || '-').toUpperCase(),
           value: getOrderTotal(src),
         });
       }
+
+      if (orderRows.length > 0) {
+        groups.push({ loadId: load.id, driverName, date: dateStr, rows: orderRows });
+      }
     }
 
-    rows.sort((a, b) => a.driverName.localeCompare(b.driverName) || a.date.localeCompare(b.date));
-    return rows;
-  }, [selectedIds, loads, drivers, orders, supportOrders]);
+    groups.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.loadId.localeCompare(b.loadId));
+    return groups;
+  }, [selectedIds, loads, drivers, orders, supportOrders, extraOrders]);
+
+  // Flat rows for Excel export
+  const reportRows = useMemo((): ReportRow[] => {
+    return reportGroups.flatMap((g) =>
+      g.rows.map((r) => ({ driverName: g.driverName, date: g.date, ...r })),
+    );
+  }, [reportGroups]);
 
   const totalGeral = useMemo(() => reportRows.reduce((acc, r) => acc + r.value, 0), [reportRows]);
 
   const handleGeneratePdf = async () => {
     const logoDataUrl = await getLogoDataUrl();
 
-    const tableRows = reportRows
-      .map(
-        (r) => `
+    // Group by load — each carregamento gets a merged motorista cell
+    const tableRows = reportGroups
+      .map((g) =>
+        g.rows
+          .map(
+            (r, i) => `
         <tr>
-          <td>${r.driverName}</td>
-          <td>${r.date}</td>
-          <td>${r.orderId}</td>
-          <td>${r.company}</td>
+          ${i === 0 ? `<td rowspan="${g.rows.length}" class="driver">${g.driverName}</td>` : ''}
+          ${i === 0 ? `<td rowspan="${g.rows.length}">${g.date}</td>` : ''}
           <td>${r.uf}</td>
+          <td>${r.orderId}</td>
+          <td class="left">${r.company}</td>
           <td class="right">${formatCurrency(r.value)}</td>
         </tr>`,
+          )
+          .join(''),
       )
       .join('');
 
@@ -210,24 +233,25 @@ const LoadsPage = () => {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>RELATÓRIO GERAL DE CARREGAMENTOS</title>
+  <title>RELATÓRIO GERAL DE EMBARQUES</title>
   <style>
-    @page { size: A4; margin: 14mm; }
+    @page { size: A4; margin: 10mm 12mm; }
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { font-family: Arial, Helvetica, sans-serif; color: #000; }
-    .header { display: flex; align-items: center; border: 2px solid #000; margin-bottom: 16px; }
-    .header-logo { padding: 10px 16px; border-right: 2px solid #000; display: flex; align-items: center; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #000; font-size: 10px; }
+    .header { display: flex; align-items: center; border: 2px solid #000; margin-bottom: 0; }
+    .header-logo { padding: 8px 14px; border-right: 2px solid #000; display: flex; align-items: center; }
     .header-logo img { height: 48px; }
-    .header-title { flex: 1; text-align: center; padding: 10px 16px; }
-    .header-title h1 { font-size: 14px; font-weight: 900; letter-spacing: .5px; margin: 0; }
-    .header-title h2 { font-size: 13px; font-weight: 900; letter-spacing: .5px; margin: 2px 0 0 0; }
-    table { width: 100%; border-collapse: collapse; font-size: 11px; text-transform: uppercase; }
-    th, td { border: 1px solid #000; padding: 8px 10px; }
-    th { font-weight: 900; background: #f5f5f5; text-align: center; }
-    td { text-align: center; }
+    .header-title { flex: 1; text-align: center; padding: 8px 14px; }
+    .header-title h1 { font-size: 13px; font-weight: 900; letter-spacing: .5px; margin: 0; }
+    table { width: 100%; border-collapse: collapse; font-size: 10px; text-transform: uppercase; }
+    th, td { border: 1px solid #000; padding: 5px 6px; }
+    th { font-weight: 900; background: #e8e8e8; text-align: center; font-size: 9px; }
+    td { text-align: center; vertical-align: middle; }
+    td.driver { font-weight: 700; text-align: center; vertical-align: middle; font-size: 9px; }
     .right { text-align: right !important; }
     .left { text-align: left !important; }
-    tfoot td { font-weight: 900; }
+    tfoot td { font-weight: 900; background: #f0f0f0; }
+    @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   </style>
 </head>
 <body>
@@ -236,20 +260,19 @@ const LoadsPage = () => {
       ${logoDataUrl ? `<img src="${logoDataUrl}" alt="CONCREM" />` : '<strong style="font-size:18px;">CONCREM</strong>'}
     </div>
     <div class="header-title">
-      <h1>RELATÓRIO GERAL DE CARREGAMENTOS</h1>
-      <h2>CONCREM INDUSTRIAL LTDA</h2>
+      <h1>RELATÓRIO GERAL DE EMBARQUES CONCREM INDUSTRIAL LTDA</h1>
     </div>
   </div>
 
   <table>
     <thead>
       <tr>
-        <th>MOTORISTA</th>
-        <th>DATA</th>
-        <th>Nº PEDIDO</th>
-        <th>EMPRESA</th>
-        <th>UF</th>
-        <th>VALOR</th>
+        <th style="width:14%">MOTORISTA</th>
+        <th style="width:7%">DATA</th>
+        <th style="width:5%">UF</th>
+        <th style="width:9%">Nº PEDIDO</th>
+        <th style="width:42%">EMPRESA</th>
+        <th style="width:13%">VALOR</th>
       </tr>
     </thead>
     <tbody>
@@ -257,13 +280,13 @@ const LoadsPage = () => {
     </tbody>
     <tfoot>
       <tr>
-        <td colspan="5" class="right">TOTAL GERAL</td>
+        <td colspan="5" class="right">R$</td>
         <td class="right">${formatCurrency(totalGeral)}</td>
       </tr>
     </tfoot>
   </table>
 
-  <script>window.onload = () => window.print();</script>
+  <script>window.onload = () => { window.focus(); window.print(); };</script>
 </body>
 </html>`;
 
@@ -278,18 +301,18 @@ const LoadsPage = () => {
     const data = reportRows.map((r) => ({
       MOTORISTA: r.driverName,
       DATA: r.date,
+      UF: r.uf,
       'Nº PEDIDO': r.orderId,
       EMPRESA: r.company,
-      UF: r.uf,
       VALOR: r.value,
     }));
 
     data.push({
       MOTORISTA: '',
       DATA: '',
+      UF: '',
       'Nº PEDIDO': '',
-      EMPRESA: '',
-      UF: 'TOTAL GERAL',
+      EMPRESA: 'TOTAL GERAL',
       VALOR: totalGeral,
     });
 
@@ -298,9 +321,9 @@ const LoadsPage = () => {
     const colWidths = [
       { wch: 30 },
       { wch: 12 },
+      { wch: 6 },
       { wch: 12 },
       { wch: 45 },
-      { wch: 6 },
       { wch: 16 },
     ];
     ws['!cols'] = colWidths;
