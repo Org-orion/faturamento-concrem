@@ -158,14 +158,16 @@ const AtualizacaoStatus = () => {
     return [...fromContext, ...fromStatusOnly];
   }, [pedidos, statusByPedidoId, statusRows]);
 
-  // Mostrar apenas pedidos que já têm registro de status (exceto finalizados)
+  // Mostrar apenas pedidos que já têm registro de status (exceto finalizados).
+  // O pedido atualmente selecionado nunca é removido da lista enquanto estiver em foco.
   const logisticaPedidos = useMemo(() => {
     return allPedidosComStatus.filter((p) => {
+      if (p.id === selectedId) return true; // nunca oculta o pedido em foco
       const st = statusByPedidoId.get(p.id)?.status_atual;
       if (!st) return false;
       return st !== 'finalizado';
     });
-  }, [allPedidosComStatus, statusByPedidoId]);
+  }, [allPedidosComStatus, statusByPedidoId, selectedId]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(logisticaPedidos.map((p) => p.cliente).filter((c) => c && c !== '-'));
@@ -180,12 +182,18 @@ const AtualizacaoStatus = () => {
 
   const filtered = useMemo(() => {
     const colFiltered = colFilter.filterItems(logisticaPedidos, colDefs);
-    return filterItems(
+    const result = filterItems(
       colFiltered,
       [(p) => p.numero, (p) => p.cliente, (p) => p.representante],
       (p) => statusByPedidoId.get(p.id)?.status_atual ?? null,
     );
-  }, [logisticaPedidos, filterItems, statusByPedidoId, colFilter.filterItems, colDefs]);
+    // Garante que o pedido em foco nunca desaparece da lista por efeito de filtros
+    if (selectedId && !result.some((p) => p.id === selectedId)) {
+      const pinned = logisticaPedidos.find((p) => p.id === selectedId);
+      if (pinned) return [pinned, ...result];
+    }
+    return result;
+  }, [logisticaPedidos, filterItems, statusByPedidoId, colFilter.filterItems, colDefs, selectedId]);
 
   const sortedFiltered = useMemo(() => {
     return sortItems(filtered, {
@@ -231,6 +239,9 @@ const AtualizacaoStatus = () => {
             : r,
         ),
       );
+      // Reseta filtro de status rápido para que o pedido com novo status não fique oculto
+      setActiveStatus(null);
+      colFilter.setFilter('status', '', true);
 
       const pedido = pedidos.find(p => p.id === selectedId);
 
