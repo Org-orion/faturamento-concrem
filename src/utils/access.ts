@@ -311,9 +311,28 @@ export function getMenuForRole(role: UserRole, permissions?: PagePermission[] | 
   if (role === 'ADMIN') return base;
   // No custom permissions: return original menu unchanged
   if (!permissions) return base;
-  // Custom permissions: filter the original menu to remove blocked routes
+
+  // Custom permissions: build menu from ALL available route defs so that
+  // routes granted to this user but outside the role's default menu are included.
   const allowed = new Set(permissions.filter((p) => p.actions.includes('view')).map((p) => p.route));
-  return filterMenuByAllowed(base, allowed);
+  const links: MenuItem[] = [];
+  const groups: Record<string, { label: string; href: string }[]> = {};
+
+  for (const def of ALL_MENU_ITEM_DEFS) {
+    if (!allowed.has(def.routeKey)) continue;
+    if (def.group) {
+      if (!groups[def.group]) groups[def.group] = [];
+      groups[def.group].push({ label: def.label, href: def.href });
+    } else {
+      links.push({ type: 'link', label: def.label, href: def.href, icon: def.icon });
+    }
+  }
+
+  const result: MenuItem[] = [...links];
+  for (const [groupLabel, items] of Object.entries(groups)) {
+    result.push({ type: 'group', label: groupLabel, icon: 'users', items });
+  }
+  return result;
 }
 
 // Legacy – kept for any remaining callers

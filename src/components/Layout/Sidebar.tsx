@@ -59,10 +59,8 @@ export const Sidebar: React.FC = () => {
   const { user, logout } = useApp();
   const location = useLocation();
   const menuItems = asMenuItems(user?.role, user?.permissions);
-  const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    'Cadastro': true,
-    'Operacional': true
-  });
+  // All sections open by default; only collapse when user explicitly toggles
+  const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 
   const isActive = (href: string) => location.pathname === href;
   const toggleSection = (title: string) => {
@@ -72,7 +70,7 @@ export const Sidebar: React.FC = () => {
 
   const SidebarItem = ({ item }: { item: SidebarNavItem }) => {
     if ('children' in item) {
-      const isOpen = openSections[item.title];
+      const isOpen = openSections[item.title] !== false; // aberto por padrão
       const hasActiveChild = item.children.some((child) => isActive(child.href));
 
       if (isCollapsed) {
