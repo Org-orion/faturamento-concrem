@@ -460,9 +460,10 @@ const CreateShipment = () => {
 
     const formHtml = `
 <style>
+  @page { size: A4 portrait; margin: 12mm 14mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; background: #fff; }
-  .page { width: 680px; }
+  .page { width: 100%; }
 
   /* HEADER */
   table.hdr { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
@@ -650,35 +651,27 @@ const CreateShipment = () => {
 
 </div>`;
 
-    // Render off-screen so html2canvas can capture it
-    const container = document.createElement('div');
-    container.style.cssText = 'position:fixed;top:0;left:0;z-index:99999;background:white;pointer-events:none;width:680px;';
-    container.innerHTML = formHtml;
-    document.body.appendChild(container);
+    const fullHtml = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Formulário de Recebimento — Pedido ${numeroPedido}</title>
+  ${formHtml.match(/<style[\s\S]*?<\/style>/)?.[0] ?? ''}
+</head>
+<body>
+  ${formHtml.replace(/<style[\s\S]*?<\/style>/, '')}
+  <script>window.onload = () => { window.focus(); window.print(); };<\/script>
+</body>
+</html>`;
 
-    await new Promise(r => setTimeout(r, 800));
-
-    try {
-      const html2pdf = (await import('html2pdf.js')).default;
-      const el = container.querySelector('.page') as HTMLElement;
-      if (!el) throw new Error('Elemento .page não encontrado');
-      await html2pdf()
-        .set({
-          margin: [15, 15, 15, 15],
-          filename: `formulario-pedido-${numeroPedido}.pdf`,
-          image: { type: 'jpeg', quality: 0.98 },
-          html2canvas: { scale: 2, useCORS: true, allowTaint: true, backgroundColor: '#ffffff', logging: false },
-          jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-        })
-        .from(el)
-        .save();
-    } catch (err) {
-      console.error('Erro ao gerar PDF:', err);
-      showToast('Erro ao gerar PDF. Tente novamente.', 'error');
+    const w = window.open('', '_blank', 'width=900,height=700');
+    if (!w) {
+      showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error');
       return;
-    } finally {
-      document.body.removeChild(container);
     }
+    w.document.open();
+    w.document.write(fullHtml);
+    w.document.close();
 
     // Formulário gerado → pedido Em Rota (somente se NF e boleto também estiverem anexados; nunca para LEROY)
     const attachs = orderAttachments[orderId] || {};
