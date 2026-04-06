@@ -66,15 +66,17 @@ const ComercialConfirmacao = () => {
     { key: 'cliente', type: 'text', placeholder: 'Filtrar...', datalistId: 'cc-clientes-list' },
     { key: 'representante', type: 'text', placeholder: 'Filtrar...', datalistId: 'cc-reps-list' },
     { key: 'cidadeUf', type: 'text', placeholder: 'Filtrar...' },
+    { key: 'grupo', type: 'select', options: [{ value: '', label: 'Todos' }, ...uniqueGrupos.map((g) => ({ value: g, label: g }))] },
     { key: 'emissao', type: 'date' },
     { key: 'validade', type: 'date' },
-  ], []);
+  ], [uniqueGrupos]);
 
   const colFilterDefs = useMemo(() => [
     { key: 'pedido', getter: (o: Order) => o.id },
     { key: 'cliente', getter: (o: Order) => `${o.clientCode || ''} ${o.clientName || ''}` },
     { key: 'representante', getter: (o: Order) => o.representativeName },
     { key: 'cidadeUf', getter: (o: Order) => `${o.clientCity || ''} - ${o.clientUF || ''}` },
+    { key: 'grupo', getter: (o: Order) => (o as any).grupoCliente || '', match: 'exact' as const },
     { key: 'emissao', getter: (o: Order) => o.date },
     { key: 'validade', getter: (o: Order) => o.expiryDate },
   ], []);
@@ -149,6 +151,11 @@ const ComercialConfirmacao = () => {
   const uniqueRepresentantes = useMemo(() => {
     const set = new Set(pendingOrders.map((o) => o.representativeName).filter((r): r is string => Boolean(r)));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [pendingOrders]);
+
+  const uniqueGrupos = useMemo(() => {
+    const set = new Set(pendingOrders.map((o) => (o as any).grupoCliente || '').filter(Boolean));
+    return Array.from(set).sort((a: string, b: string) => a.localeCompare(b));
   }, [pendingOrders]);
 
   const filterFields = useMemo(() => {
@@ -496,13 +503,14 @@ const ComercialConfirmacao = () => {
                 <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                 <SortableHeader columnKey="representante" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
                 <SortableHeader columnKey="cidadeUf" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
+                <SortableHeader columnKey="grupo" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Grupo</SortableHeader>
                 <SortableHeader columnKey="emissao" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Emissão</SortableHeader>
                 <SortableHeader columnKey="validade" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
               {filtered.length === 0 ? (
-                <tr><td colSpan={7} className="py-10 text-center text-muted-foreground italic">Nenhum pedido aguardando confirmação.</td></tr>
+                <tr><td colSpan={8} className="py-10 text-center text-muted-foreground italic">Nenhum pedido aguardando confirmação.</td></tr>
               ) : (
                 filtered.map((o) => (
                   <tr key={o.id} className={`hover:bg-muted/20 transition-colors ${selected.includes(o.id) ? 'bg-primary/5' : ''}`}>
@@ -517,6 +525,7 @@ const ComercialConfirmacao = () => {
                     </td>
                     <td className="py-4 px-6">{o.representativeName || '-'}</td>
                     <td className="py-4 px-6">{o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '-'}</td>
+                    <td className="py-4 px-6 font-display text-muted-foreground">{(o as any).grupoCliente || '-'}</td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">{formatDateBR(o.date)}</td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">{formatDateBR(o.expiryDate)}</td>
                   </tr>
