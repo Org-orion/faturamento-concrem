@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { canDo, type UserRole } from '@/utils/access';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
@@ -329,8 +330,8 @@ const PedidoSuporte = () => {
     }
   };
 
-  const canDecide = user?.role === 'LOGISTICA' || user?.role === 'ADMIN';
-  const canCreateSchedule = user?.role === 'LOGISTICA' || user?.role === 'ADMIN';
+  const canDecide = user ? canDo(user.role as UserRole, user.permissions ?? null, 'pedido-suporte', 'execute') : false;
+  const canCreateSchedule = canDecide;
 
   const saveSchedule = () => {
     if (scheduleSelected.length === 0) return;

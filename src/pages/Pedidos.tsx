@@ -6,31 +6,25 @@ import Commercial from '@/pages/Commercial';
 import PedidoSuporte from '@/pages/PedidoSuporte';
 import AtualizacaoStatus from '@/pages/AtualizacaoStatus';
 import PainelPedidos from '@/pages/PainelPedidos';
-import ComercialLiberacao from '@/pages/ComercialLiberacao';
-import PedidoSuporteLiberacao from '@/pages/PedidoSuporteLiberacao';
 import { canDo, type UserRole, type AppRouteKey } from '@/utils/access';
 
-type TabKey = 'venda' | 'liberacao-venda' | 'suporte' | 'liberacao-suporte' | 'status' | 'painel';
+type TabKey = 'venda' | 'suporte' | 'status' | 'painel';
 
 const TAB_ROUTE: Record<TabKey, AppRouteKey> = {
-  'venda':             'comercial',
-  'liberacao-venda':   'comercial-liberacao',
-  'suporte':           'pedido-suporte',
-  'liberacao-suporte': 'pedido-suporte-liberacao',
-  'status':            'atualizacao-status',
-  'painel':            'painel-pedidos',
+  'venda':   'comercial',
+  'suporte': 'pedido-suporte',
+  'status':  'atualizacao-status',
+  'painel':  'painel-pedidos',
 };
 
 const TAB_LABELS: Record<TabKey, string> = {
-  'venda':             'Pedidos Venda',
-  'liberacao-venda':   'Liberar p/ Produção',
-  'suporte':           'Pedidos Suporte',
-  'liberacao-suporte': 'Liberar Suporte',
-  'status':            'Status Pedido',
-  'painel':            'Painel de Pedidos',
+  'venda':   'Pedidos Venda',
+  'suporte': 'Pedidos Suporte',
+  'status':  'Status Pedido',
+  'painel':  'Painel de Pedidos',
 };
 
-const ALL_TABS: TabKey[] = ['venda', 'liberacao-venda', 'suporte', 'liberacao-suporte', 'status', 'painel'];
+const ALL_TABS: TabKey[] = ['venda', 'suporte', 'status', 'painel'];
 
 const Pedidos = () => {
   const { user } = useApp();
@@ -75,12 +69,10 @@ const Pedidos = () => {
         </div>
       </div>
 
-      {activeTab === 'venda'             && <Commercial />}
-      {activeTab === 'liberacao-venda'   && <ComercialLiberacao />}
-      {activeTab === 'suporte'           && <PedidoSuporte />}
-      {activeTab === 'liberacao-suporte' && <PedidoSuporteLiberacao />}
-      {activeTab === 'status'            && <AtualizacaoStatus />}
-      {activeTab === 'painel'            && <PainelPedidos />}
+      {activeTab === 'venda'   && <Commercial />}
+      {activeTab === 'suporte' && <PedidoSuporte />}
+      {activeTab === 'status'  && <AtualizacaoStatus />}
+      {activeTab === 'painel'  && <PainelPedidos />}
     </div>
   );
 };
