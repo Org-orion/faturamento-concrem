@@ -191,6 +191,17 @@ export function canAccessRoute(
   if (role === 'ADMIN') return true;
   const path = pathname.split('?')[0].split('#')[0];
   if (path === '/acesso-negado' || path === '/login') return true;
+
+  // /pedidos is the hub — allow access if the user can view any of its sub-routes
+  if (path === '/pedidos') {
+    const hubRoutes: AppRouteKey[] = [
+      'pedidos', 'comercial', 'comercial-liberacao',
+      'pedido-suporte', 'pedido-suporte-liberacao',
+      'painel-pedidos', 'atualizacao-status',
+    ];
+    return hubRoutes.some((r) => canDo(role, permissions ?? null, r, 'view'));
+  }
+
   const routeKey = pathnameToRouteKey(path);
   if (routeKey === null) return true;
   return canDo(role, permissions ?? null, routeKey, 'view');
