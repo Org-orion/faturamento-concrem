@@ -283,15 +283,17 @@ const nextId = (prefix: string, key: keyof typeof counters) => {
 };
 
 // Venda: id_nota_conf 307 ou 309 com total >= 10k, ou total < 10k apenas se ped_compra_cliente = COMPLEMENTO ou APTO MODELO
+// Venda: 307/309 com valor efetivo >= 20000 E ped_compra_cliente nulo, APTO MODELO ou COMPLEMENTO
+// valor efetivo = total_pedido_venda se >= 0, senão total_produtos
 export const vendasOr = [
-  'and(id_nota_conf.in.(307,309),total_pedido_venda.gte.10000)',
-  'and(id_nota_conf.in.(307,309),or(total_pedido_venda.is.null,total_pedido_venda.lt.10000),or(ped_compra_cliente.ilike.*COMPLEMENTO*,ped_compra_cliente.ilike.*APTO*MODELO*))',
+  'and(id_nota_conf.in.(307,309),or(total_pedido_venda.gte.20000,and(or(total_pedido_venda.is.null,total_pedido_venda.lt.0),total_produtos.gte.20000)),or(ped_compra_cliente.is.null,ped_compra_cliente.ilike.*APTO MODELO*,ped_compra_cliente.ilike.*COMPLEMENTO*))',
 ].join(',');
 
-// Suporte: id_nota_conf 613 ou 665 (sempre), ou 307/309 com total < 10k e ped_compra_cliente != COMPLEMENTO/APTO MODELO
+// Suporte: 613/665 (sempre); ou 307/309 com valor efetivo < 20000; ou 307/309 com ped_compra_cliente "outro" (não vazio, não APTO MODELO, não COMPLEMENTO)
 export const suporteOr = [
   'id_nota_conf.in.(613,665)',
-  'and(id_nota_conf.in.(307,309),or(total_pedido_venda.is.null,total_pedido_venda.lt.10000),or(ped_compra_cliente.is.null,and(ped_compra_cliente.not.ilike.*COMPLEMENTO*,ped_compra_cliente.not.ilike.*APTO*MODELO*)))',
+  'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gte.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lt.0),or(total_produtos.is.null,total_produtos.lt.20000))))',
+  'and(id_nota_conf.in.(307,309),ped_compra_cliente.not.is.null,ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*)',
 ].join(',');
 
 export const tableColumns =

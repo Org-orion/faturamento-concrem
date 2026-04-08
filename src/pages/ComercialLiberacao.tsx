@@ -96,13 +96,17 @@ const ComercialLiberacao = () => {
         return;
       }
 
+      // totalPedidoVenda already has the fallback applied by pedidoMapper (uses total_produtos when tv <= 0)
       const isSuporteRow = (o: Order) => {
         const conf = o.idNotaConf;
         if (conf === 613 || conf === 665) return true;
         if (conf === 307 || conf === 309) {
           const tv = o.totalPedidoVenda ?? 0;
-          const pc = (o.pedCompraCliente ?? '').toUpperCase();
-          if (tv < 10000 && !pc.includes('COMPLEMENTO') && !pc.includes('APTO') && !pc.includes('MODELO')) return true;
+          const pc = (o.pedCompraCliente ?? '').toUpperCase().trim();
+          const isApoModelo = pc.includes('APTO MODELO');
+          const isComplemento = pc.includes('COMPLEMENTO');
+          if (tv < 20000) return true;
+          if (pc.length > 0 && !isApoModelo && !isComplemento) return true;
         }
         return false;
       };

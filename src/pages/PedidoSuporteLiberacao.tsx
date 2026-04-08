@@ -4,18 +4,21 @@ import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { btnPrimary } from '@/components/shared';
 import { ArrowLeft, CheckCircle2, Plus, Trash2 } from 'lucide-react';
-import { SupportOrder, PedidoStatusRow } from '@/types';
+import { SupportOrder } from '@/types';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { applyFilters } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
-
+import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { tableColumns } from '@/contexts/AppContext';
+import { rowToSupportOrder } from '@/lib/pedidoMapper';
 
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useColumnFilters } from '@/hooks/useColumnFilters';
 import { SortableHeader } from '@/components/table/SortableHeader';
 import type { ColDef } from '@/hooks/useColumnFilters';
-import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import type { ColFilterSlot } from '@/components/table/ColumnFilterRow';
+import { updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 import { fmtDate } from '@/lib/dateUtils';
 
 const formatDateBR = (iso?: string) => {
@@ -25,14 +28,43 @@ const formatDateBR = (iso?: string) => {
 
 const PedidoSuporteLiberacao = () => {
   const navigate = useNavigate();
-  const { supportOrders, user } = useApp();
+  const { user } = useApp();
   const { showToast } = useToast();
 
   const [loadIds, setLoadIds] = useState<string[]>([]);
   const [session3Selected, setSession3Selected] = useState<string[]>([]);
 
-  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
-  const statusByPedidoId = useMemo(() => new Map(statusRows.map(r => [r.pedido_id, r] as const)), [statusRows]);
+  // Orders fetched directly from pedidos_status with liberado_comercial
+  const [suporteOrders, setSuporteOrders] = useState<SupportOrder[]>([]);
+  const [loading, setLoading] = useState(false);
+
+  const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+
+  const refreshOrders = async () => {
+    if (!supabaseOps || !supabasePedidos) return;
+    setLoading(true);
+    try {
+      const { data: statusData } = await supabaseOps
+        .from('pedidos_status')
+        .select('pedido_id')
+        .eq('status_atual', 'liberado_comercial');
+      if (!statusData?.length) { setSuporteOrders([]); return; }
+
+      const ids = (statusData as any[]).map((r: any) => String(r.pedido_id));
+      const { data: pedidosData, error } = await supabasePedidos
+        .from(table)
+        .select(tableColumns)
+        .in('numero_pedido', ids);
+      if (error) { console.error('[PedidoSuporteLiberacao] pedidos query:', error.message); return; }
+
+      const mapped = (pedidosData || []).map((row: any) => rowToSupportOrder(row));
+      setSuporteOrders(mapped);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { void refreshOrders(); }, []);
 
   const [liberatedToProducaoIds, setLiberatedToProducaoIds] = useState<Set<string>>(new Set());
 
@@ -124,14 +156,14 @@ const PedidoSuporteLiberacao = () => {
   }), []);
 
   const uniqueClientes = useMemo(() => {
-    const set = new Set(supportOrders.map((o) => `${o.clientCode || ''} ${o.clientName || ''}`.trim()).filter(Boolean));
+    const set = new Set(suporteOrders.map((o) => `${o.clientCode || ''} ${o.clientName || ''}`.trim()).filter(Boolean));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [supportOrders]);
+  }, [suporteOrders]);
 
   const uniqueRepresentantes = useMemo(() => {
-    const set = new Set(supportOrders.map((o) => o.representativeName || '').filter(Boolean));
+    const set = new Set(suporteOrders.map((o) => o.representativeName || '').filter(Boolean));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [supportOrders]);
+  }, [suporteOrders]);
 
   const s12FilterFields = useMemo(() => [
     { id: 'pedido', label: 'Número do pedido', type: 'text', getValue: (o: SupportOrder) => o.id, placeholder: 'Ex: SUP-001' },
@@ -149,30 +181,22 @@ const PedidoSuporteLiberacao = () => {
     { id: 'emissao', label: 'Data emissão', type: 'date', getValue: (o: SupportOrder) => o.date || '' },
   ] satisfies Array<FilterField<SupportOrder>>, []);
 
-  // Load status rows when supportOrders change
-  useEffect(() => {
-    const ids = supportOrders.map(o => o.id);
-    if (!ids.length) return;
-    void listPedidosStatusByPedidoIds(ids).then(setStatusRows);
-  }, [supportOrders]);
-
-  // Section 1 candidates: supportOrders with liberado_comercial status, not in load
+  // Section 1 candidates: all orders fetched from pedidos_status with liberado_comercial
   const s2Orders = useMemo(() => {
-    return supportOrders
+    return suporteOrders
       .filter(o => {
         if (liberatedToProducaoIds.has(o.id)) return false;
         if (loadIds.includes(o.id)) return false;
-        const st = statusByPedidoId.get(o.id)?.status_atual;
-        return st === 'liberado_comercial';
+        return true;
       })
       .sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || String(a.id).localeCompare(String(b.id)));
-  }, [supportOrders, statusByPedidoId, loadIds, liberatedToProducaoIds]);
+  }, [suporteOrders, loadIds, liberatedToProducaoIds]);
 
   // Section 2: current load
   const s3Orders = useMemo(() => {
-    const map = new Map(supportOrders.map((o) => [o.id, o] as const));
+    const map = new Map(suporteOrders.map((o) => [o.id, o] as const));
     return loadIds.map((id) => map.get(id)).filter(Boolean) as SupportOrder[];
-  }, [loadIds, supportOrders]);
+  }, [loadIds, suporteOrders]);
 
   const s2Filtered = useMemo(
     () => s2SortItems(s2QuickFilter(applyFilters(s2ColFilter.filterItems(s2Orders, s2ColDefs), s12FilterFields, s2Conditions), s12TextGetters), s12SortGetters),
@@ -214,10 +238,10 @@ const PedidoSuporteLiberacao = () => {
       });
     }
 
-    setLiberatedToProducaoIds(prev => { const next = new Set(prev); loadIds.forEach(id => next.add(id)); return next; });
     setLoadIds([]);
     setSession3Selected([]);
     showToast('Carga liberada para Produção');
+    void refreshOrders();
   };
 
   return (
@@ -262,7 +286,9 @@ const PedidoSuporteLiberacao = () => {
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
-                {s2Filtered.length === 0 ? (
+                {loading ? (
+                  <tr><td colSpan={7} className="py-10 text-center text-muted-foreground italic">Carregando pedidos...</td></tr>
+                ) : s2Filtered.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="py-10 text-center text-muted-foreground italic">
                       Nenhum pedido aguardando liberação.
