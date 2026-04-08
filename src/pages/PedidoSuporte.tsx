@@ -23,10 +23,6 @@ import { SortableHeader } from '@/components/table/SortableHeader';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
 
-const statusColors: Record<string, string> = {
-  'Aguardando Avaliação': 'bg-status-warning/15 text-status-warning',
-  'Liberado p/ Produção': 'bg-status-success/15 text-status-success',
-};
 
 const PedidoSuporte = () => {
   const { orders, supportOrders, user, updateOrderCommercialNotes, updateSupportOrderCommercialNotes, decideOrderCommercial, decideSupportOrderCommercial, createProductionSchedule } =
@@ -568,7 +564,7 @@ const PedidoSuporte = () => {
               <div className="bg-muted/20 border border-border rounded-lg p-4">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</p>
                 <div className="mt-2">
-                  <StatusBadge status={selectedOrderDetails.status} colorMap={statusColors} />
+                  <PedidoStatusBadge value={(statusByPedidoId.get(selectedOrderDetails.id)?.status_atual ?? 'aguardando_avaliacao') as PedidoStatusValue} />
                 </div>
                 {selectedOrderDetails.previsaoCarregamento && <p className="text-xs text-muted-foreground mt-3">Previsão de Carregamento: <span className="font-semibold text-foreground">{selectedOrderDetails.previsaoCarregamento}</span></p>}
                 <p className="text-xs text-muted-foreground mt-3">Valor total: <span className="font-mono-data font-bold text-foreground">{formatCurrency(getOrderTotal(selectedOrderDetails))}</span></p>
