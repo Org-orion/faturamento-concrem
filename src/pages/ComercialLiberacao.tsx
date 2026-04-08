@@ -96,7 +96,17 @@ const ComercialLiberacao = () => {
         return;
       }
 
-      const mapped = (pedidosData || []).map((row: any) => rowToOrder(row, 'CLI-001'));
+      const isSuporteRow = (o: Order) => {
+        const conf = o.idNotaConf;
+        if (conf === 613 || conf === 665) return true;
+        if (conf === 307 || conf === 309) {
+          const tv = o.totalPedidoVenda ?? 0;
+          const pc = (o.pedCompraCliente ?? '').toUpperCase();
+          if (tv < 10000 && !pc.includes('COMPLEMENTO') && !pc.includes('APTO') && !pc.includes('MODELO')) return true;
+        }
+        return false;
+      };
+      const mapped = (pedidosData || []).map((row: any) => rowToOrder(row, 'CLI-001')).filter(o => !isSuporteRow(o));
       const statusMap = new Map((statusData as any[]).map((r: any) => [r.pedido_id, r] as const));
       setDirectOrders(mapped);
       setStatusRowsDirect(statusMap);

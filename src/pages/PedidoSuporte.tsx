@@ -54,6 +54,7 @@ const PedidoSuporte = () => {
 
   // Track ops status rows to filter out already-liberated orders
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const [loadingStatus, setLoadingStatus] = useState(false);
   const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [String(r.pedido_id), r] as const)), [statusRows]);
   const [liberatedIds, setLiberatedIds] = useState<Set<string>>(new Set());
 
@@ -91,14 +92,25 @@ const PedidoSuporte = () => {
   // Load ops status rows when serverOrders change
   useEffect(() => {
     const ids = serverOrders.map(o => o.id);
-    if (!ids.length) return;
-    void listPedidosStatusByPedidoIds(ids).then(setStatusRows);
+    if (!ids.length) { setStatusRows([]); setLoadingStatus(false); return; }
+    setLoadingStatus(true);
+    void listPedidosStatusByPedidoIds(ids).then(rows => {
+      setStatusRows(rows);
+      setLoadingStatus(false);
+    });
   }, [serverOrders]);
 
-  // Sort and filtering are server-side; hide only orders liberated in this session
+  // Hide orders liberated in this session OR already processed (status != aguardando_avaliacao)
   const displayedOrders = useMemo(() => {
-    return serverOrders.filter(o => !liberatedIds.has(o.id));
-  }, [serverOrders, liberatedIds]);
+    if (loadingStatus) return []; // wait for status rows before showing
+    return serverOrders.filter(o => {
+      if (liberatedIds.has(o.id)) return false;
+      const st = statusByPedidoId.get(o.id)?.status_atual;
+      // If there's an explicit status beyond aguardando_avaliacao, hide the order
+      if (st && st !== 'aguardando_avaliacao') return false;
+      return true;
+    });
+  }, [serverOrders, liberatedIds, statusByPedidoId, loadingStatus]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(serverOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
