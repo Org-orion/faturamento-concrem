@@ -5,6 +5,8 @@ import { PedidoStatusValue, PedidoStatusHistoricoRow } from '@/types';
 import { cn } from '@/lib/utils';
 import { UnifiedPedido, PedidoStatusById } from './types';
 import { fmtDateTime } from '@/lib/dateUtils';
+import { usePrioridades } from '@/contexts/PrioridadesContext';
+import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
 
 const formatCurrency = (v: number) =>
   v.toLocaleString('pt-BR', {
@@ -25,6 +27,7 @@ export function PainelPedidosList({
   selectedHistory?: PedidoStatusHistoricoRow[];
   onSelect: (id: string) => void;
 }) {
+  const { map: prioMap } = usePrioridades();
   if (!pedidos.length) {
     return (
       <div className="bg-card rounded-xl border border-border p-10 text-center text-muted-foreground">
@@ -50,8 +53,9 @@ export function PainelPedidosList({
           >
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <div className="font-bold text-foreground truncate">{p.cliente}</div>
+                  {prioMap.has(p.id) && <PrioridadeIcon nivel={prioMap.get(p.id)!.nivel} motivo={prioMap.get(p.id)!.motivo} />}
                   <PedidoStatusBadge value={st} />
                 </div>
                 <div className="mt-1 text-sm text-muted-foreground">

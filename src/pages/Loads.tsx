@@ -5,7 +5,7 @@ import { formatCurrency, getOrderTotal, loadStatusColors, StatusBadge, btnSecond
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import type { Order, PedidoStatusRow } from '@/types';
-import { Edit2, Plus, Package, FileText, Download } from 'lucide-react';
+import { Edit2, Plus, Package, FileText, Download, Eye, X, Truck, Calendar, DollarSign } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoSrc from '@/assets/logo-programacao.png';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -16,6 +16,8 @@ import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import type { Load } from '@/types';
 import { fmtDate, todayBR } from '@/lib/dateUtils';
+import { usePrioridades } from '@/contexts/PrioridadesContext';
+import { PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
 
 type ReportRow = {
   driverName: string;
@@ -63,9 +65,11 @@ const shipmentStatuses = [
 
 const LoadsPage = () => {
   const { loads, drivers, orders, supportOrders } = useApp();
+  const { map: prioMap } = usePrioridades();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [extraOrders, setExtraOrders] = useState<Order[]>([]);
   const [pedidoStatusMap, setPedidoStatusMap] = useState<Map<string, PedidoStatusRow>>(new Map());
+  const [quickViewLoad, setQuickViewLoad] = useState<Load | null>(null);
 
   // Buscar pedidos extras (não estão no AppContext) e status de todos os pedidos dos carregamentos
   useEffect(() => {
@@ -142,6 +146,7 @@ const LoadsPage = () => {
   const colFilterSlots: ColFilterSlot[] = [
     { type: 'none' },
     { key: 'id', type: 'text', placeholder: 'Código...' },
+    { type: 'none' },
     { key: 'driver', type: 'text', placeholder: 'Motorista...' },
     { key: 'date', type: 'text', placeholder: 'Data...' },
     { type: 'none' },
@@ -392,6 +397,7 @@ const LoadsPage = () => {
                 <SortableHeader columnKey="id" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
                   Carregamento
                 </SortableHeader>
+                <th className="w-32 py-2 text-center" />
                 <SortableHeader columnKey="driver" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
                   Motorista
                 </SortableHeader>
@@ -428,6 +434,13 @@ const LoadsPage = () => {
                       />
                     </td>
                     <td className="py-4 px-6 font-mono-data font-bold text-primary">{load.id}</td>
+                    <td className="w-32 py-2 text-center align-middle">
+                      <div className="flex items-center justify-center gap-1 flex-wrap">
+                        {load.orderIds.filter(id => prioMap.has(id)).map(id => (
+                          <PrioridadeDot key={id} nivel={prioMap.get(id)!.nivel} />
+                        ))}
+                      </div>
+                    </td>
                     <td className="py-4 px-6">
                       <div className="flex flex-col">
                         <span className="font-display font-bold text-foreground">{driver?.name || '-'}</span>
@@ -449,13 +462,23 @@ const LoadsPage = () => {
                       <StatusBadge status={load.shipmentStatus} colorMap={loadStatusColors} />
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <Link
-                        to={`/carregamento/editar/${load.id}`}
-                        className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
-                      >
-                        <Edit2 className="h-3 w-3" />
-                        Editar
-                      </Link>
+                      <div className="inline-flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setQuickViewLoad(load)}
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
+                        >
+                          <Eye className="h-3 w-3" />
+                          Ver
+                        </button>
+                        <Link
+                          to={`/carregamento/editar/${load.id}`}
+                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
+                        >
+                          <Edit2 className="h-3 w-3" />
+                          Editar
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 );
@@ -470,6 +493,116 @@ const LoadsPage = () => {
           </div>
         )}
       </div>
+
+      {/* Modal de visualização rápida */}
+      {quickViewLoad && (() => {
+        const allAvailable = [...orders, ...supportOrders as unknown as Order[], ...extraOrders];
+        const loadOrders = allAvailable.filter(o => quickViewLoad.orderIds.includes(o.id));
+        const driver = drivers.find(d => d.id === quickViewLoad.driverId);
+        const totalOrderValue = loadOrders.reduce((acc, o) => acc + (o.totalPedidoVenda || getOrderTotal(o)), 0);
+        const priorityOrders = loadOrders.filter(o => prioMap.has(o.id));
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setQuickViewLoad(null)}>
+            <div className="bg-card rounded-xl border border-border shadow-xl w-full max-w-2xl max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
+              {/* Header */}
+              <div className="flex items-center justify-between p-5 border-b border-border">
+                <div className="flex items-center gap-3">
+                  <div className="h-9 w-9 rounded-lg bg-primary/10 flex items-center justify-center">
+                    <Truck className="h-4 w-4 text-primary" />
+                  </div>
+                  <div>
+                    <div className="font-bold text-foreground font-mono-data">{quickViewLoad.id}</div>
+                    <div className="text-xs text-muted-foreground">{driver?.name || 'Sem motorista'} · {driver?.vehicleType || '-'}</div>
+                  </div>
+                  <span className={`ml-2 inline-flex items-center px-2.5 py-1 rounded-full text-xs font-semibold border ${loadStatusColors[quickViewLoad.shipmentStatus || ''] || 'bg-muted text-muted-foreground border-border'}`}>
+                    {quickViewLoad.shipmentStatus || 'Aguardando Despacho'}
+                  </span>
+                </div>
+                <button type="button" onClick={() => setQuickViewLoad(null)} className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors">
+                  <X className="h-4 w-4 text-muted-foreground" />
+                </button>
+              </div>
+
+              {/* Summary */}
+              <div className="flex items-center gap-6 px-5 py-3 border-b border-border bg-muted/30">
+                <div className="flex items-center gap-1.5 text-sm">
+                  <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="font-medium">{quickViewLoad.plannedDate ? fmtDate(quickViewLoad.plannedDate) : '-'}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-sm">
+                  <Package className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="font-medium">{quickViewLoad.orderIds.length} pedido{quickViewLoad.orderIds.length !== 1 ? 's' : ''}</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-sm">
+                  <DollarSign className="h-3.5 w-3.5 text-muted-foreground" />
+                  <span className="font-mono-data font-bold text-foreground">{formatCurrency(totalOrderValue)}</span>
+                  <span className="text-muted-foreground text-xs">pedidos</span>
+                </div>
+                <div className="flex items-center gap-1.5 text-sm">
+                  <DollarSign className="h-3.5 w-3.5 text-emerald-600" />
+                  <span className="font-mono-data font-bold text-emerald-700">{formatCurrency(quickViewLoad.freightValue || 0)}</span>
+                  <span className="text-muted-foreground text-xs">frete</span>
+                </div>
+              </div>
+
+              {/* Priority alert */}
+              {priorityOrders.length > 0 && (
+                <div className="px-5 py-2 bg-red-50 border-b border-red-100 flex items-center gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-red-700 uppercase tracking-wide">Atenção — pedidos prioritários:</span>
+                  {priorityOrders.map(o => (
+                    <span key={o.id} className="inline-flex items-center gap-1 text-xs font-bold text-red-700 bg-red-100 px-2 py-0.5 rounded-full">
+                      <PrioridadeDot nivel={prioMap.get(o.id)!.nivel} />
+                      {o.id} · {prioMap.get(o.id)!.nivel}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Order list */}
+              <div className="flex-1 overflow-y-auto">
+                {loadOrders.length === 0 ? (
+                  <div className="py-10 text-center text-muted-foreground text-sm italic">Pedidos não encontrados.</div>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead className="sticky top-0 bg-muted/50 border-b border-border">
+                      <tr>
+                        <th className="py-2 px-4 text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Nº Pedido</th>
+                        <th className="py-2 px-4 text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cliente</th>
+                        <th className="py-2 px-4 text-left text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Cidade/UF</th>
+                        <th className="py-2 px-4 text-right text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Valor</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-border/50">
+                      {loadOrders.map(o => (
+                        <tr key={o.id} className="hover:bg-muted/20 transition-colors">
+                          <td className="py-3 px-4 font-mono-data font-bold text-primary">
+                            <div className="flex items-center gap-1.5">
+                              {prioMap.has(o.id) && <PrioridadeDot nivel={prioMap.get(o.id)!.nivel} />}
+                              {o.id}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4 font-medium truncate max-w-[180px]">{o.clientName || o.clientCode || '-'}</td>
+                          <td className="py-3 px-4 text-muted-foreground">{o.clientCity && o.clientUF ? `${o.clientCity}/${o.clientUF}` : '-'}</td>
+                          <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(o.totalPedidoVenda || getOrderTotal(o))}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-end gap-3 p-4 border-t border-border">
+                <button type="button" onClick={() => setQuickViewLoad(null)} className="px-4 py-2 rounded-lg border border-border text-sm font-semibold hover:bg-muted transition-colors">Fechar</button>
+                <Link to={`/carregamento/editar/${quickViewLoad.id}`} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity">
+                  <Edit2 className="h-3.5 w-3.5" />
+                  Editar
+                </Link>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

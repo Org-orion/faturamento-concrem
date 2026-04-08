@@ -27,14 +27,26 @@ export function currentHourBR(): number {
   return Number(new Intl.DateTimeFormat('en', { timeZone: TZ, hour: 'numeric', hour12: false }).format(new Date()));
 }
 
+/**
+ * Normaliza uma string de data para evitar o problema de UTC meia-noite.
+ * Strings "YYYY-MM-DD" sem horário são interpretadas pelo JS como UTC 00:00,
+ * o que em Brasília (UTC-3) recua para o dia anterior.
+ * Adicionando T12:00:00 garantimos que a data seja sempre interpretada no dia correto.
+ */
+function normalizeDate(iso: string): Date {
+  return /^\d{4}-\d{2}-\d{2}$/.test(iso.trim())
+    ? new Date(`${iso.trim()}T12:00:00`)
+    : new Date(iso);
+}
+
 /** Formata uma string ISO como data legível em pt-BR com fuso de Brasília. Ex: 02/04/2026 */
 export function fmtDate(iso?: string | null): string {
   if (!iso) return '-';
-  return new Date(iso).toLocaleDateString('pt-BR', { timeZone: TZ });
+  return normalizeDate(iso).toLocaleDateString('pt-BR', { timeZone: TZ });
 }
 
 /** Formata uma string ISO como data e hora legível em pt-BR com fuso de Brasília. Ex: 02/04/2026 14:30:00 */
 export function fmtDateTime(iso?: string | null): string {
   if (!iso) return '-';
-  return new Date(iso).toLocaleString('pt-BR', { timeZone: TZ });
+  return normalizeDate(iso).toLocaleString('pt-BR', { timeZone: TZ });
 }

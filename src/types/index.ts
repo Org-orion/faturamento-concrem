@@ -95,16 +95,17 @@ export type OrderStatus =
   | 'Cancelado';
 
 export type PedidoStatusValue =
-  | 'aguardando_avaliacao'
-  | 'liberado_comercial'
-  | 'aguardando_gerencia'
-  | 'confirmado_gerencia'
-  | 'liberado_producao'
+  | 'aprovacao_politica'
   | 'aguardando_mapeamento'
   | 'mapeamento_andamento'
   | 'mapeamento_concluido'
   | 'aguardando_ferragem'
   | 'ferragem_recebida'
+  | 'aguardando_avaliacao'
+  | 'liberado_comercial'
+  | 'aguardando_gerencia'
+  | 'confirmado_gerencia'
+  | 'liberado_producao'
   | 'em_producao'
   | 'producao_finalizada'
   | 'faturado'

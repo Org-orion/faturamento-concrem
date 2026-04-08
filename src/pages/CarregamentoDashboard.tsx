@@ -1,10 +1,13 @@
 import React, { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
+import { canDo, type UserRole } from '@/utils/access';
 import { formatCurrency } from '@/components/shared';
 import { todayBR, fmtDate } from '@/lib/dateUtils';
-import { ChevronLeft, ChevronRight, Truck, Package, DollarSign, Weight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Truck, Package, DollarSign, Weight, Search } from 'lucide-react';
 import type { Load } from '@/types';
+import { usePrioridades } from '@/contexts/PrioridadesContext';
+import { PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
 
 type ViewMode = 'semana' | 'mes' | 'lista';
 
@@ -78,31 +81,27 @@ interface LoadCardProps {
   load: Load;
   driverName: string;
   compact?: boolean;
+  canEdit?: boolean;
+  priorityNivel?: string;
 }
 
-function LoadCard({ load, driverName, compact }: LoadCardProps) {
+function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel }: LoadCardProps) {
   const status = load.shipmentStatus || 'Aguardando Despacho';
   const colorClass = STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 border-gray-200';
   const leftClass = STATUS_LEFT[status] || 'bg-gray-400';
 
   if (compact) {
-    return (
-      <Link
-        to={`/carregamento/editar/${load.id}`}
-        className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-semibold truncate ${colorClass} hover:opacity-80 transition-opacity`}
-        title={`${driverName} — ${formatCurrency(load.freightValue || 0)}`}
-      >
-        <Truck className="h-2.5 w-2.5 shrink-0" />
-        <span className="truncate">{driverName}</span>
-      </Link>
+    const cls = `flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-semibold truncate ${colorClass} hover:opacity-80 transition-opacity`;
+    const content = <>{priorityNivel && <PrioridadeDot nivel={priorityNivel as any} />}<Truck className="h-2.5 w-2.5 shrink-0" /><span className="truncate">{driverName}</span></>;
+    return canEdit ? (
+      <Link to={`/carregamento/editar/${load.id}`} className={cls} title={`${driverName} — ${formatCurrency(load.freightValue || 0)}`}>{content}</Link>
+    ) : (
+      <div className={cls} title={`${driverName} — ${formatCurrency(load.freightValue || 0)}`}>{content}</div>
     );
   }
 
-  return (
-    <Link
-      to={`/carregamento/editar/${load.id}`}
-      className="flex rounded-lg border border-border bg-card overflow-hidden hover:shadow-md transition-shadow group"
-    >
+  const innerContent = (
+    <>
       <div className={`w-1 shrink-0 ${leftClass}`} />
       <div className="flex-1 p-3 min-w-0">
         <div className="flex items-start justify-between gap-2 mb-1.5">
@@ -113,6 +112,7 @@ function LoadCard({ load, driverName, compact }: LoadCardProps) {
           <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${colorClass}`}>{status}</span>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
+          {priorityNivel && <span className="flex items-center gap-1"><PrioridadeDot nivel={priorityNivel as any} /></span>}
           <span className="flex items-center gap-1"><Package className="h-3 w-3" />{load.orderIds.length} pedido{load.orderIds.length !== 1 ? 's' : ''}</span>
           <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatCurrency(load.freightValue || 0)}</span>
           {(load.estimatedWeight || 0) > 0 && (
@@ -120,13 +120,26 @@ function LoadCard({ load, driverName, compact }: LoadCardProps) {
           )}
         </div>
       </div>
-    </Link>
+    </>
+  );
+
+  return canEdit ? (
+    <Link to={`/carregamento/editar/${load.id}`} className="flex rounded-lg border border-border bg-card overflow-hidden hover:shadow-md transition-shadow group">{innerContent}</Link>
+  ) : (
+    <div className="flex rounded-lg border border-border bg-card overflow-hidden group">{innerContent}</div>
   );
 }
 
 // ── day column (week view) ────────────────────────────────────────────────────
 
-function DayColumn({ dateStr, loads, driverMap, today }: { dateStr: string; loads: Load[]; driverMap: Map<string, string>; today: string }) {
+function getLoadPriorityNivel(load: Load, prioMap: Map<string, { nivel: string }>): string | undefined {
+  for (const nivel of ['urgente', 'alta', 'media'] as const) {
+    if (load.orderIds.some(id => prioMap.get(id)?.nivel === nivel)) return nivel;
+  }
+  return undefined;
+}
+
+function DayColumn({ dateStr, loads, driverMap, today, canEdit, prioMap }: { dateStr: string; loads: Load[]; driverMap: Map<string, string>; today: string; canEdit: boolean; prioMap: Map<string, { nivel: string }> }) {
   const d = parseISO(dateStr);
   const dayName = DAYS_BR[d.getDay()];
   const dayNum = d.getDate();
@@ -147,7 +160,7 @@ function DayColumn({ dateStr, loads, driverMap, today }: { dateStr: string; load
           <div className="text-[10px] text-muted-foreground/50 text-center py-2">—</div>
         ) : (
           loads.map((l) => (
-            <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} />
+            <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} canEdit={canEdit} priorityNivel={getLoadPriorityNivel(l, prioMap)} />
           ))
         )}
       </div>
@@ -157,7 +170,7 @@ function DayColumn({ dateStr, loads, driverMap, today }: { dateStr: string; load
 
 // ── month cell ────────────────────────────────────────────────────────────────
 
-function MonthCell({ dateStr, loads, driverMap, today, currentMonth }: { dateStr: string; loads: Load[]; driverMap: Map<string, string>; today: string; currentMonth: string }) {
+function MonthCell({ dateStr, loads, driverMap, today, currentMonth, canEdit, prioMap }: { dateStr: string; loads: Load[]; driverMap: Map<string, string>; today: string; currentMonth: string; canEdit: boolean; prioMap: Map<string, { nivel: string }> }) {
   const d = parseISO(dateStr);
   const dayNum = d.getDate();
   const isToday = dateStr === today;
@@ -176,7 +189,7 @@ function MonthCell({ dateStr, loads, driverMap, today, currentMonth }: { dateStr
       </div>
       <div className="flex flex-col gap-0.5">
         {loads.slice(0, 3).map((l) => (
-          <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} compact />
+          <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} compact canEdit={canEdit} priorityNivel={getLoadPriorityNivel(l, prioMap)} />
         ))}
         {loads.length > 3 && (
           <span className="text-[10px] text-muted-foreground font-semibold pl-1">+{loads.length - 3} mais</span>
@@ -189,11 +202,18 @@ function MonthCell({ dateStr, loads, driverMap, today, currentMonth }: { dateStr
 // ── main component ────────────────────────────────────────────────────────────
 
 const CarregamentoDashboard = () => {
-  const { loads, drivers } = useApp();
+  const { loads, drivers, user } = useApp();
+  const { map: prioMap } = usePrioridades();
   const today = todayBR();
+
+  const canEditLoad = useMemo(() => {
+    if (!user) return false;
+    return canDo(user.role as UserRole, user.permissions ?? null, 'programacao', 'edit');
+  }, [user]);
 
   const [view, setView] = useState<ViewMode>('semana');
   const [anchor, setAnchor] = useState(today); // week: monday, month: first of month, list: any
+  const [pedidoFilter, setPedidoFilter] = useState('');
 
   const driverMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -220,17 +240,24 @@ const CarregamentoDashboard = () => {
     return cells;
   }, [monthFirst]);
 
+  // ── filtered loads ──
+  const filteredLoads = useMemo(() => {
+    const q = pedidoFilter.trim();
+    if (!q) return loads;
+    return loads.filter((l) => l.orderIds.some((id) => id.includes(q)));
+  }, [loads, pedidoFilter]);
+
   // ── loads by date ──
   const loadsByDate = useMemo(() => {
     const m = new Map<string, Load[]>();
-    for (const l of loads) {
+    for (const l of filteredLoads) {
       const d = l.plannedDate?.slice(0, 10);
       if (!d) continue;
       if (!m.has(d)) m.set(d, []);
       m.get(d)!.push(l);
     }
     return m;
-  }, [loads]);
+  }, [filteredLoads]);
 
   // ── list view: all dates with loads, sorted ──
   const listDates = useMemo(() => {
@@ -324,9 +351,21 @@ const CarregamentoDashboard = () => {
           </div>
         )}
 
+        {/* Filtro por pedido */}
+        <div className="relative ml-auto">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+          <input
+            type="text"
+            value={pedidoFilter}
+            onChange={(e) => setPedidoFilter(e.target.value)}
+            placeholder="Filtrar por nº pedido..."
+            className="pl-8 pr-3 py-1.5 w-48 text-xs rounded-lg border border-input bg-card text-foreground font-display focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+        </div>
+
         {/* Week summary chips */}
         {view === 'semana' && weekTotals.count > 0 && (
-          <div className="flex gap-2 ml-auto">
+          <div className="flex gap-2">
             <Chip icon={Truck} value={String(weekTotals.count)} label="carreg." />
             <Chip icon={Package} value={String(weekTotals.orders)} label="pedidos" />
             <Chip icon={DollarSign} value={formatCurrency(weekTotals.freight)} label="frete" color="text-emerald-600" />
@@ -344,6 +383,8 @@ const CarregamentoDashboard = () => {
               loads={loadsByDate.get(d) || []}
               driverMap={driverMap}
               today={today}
+              canEdit={canEditLoad}
+              prioMap={prioMap}
             />
           ))}
         </div>
@@ -368,6 +409,8 @@ const CarregamentoDashboard = () => {
                 driverMap={driverMap}
                 today={today}
                 currentMonth={monthStr}
+                canEdit={canEditLoad}
+                prioMap={prioMap}
               />
             ))}
           </div>
@@ -396,7 +439,7 @@ const CarregamentoDashboard = () => {
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
                     {dayLoads.map((l) => (
-                      <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} />
+                      <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'} canEdit={canEditLoad} priorityNivel={getLoadPriorityNivel(l, prioMap)} />
                     ))}
                   </div>
                 </div>

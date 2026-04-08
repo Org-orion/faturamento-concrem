@@ -8,7 +8,10 @@ import {
   CreditCard,
   ChevronDown,
   User,
-  LogOut
+  LogOut,
+  ClipboardList,
+  TriangleAlert,
+  Factory,
 } from 'lucide-react';
 import { useSidebar } from './MainLayout';
 import { cn } from '@/lib/utils';
@@ -33,6 +36,9 @@ const iconMap = {
   box: Package,
   file: FileText,
   'credit-card': CreditCard,
+  'clipboard-list': ClipboardList,
+  flame: TriangleAlert,
+  factory: Factory,
 } as const;
 
 type MenuChild = { title: string; href: string; icon?: LucideIcon };

@@ -5,6 +5,7 @@ import { ToastProvider } from '@/components/ToastProvider';
 import { MainLayout } from '@/components/Layout/MainLayout';
 import SkeletonLoader from '@/components/SkeletonLoader';
 import { canAccessRoute } from '@/utils/access';
+import { PrioridadesProvider } from '@/contexts/PrioridadesContext';
 
 // Lazy loading pages
 const Login = lazy(() => import('@/pages/Login'));
@@ -24,6 +25,7 @@ const PainelPedidosPage = lazy(() => import('@/pages/PainelPedidos'));
 const PedidosPage = lazy(() => import('@/pages/Pedidos'));
 const AtualizacaoStatusPage = lazy(() => import('@/pages/AtualizacaoStatus'));
 const UsersPage = lazy(() => import('@/pages/Users'));
+const PrioridadesPage = lazy(() => import('@/pages/Prioridades'));
 const AccessDenied = lazy(() => import('@/pages/AccessDenied'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 
@@ -65,6 +67,7 @@ const AppRoutes = () => {
         <Route path="/carregamento/novo" element={<ProtectedRoute><CreateCarregamento /></ProtectedRoute>} />
         <Route path="/carregamento/editar/:id" element={<ProtectedRoute><CreateCarregamento /></ProtectedRoute>} />
         <Route path="/financeiro" element={<ProtectedRoute><FinancialPage /></ProtectedRoute>} />
+        <Route path="/prioridades" element={<ProtectedRoute><PrioridadesPage /></ProtectedRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
@@ -75,11 +78,13 @@ const AppRoutes = () => {
 const App = () => {
   return (
     <AppProvider>
-      <ToastProvider>
-        <Router>
-          <AppRoutes />
-        </Router>
-      </ToastProvider>
+      <PrioridadesProvider>
+        <ToastProvider>
+          <Router>
+            <AppRoutes />
+          </Router>
+        </ToastProvider>
+      </PrioridadesProvider>
     </AppProvider>
   );
 };

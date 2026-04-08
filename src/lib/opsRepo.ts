@@ -308,6 +308,23 @@ export async function upsertComercialPedidoMeta(meta: {
   }
 }
 
+export async function listComercialPedidosMeta(pedidoIds: string[]): Promise<Record<string, { observacao?: string | null }>> {
+  if (!supabaseOps || pedidoIds.length === 0) return {};
+  const { data, error } = await supabaseOps
+    .from('comercial_pedidos_meta')
+    .select('pedido_id, observacao')
+    .in('pedido_id', pedidoIds);
+  if (error) {
+    console.error('[Supabase OPS] list comercial_pedidos_meta:', error.message);
+    return {};
+  }
+  const result: Record<string, { observacao?: string | null }> = {};
+  for (const row of data || []) {
+    result[row.pedido_id] = { observacao: row.observacao };
+  }
+  return result;
+}
+
 export async function insertComercialPedidoAcao(row: {
   pedido_id: string;
   acao: 'editar' | 'liberar' | 'observacao' | 'notificar_whatsapp';

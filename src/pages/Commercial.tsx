@@ -16,11 +16,14 @@ import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
-import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { listPedidosStatusByPedidoIds, updatePedidoStatus, isLeroy } from '@/lib/pedidosStatusRepo';
+import { getPedidoStatusDef } from '@/lib/pedidoStatusFlow';
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/table/SortableHeader';
+import { usePrioridades } from '@/contexts/PrioridadesContext';
+import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
 
 type ScheduleCandidate = {
   id: string;
@@ -35,10 +38,11 @@ const commercialStatusColors: Record<string, string> = {
 };
 
 const Commercial = () => {
-  const { orders, supportOrders, user, updateOrderCommercialNotes, updateSupportOrderCommercialNotes, createProductionSchedule } = useApp();
+  const { orders, supportOrders, user, updateOrderCommercialNotes, updateSupportOrderCommercialNotes, createProductionSchedule, pedidoStatusVersion } = useApp();
   const { showToast } = useToast();
   const navigate = useNavigate();
 
+  const { map: prioMap } = usePrioridades();
   const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
 
   const { sortState, toggleSort } = useTableSort();
@@ -70,11 +74,41 @@ const Commercial = () => {
     setStatusRows(rows);
   };
 
-  // Load status rows when serverOrders change
+  // Load status rows when serverOrders change or when batch upgrades run
   useEffect(() => {
     const ids = serverOrders.map(o => o.id);
     if (ids.length) void refreshStatusRows(ids);
-  }, [serverOrders]);
+  }, [serverOrders, pedidoStatusVersion]);
+
+  // Self-healing: auto-upgrade any LEROY orders still stuck before liberado_producao
+  useEffect(() => {
+    if (!statusRows.length || !serverOrders.length) return;
+    const LEROY_TARGET_ORDER = 10; // liberado_producao = order 10
+    const toUpgrade = serverOrders.filter((o) => {
+      const st = statusRows.find((r) => r.pedido_id === o.id)?.status_atual;
+      if (!st) return false;
+      return isLeroy(o.clientName, o.representativeName) && getPedidoStatusDef(st).order < LEROY_TARGET_ORDER;
+    });
+    if (!toUpgrade.length) return;
+
+    const doUpgrade = async () => {
+      for (const o of toUpgrade) {
+        await updatePedidoStatus({
+          pedidoId: o.id,
+          numeroPedido: o.id,
+          statusNovo: 'liberado_producao',
+          alteradoPor: user?.username || null,
+          observacao: 'LEROY — liberado automaticamente para produção',
+        });
+      }
+      const ids = serverOrders.map((x) => x.id);
+      if (ids.length) {
+        const rows = await listPedidosStatusByPedidoIds(ids);
+        setStatusRows(rows);
+      }
+    };
+    void doUpgrade();
+  }, [statusRows, serverOrders, user?.username]);
 
   // Map UI sort keys → Supabase column names
   const sortColumnMap: Record<string, string> = {
@@ -503,6 +537,7 @@ const Commercial = () => {
             <thead>
               <tr className="border-b border-border bg-muted/30">
                 <SortableHeader columnKey="id" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
+                <th className="w-32 py-2 text-center" />
                 <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                 <SortableHeader columnKey="date" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Emissão</SortableHeader>
                 <SortableHeader columnKey="expiryDate" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
@@ -533,6 +568,9 @@ const Commercial = () => {
                         <span className="ml-2 inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-blue-200 text-blue-900">
                           Venda
                         </span>
+                      </td>
+                      <td className="w-32 py-2 text-center align-middle">
+                        {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}
                       </td>
                       <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
                       <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? fmtDate(o.date) : '-'}</td>
@@ -727,6 +765,7 @@ const Commercial = () => {
                       />
                     </td>
                     <td className="py-3 px-4 font-mono-data font-bold text-primary">
+                      {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}
                       {o.id}
                       {o.kind === 'SUPORTE' && (
                         <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">

@@ -72,7 +72,7 @@ export async function ensurePedidoStatusInitialized(pedidoId: string, numeroPedi
   const existing = await getPedidoStatus(pedidoId);
   if (existing) return;
   const now = new Date().toISOString();
-  const statusNovo: PedidoStatusValue = 'aguardando_avaliacao';
+  const statusNovo: PedidoStatusValue = 'aprovacao_politica';
 
   let upsertErr: { message: string } | null = null;
   try {
@@ -133,13 +133,13 @@ export function isLeroy(clienteNome?: string | null, representanteNome?: string 
 }
 
 export async function ensurePedidosStatusInitializedBatch(
-  pedidos: Array<{ pedidoId: string; numeroPedido: string; grupoCliente?: string | null }>,
+  pedidos: Array<{ pedidoId: string; numeroPedido: string; grupoCliente?: string | null; clienteNome?: string | null; representanteNome?: string | null }>,
   userName: string | null,
-): Promise<void> {
-  if (!supabaseOps) return;
+): Promise<{ upgradedCount: number }> {
+  if (!supabaseOps) return { upgradedCount: 0 };
   const unique = new Map(pedidos.map((p) => [p.pedidoId, p] as const));
   const ids = Array.from(unique.keys());
-  if (!ids.length) return;
+  if (!ids.length) return { upgradedCount: 0 };
 
   // Chunk ID list to avoid URL length limits on .in() queries
   const chunkArr = <T,>(arr: T[], size: number): T[][] => {
@@ -158,11 +158,11 @@ export async function ensurePedidosStatusInitializedBatch(
       batchErr = res.error as any;
     } catch (err) {
       console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing (fetch):', err);
-      return;
+      return { upgradedCount: 0 };
     }
     if (batchErr) {
       console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing:', batchErr.message);
-      return;
+      return { upgradedCount: 0 };
     }
     existing.push(...(batchData || []));
   }
@@ -170,10 +170,50 @@ export async function ensurePedidosStatusInitializedBatch(
   const existingMap = new Map((existing || []).map((r: any) => [String(r.pedido_id), r.status_atual as string]));
   const missing = ids.filter((id) => !existingMap.has(id)).map((id) => unique.get(id)!).filter(Boolean);
 
-  // Upgrade REVENDA orders that are still in aguardando_avaliacao → liberado_comercial
+  let upgradedCount = 0;
+
+  // Upgrade LEROY orders stuck before liberado_producao → liberado_producao
   const now = new Date().toISOString();
+  const LEROY_TARGET: PedidoStatusValue = 'liberado_producao';
+  const LEROY_BEFORE = ['aprovacao_politica','aguardando_mapeamento','mapeamento_concluido','aguardando_ferragem','ferragem_recebida','aguardando_avaliacao','liberado_comercial','aguardando_gerencia','confirmado_gerencia'];
+  const leroyToUpgrade = ids
+    .filter((id) => {
+      const st = existingMap.get(id) ?? '';
+      const p = unique.get(id)!;
+      return LEROY_BEFORE.includes(st) && isLeroy(p.clienteNome, p.representanteNome);
+    })
+    .map((id) => unique.get(id)!);
+
+  for (const p of leroyToUpgrade) {
+    try {
+      const res = await supabaseOps.from('pedidos_status').update({
+        status_atual: LEROY_TARGET,
+        atualizado_em: now,
+        atualizado_por: userName,
+      }).eq('pedido_id', p.pedidoId);
+      if (res.error) {
+        console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upgrade leroy:', res.error.message);
+        continue;
+      }
+      await supabaseOps.from('pedidos_status_historico').insert({
+        pedido_id: p.pedidoId,
+        numero_pedido: p.numeroPedido,
+        status_anterior: existingMap.get(p.pedidoId) ?? null,
+        status_novo: LEROY_TARGET,
+        alterado_em: now,
+        alterado_por: userName,
+        observacao: 'LEROY — liberado automaticamente para produção',
+        notificado_representante: false,
+      } as any);
+      upgradedCount++;
+    } catch (err) {
+      console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upgrade leroy (fetch):', err);
+    }
+  }
+
+  // Upgrade REVENDA orders that are still in aprovacao_politica/aguardando_avaliacao → liberado_comercial
   const revendaToUpgrade = ids
-    .filter((id) => existingMap.get(id) === 'aguardando_avaliacao' && isRevenda(unique.get(id)?.grupoCliente))
+    .filter((id) => ['aprovacao_politica', 'aguardando_avaliacao'].includes(existingMap.get(id) ?? '') && isRevenda(unique.get(id)?.grupoCliente))
     .map((id) => unique.get(id)!);
 
   for (const p of revendaToUpgrade) {
@@ -197,12 +237,13 @@ export async function ensurePedidosStatusInitializedBatch(
         observacao: 'REVENDA — liberado automaticamente para o comercial',
         notificado_representante: false,
       } as any);
+      upgradedCount++;
     } catch (err) {
       console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upgrade revenda (fetch):', err);
     }
   }
 
-  if (!missing.length) return;
+  if (!missing.length) return { upgradedCount };
 
   const chunk = <T,>(arr: T[], size: number): T[][] => {
     const out: T[][] = [];
@@ -212,12 +253,17 @@ export async function ensurePedidosStatusInitializedBatch(
 
   const batches = chunk(missing, 100);
   for (const batch of batches) {
+    // Count new LEROY insertions so pedidoStatusVersion increments in AppContext
+    upgradedCount += batch.filter((p) => isLeroy(p.clienteNome, p.representanteNome)).length;
+
     try {
       const res = await supabaseOps
         .from('pedidos_status')
         .upsert(
           batch.map((p) => {
-            const status: PedidoStatusValue = isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aguardando_avaliacao';
+            const status: PedidoStatusValue = isLeroy(p.clienteNome, p.representanteNome)
+              ? 'liberado_producao'
+              : isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aprovacao_politica';
             return {
               pedido_id: p.pedidoId,
               numero_pedido: p.numeroPedido,
@@ -233,13 +279,16 @@ export async function ensurePedidosStatusInitializedBatch(
       }
     } catch (err) {
       console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upsert pedidos_status (fetch):', err);
-      return;
+      return { upgradedCount };
     }
 
     try {
       const res = await supabaseOps.from('pedidos_status_historico').insert(
         batch.map((p) => {
-          const status: PedidoStatusValue = isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aguardando_avaliacao';
+          const leroyOrder = isLeroy(p.clienteNome, p.representanteNome);
+          const status: PedidoStatusValue = leroyOrder
+            ? 'liberado_producao'
+            : isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aprovacao_politica';
           return {
             pedido_id: p.pedidoId,
             numero_pedido: p.numeroPedido,
@@ -247,9 +296,11 @@ export async function ensurePedidosStatusInitializedBatch(
             status_novo: status,
             alterado_em: now,
             alterado_por: userName,
-            observacao: isRevenda(p.grupoCliente)
-              ? 'REVENDA — liberado automaticamente para o comercial'
-              : 'Status inicial criado automaticamente',
+            observacao: leroyOrder
+              ? 'LEROY — liberado automaticamente para produção'
+              : isRevenda(p.grupoCliente)
+                ? 'REVENDA — liberado automaticamente para o comercial'
+                : 'Status inicial criado automaticamente',
             notificado_representante: false,
           };
         }) as any,
@@ -259,9 +310,11 @@ export async function ensurePedidosStatusInitializedBatch(
       }
     } catch (err) {
       console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch insert historico (fetch):', err);
-      return;
+      return { upgradedCount };
     }
   }
+
+  return { upgradedCount };
 }
 
 export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok: boolean; previous: PedidoStatusValue | null }>{
@@ -489,4 +542,115 @@ export function formatStatusWhatsappMessage(params: {
   }
 
   return lines.join('\n');
+}
+
+/**
+ * One-time bulk migration: sets a fixed list of pedido IDs to liberado_producao,
+ * skipping any that are already at or beyond that status.
+ * Returns the count of records actually upgraded.
+ */
+export async function runMigrationSuporteLiberadoProducao(
+  ids: string[],
+  userName: string | null,
+): Promise<number> {
+  if (!supabaseOps || !ids.length) return 0;
+
+  const chunk = <T,>(arr: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  };
+
+  // Fetch current status for all IDs
+  let existing: Array<{ pedido_id: string; status_atual: string }> = [];
+  for (const batch of chunk(ids, 200)) {
+    try {
+      const { data, error } = await supabaseOps
+        .from('pedidos_status')
+        .select('pedido_id, status_atual')
+        .in('pedido_id', batch)
+        .limit(500);
+      if (error) { console.error('[Migration] fetch status:', error.message); continue; }
+      existing.push(...((data || []) as any));
+    } catch (e) { console.error('[Migration] fetch status (fetch):', e); }
+  }
+
+  const existingMap = new Map(existing.map((r) => [String(r.pedido_id), r.status_atual]));
+  const TARGET: PedidoStatusValue = 'liberado_producao';
+  const TARGET_ORDER = getPedidoStatusDef(TARGET).order; // 10
+
+  // Only upgrade orders that exist in DB and are below liberado_producao
+  const toUpgrade = ids.filter((id) => {
+    const st = existingMap.get(id);
+    if (!st) return false; // not initialized yet — skip (batch init will handle it)
+    return getPedidoStatusDef(st as PedidoStatusValue).order < TARGET_ORDER;
+  });
+
+  // Also insert records for IDs that don't exist yet
+  const toInsert = ids.filter((id) => !existingMap.has(id));
+
+  const now = new Date().toISOString();
+  let upgraded = 0;
+
+  // Update existing records
+  for (const batch of chunk(toUpgrade, 100)) {
+    try {
+      const { error } = await supabaseOps
+        .from('pedidos_status')
+        .update({ status_atual: TARGET, atualizado_em: now, atualizado_por: userName })
+        .in('pedido_id', batch);
+      if (error) { console.error('[Migration] update:', error.message); continue; }
+
+      const { error: histErr } = await supabaseOps.from('pedidos_status_historico').insert(
+        batch.map((id) => ({
+          pedido_id: id,
+          numero_pedido: id,
+          status_anterior: existingMap.get(id) ?? null,
+          status_novo: TARGET,
+          alterado_em: now,
+          alterado_por: userName,
+          observacao: 'Suporte — liberado para produção (migração manual)',
+          notificado_representante: false,
+        })) as any,
+      );
+      if (histErr) console.error('[Migration] insert historico:', histErr.message);
+      upgraded += batch.length;
+    } catch (e) { console.error('[Migration] update (fetch):', e); }
+  }
+
+  // Insert new records
+  if (toInsert.length) {
+    for (const batch of chunk(toInsert, 100)) {
+      try {
+        const { error } = await supabaseOps.from('pedidos_status').upsert(
+          batch.map((id) => ({
+            pedido_id: id,
+            numero_pedido: id,
+            status_atual: TARGET,
+            atualizado_em: now,
+            atualizado_por: userName,
+          })) as any,
+          { onConflict: 'pedido_id', ignoreDuplicates: true },
+        );
+        if (error) { console.error('[Migration] upsert new:', error.message); continue; }
+
+        const { error: histErr } = await supabaseOps.from('pedidos_status_historico').insert(
+          batch.map((id) => ({
+            pedido_id: id,
+            numero_pedido: id,
+            status_anterior: null,
+            status_novo: TARGET,
+            alterado_em: now,
+            alterado_por: userName,
+            observacao: 'Suporte — liberado para produção (migração manual)',
+            notificado_representante: false,
+          })) as any,
+        );
+        if (histErr) console.error('[Migration] insert historico new:', histErr.message);
+        upgraded += batch.length;
+      } catch (e) { console.error('[Migration] upsert new (fetch):', e); }
+    }
+  }
+
+  return upgraded;
 }

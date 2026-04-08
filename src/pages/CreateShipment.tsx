@@ -18,6 +18,8 @@ import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, Fil
 import { cn } from '@/lib/utils';
 import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas } from '@/lib/opsRepo';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
+import { usePrioridades } from '@/contexts/PrioridadesContext';
+import { PrioridadeIcon, PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
 import { todayBR, fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText, sendEvolutionMedia } from '@/lib/evolutionApi';
 import type { FilterCondition, FilterField } from '@/lib/filters';
@@ -43,6 +45,7 @@ const CreateShipment = () => {
   const { drivers, orders, supportOrders, loads, invoices, addLoad, updateLoad, deleteLoad, clients, user } = useApp();
   const { showToast } = useToast();
 
+  const { map: prioMap } = usePrioridades();
   const isEditing = Boolean(id);
   const [driverId, setDriverId] = useState('');
   type ShipmentStatus = 'Aguardando Despacho' | 'Despachado' | 'Em Rota' | 'Entregue' | 'Cancelado';
@@ -359,9 +362,14 @@ const CreateShipment = () => {
   }, [availableOrders, quickFilterItems, quickTextGetters, sortItems, sortGetters]);
 
   const toggleOrder = (orderId: string) => {
-    setSelectedOrderIds(prev => 
+    setSelectedOrderIds(prev =>
       prev.includes(orderId) ? prev.filter(oid => oid !== orderId) : [...prev, orderId]
     );
+  };
+
+  const selectOrder = (e: React.MouseEvent, orderId: string) => {
+    e.stopPropagation();
+    toggleOrder(orderId);
   };
 
   const moveOrder = (index: number, direction: 'up' | 'down') => {
@@ -673,17 +681,25 @@ const CreateShipment = () => {
     w.document.write(fullHtml);
     w.document.close();
 
-    // Formulário gerado → pedido Em Rota (somente se NF e boleto também estiverem anexados; nunca para LEROY)
+    // Formulário gerado → pedido Em Rota (somente se NF e boleto também estiverem anexados; nunca para LEROY;
+    // e somente se TODOS os pedidos do embarque estiverem com status 'faturado')
     const attachs = orderAttachments[orderId] || {};
     const orderForStatus = allCandidates.find((o) => o.id === orderId);
     if (attachs.nf?.url && attachs.boleto?.url && !isLeroy(orderForStatus?.clientName || orderForStatus?.clientCode, orderForStatus?.representativeName)) {
-      void updatePedidoStatus({
-        pedidoId: orderId,
-        numeroPedido: orderId,
-        statusNovo: 'em_entrega',
-        alteradoPor: user?.username || null,
-        observacao: 'Formulário de entrega gerado',
+      const shipmentStatuses = await listPedidosStatusByPedidoIds(selectedOrderIds);
+      const allFaturado = selectedOrderIds.every(oid => {
+        const s = shipmentStatuses.find(r => r.pedido_id === oid);
+        return s?.status_atual === 'faturado';
       });
+      if (allFaturado) {
+        void updatePedidoStatus({
+          pedidoId: orderId,
+          numeroPedido: orderId,
+          statusNovo: 'em_entrega',
+          alteradoPor: user?.username || null,
+          observacao: 'Formulário de entrega gerado',
+        });
+      }
     }
   };
 
@@ -1084,22 +1100,32 @@ const CreateShipment = () => {
       }
 
       // Auto-update pedido_status based on shipment status
-      const statusMap: Record<string, import('@/types').PedidoStatusValue> = {
-        'Em Rota': 'em_entrega',
-        'Entregue': 'entregue',
-      };
-      const targetStatus = statusMap[shipmentStatus];
-      if (targetStatus) {
-        const username = user?.username || null;
+      const username = user?.username || null;
+      if (shipmentStatus === 'Em Rota') {
+        const currentStatuses = await listPedidosStatusByPedidoIds(selectedOrderIds);
+        for (const orderId of selectedOrderIds) {
+          const orderForBulk = allCandidates.find((o) => o.id === orderId);
+          if (isLeroy(orderForBulk?.clientName || orderForBulk?.clientCode, orderForBulk?.representativeName)) continue;
+          const currentStatus = currentStatuses.find(s => s.pedido_id === orderId)?.status_atual;
+          if (currentStatus !== 'faturado') continue;
+          await updatePedidoStatus({
+            pedidoId: orderId,
+            numeroPedido: orderId,
+            statusNovo: 'em_entrega',
+            alteradoPor: username,
+            observacao: 'Atualização automática: embarque Em Rota',
+          });
+        }
+      } else if (shipmentStatus === 'Entregue') {
         for (const orderId of selectedOrderIds) {
           const orderForBulk = allCandidates.find((o) => o.id === orderId);
           if (isLeroy(orderForBulk?.clientName || orderForBulk?.clientCode, orderForBulk?.representativeName)) continue;
           await updatePedidoStatus({
             pedidoId: orderId,
             numeroPedido: orderId,
-            statusNovo: targetStatus,
+            statusNovo: 'entregue',
             alteradoPor: username,
-            observacao: `Atualização automática: embarque ${shipmentStatus}`,
+            observacao: 'Atualização automática: embarque Entregue',
           });
         }
       }
@@ -1266,8 +1292,8 @@ const CreateShipment = () => {
           </div>
 
           <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4 pb-2">
-            {/* Seção de Selecionados (Vertical) */}
-            {selectedOrderIds.length > 0 && (
+            {/* Seção de Selecionados — aparece ABAIXO dos disponíveis */}
+            {false && (
               <div className="space-y-2">
                 <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] px-1 mb-3">Pedidos Selecionados ({selectedOrderIds.length})</h4>
                 <div className="grid grid-cols-1 gap-2">
@@ -1276,16 +1302,19 @@ const CreateShipment = () => {
                     if (!order) return null;
                     const client = clients.find(c => c.id === order.clientId);
                     return (
-                      <div 
-                        key={id} 
-                        onClick={() => toggleOrder(id)}
-                        className="flex items-center justify-between p-3 rounded-lg border-2 border-primary bg-primary/5 cursor-pointer hover:bg-primary/10 transition-all group relative overflow-hidden"
+                      <div
+                        key={id}
+                        className="flex items-center justify-between p-3 rounded-lg border-2 border-primary bg-primary/5 transition-all group relative overflow-hidden"
                       >
                         <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
                         <div className="flex items-center gap-4 pl-2">
-                          <div className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shadow-sm">
+                          <button
+                            type="button"
+                            onClick={(e) => selectOrder(e, id)}
+                            className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shadow-sm hover:bg-primary/80 transition-colors shrink-0"
+                          >
                             <Check className="h-3 w-3" />
-                          </div>
+                          </button>
                           <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 items-center">
                             <div>
                               <div className="flex items-center gap-2">
@@ -1295,8 +1324,11 @@ const CreateShipment = () => {
                               <p className="text-[10px] text-muted-foreground font-medium">Nº Pedido</p>
                             </div>
                             <div>
-                              <p className="font-bold text-sm text-primary truncate max-w-[150px]">{order.representativeName || '-'}</p>
-                              <p className="text-[10px] text-muted-foreground font-medium">Representante</p>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}
+                                <p className="font-bold text-sm text-primary truncate max-w-[150px]">{order.clientName || order.clientCode || '-'}</p>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground font-medium">Cliente</p>
                             </div>
                             <div>
                               <p className="font-bold text-sm font-mono-data">{(() => { const repId = String(order.representativeId || '').trim(); const repName = String(order.representativeName || '').trim(); const contact = repContacts[repId] || repContacts[repName]; return contact?.telefone || order.representativePhone || '-'; })()}</p>
@@ -1328,10 +1360,11 @@ const CreateShipment = () => {
             <div className="space-y-2">
               <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-1 mb-3">Disponíveis para Adicionar ({displayedOrders.length})</h4>
               {/* Sortable column headers */}
-              <div className="hidden md:grid grid-cols-[20px_1fr_1fr_1fr_1fr_1fr_100px] gap-4 items-center px-4 py-1">
+              <div className="hidden md:grid grid-cols-[20px_1fr_8rem_1fr_1fr_1fr_1fr_100px] gap-4 items-center px-4 py-1">
                 <span />
-                {(['id','representative','phone','city','expiry','value'] as const).map((col, i) => {
-                  const labels: Record<string, string> = { id: 'Nº Pedido', representative: 'Representante', phone: 'Tel. Rep.', city: 'Cidade/UF', expiry: 'Previsão', value: 'Valor' };
+                {(['id','badge','representative','phone','city','expiry','value'] as const).map((col, i) => {
+                  const labels: Record<string, string> = { id: 'Nº Pedido', badge: '', representative: 'Cliente', phone: 'Tel. Rep.', city: 'Cidade/UF', expiry: 'Previsão', value: 'Valor' };
+                  if (col === 'badge') return <span key={col} />;
                   const active = sortState.key === col;
                   return (
                     <span key={col} onClick={() => toggleSort(col)} className={`inline-flex items-center gap-1 cursor-pointer select-none text-[10px] font-bold font-display uppercase tracking-wider transition-colors ${active ? 'text-primary' : 'text-muted-foreground hover:text-foreground'} ${col === 'value' ? 'justify-end' : ''}`}>
@@ -1352,21 +1385,27 @@ const CreateShipment = () => {
                   {displayedOrders.map(order => {
                     const client = clients.find(c => c.id === order.clientId);
                     return (
-                      <div 
-                        key={order.id} 
-                        onClick={() => toggleOrder(order.id)}
-                        className="flex items-center justify-between p-3 rounded-lg border border-border bg-card cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-all group"
+                      <div
+                        key={order.id}
+                        className="flex items-center justify-between p-3 rounded-lg border border-border bg-card transition-all group"
                       >
                         <div className="flex items-center gap-4 flex-1">
-                          <div className="w-5 h-5 rounded-full border-2 border-muted group-hover:border-primary transition-colors bg-white shrink-0" />
-                          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 items-center">
+                          <button
+                            type="button"
+                            onClick={(e) => selectOrder(e, order.id)}
+                            className="w-5 h-5 rounded-full border-2 border-muted hover:border-primary hover:bg-primary/10 transition-colors bg-white shrink-0"
+                          />
+                          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 flex-1 items-center">
                             <div>
-                              <p className="font-bold text-sm font-mono-data text-foreground/80 group-hover:text-foreground">{order.id}</p>
+                              <p className="font-bold text-sm font-mono-data text-foreground/80">{order.id}</p>
                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Nº Pedido</p>
                             </div>
+                            <div className="flex justify-center">
+                              {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}
+                            </div>
                             <div>
-                              <p className="font-bold text-sm text-primary/80 group-hover:text-primary truncate max-w-[150px]">{order.representativeName || '-'}</p>
-                              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Representante</p>
+                              <p className="font-bold text-sm text-primary/80 truncate">{order.clientName || order.clientCode || '-'}</p>
+                              <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Cliente</p>
                             </div>
                             <div>
                               <p className="font-bold text-sm font-mono-data">{(() => { const repId = String(order.representativeId || '').trim(); const repName = String(order.representativeName || '').trim(); const contact = repContacts[repId] || repContacts[repName]; return contact?.telefone || order.representativePhone || '-'; })()}</p>
@@ -1392,6 +1431,70 @@ const CreateShipment = () => {
                 </div>
               )}
             </div>
+
+            {/* Seção de Selecionados — abaixo dos disponíveis */}
+            {selectedOrderIds.length > 0 && (
+              <div className="space-y-2">
+                <div className="h-px bg-border my-2" />
+                <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] px-1 mb-3">Pedidos Selecionados ({selectedOrderIds.length})</h4>
+                <div className="grid grid-cols-1 gap-2">
+                  {selectedOrderIds.map(id => {
+                    const order = allCandidates.find(o => o.id === id);
+                    if (!order) return null;
+                    const client = clients.find(c => c.id === order.clientId);
+                    return (
+                      <div
+                        key={id}
+                        className="flex items-center justify-between p-3 rounded-lg border-2 border-primary bg-primary/5 transition-all group relative overflow-hidden"
+                      >
+                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
+                        <div className="flex items-center gap-4 pl-2">
+                          <button
+                            type="button"
+                            onClick={(e) => selectOrder(e, id)}
+                            className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shadow-sm hover:bg-primary/80 transition-colors shrink-0"
+                          >
+                            <Check className="h-3 w-3" />
+                          </button>
+                          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 flex-1 items-center">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <p className="font-bold text-sm font-mono-data">{order.id}</p>
+                                <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Embarcado</span>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground font-medium">Nº Pedido</p>
+                            </div>
+                            <div className="flex justify-center">
+                              {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}
+                            </div>
+                            <div>
+                              <p className="font-bold text-sm text-primary truncate">{order.clientName || order.clientCode || '-'}</p>
+                              <p className="text-[10px] text-muted-foreground font-medium">Cliente</p>
+                            </div>
+                            <div>
+                              <p className="font-bold text-sm font-mono-data">{(() => { const repId = String(order.representativeId || '').trim(); const repName = String(order.representativeName || '').trim(); const contact = repContacts[repId] || repContacts[repName]; return contact?.telefone || order.representativePhone || '-'; })()}</p>
+                              <p className="text-[10px] text-muted-foreground font-medium">Tel. Rep.</p>
+                            </div>
+                            <div>
+                              <p className="font-bold text-sm truncate">{order.clientCity || client?.address.city}/{order.clientUF || client?.address.state}</p>
+                              <p className="text-[10px] text-muted-foreground font-medium">Cidade/UF</p>
+                            </div>
+                            <div>
+                              <p className="font-bold text-sm text-amber-600">{order.previsaoCarregamento || order.expiryDate}</p>
+                              <p className="text-[10px] text-muted-foreground font-medium">Previsão</p>
+                            </div>
+                          </div>
+                        </div>
+                        <div className="text-right min-w-[100px]">
+                          <p className="font-bold text-sm text-[#1E3A5F]">{formatCurrency(order.totalPedidoVenda || getOrderTotal(order))}</p>
+                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight">Frete: {formatCurrency(order.freightValue || 0)}</p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1454,9 +1557,9 @@ const CreateShipment = () => {
                   {reportPage === 0 && (
                     <>
                       <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[100px]">Ordem de Entrega</th>
-                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">N° Pedido</th>
-                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
-                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Tel. Rep.</th>
+                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
+                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">CNPJ</th>
+                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-right">Valor Total</th>
                     </>
                   )}
                   {reportPage === 1 && (
@@ -1469,9 +1572,9 @@ const CreateShipment = () => {
                   )}
                   {reportPage === 2 && (
                     <>
-                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">CNPJ</th>
-                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-right">Valor Total</th>
+                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">N° Pedido</th>
+                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Representante</th>
+                      <th className="py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Tel. Rep.</th>
                     </>
                   )}
                   {reportPage === 3 && (
@@ -1522,7 +1625,7 @@ const CreateShipment = () => {
                                 <>
                                   <td className="py-3 px-4">
                                     <div className="flex items-center justify-center gap-1">
-                                      <input 
+                                      <input
                                         type="number"
                                         className="w-12 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data font-bold text-muted-foreground text-sm no-spinner"
                                         placeholder="0"
@@ -1531,12 +1634,17 @@ const CreateShipment = () => {
                                       />
                                     </div>
                                   </td>
-                                  <td className="py-3 px-4 font-mono-data font-bold text-primary">{order.id}</td>
-                                  <td className="py-3 px-4 font-medium">
-                                    {repContact?.nome || order.representativeName || '-'}
+                                  <td
+                                    className="py-3 px-4 font-medium truncate max-w-[200px]"
+                                    title={order?.clientName || client?.name}
+                                  >
+                                    {order?.clientName || client?.name || '-'}
                                   </td>
                                   <td className="py-3 px-4 font-mono-data text-xs">
-                                    {repContact?.telefone || order.representativePhone || '-'}
+                                    {client?.cpfCnpj || order?.clientCode || '-'}
+                                  </td>
+                                  <td className="py-3 px-4 font-mono-data font-bold text-right text-[#1E3A5F]">
+                                    {formatCurrency(order?.totalPedidoVenda || getOrderTotal(order))}
                                   </td>
                                 </>
                               )}
@@ -1566,17 +1674,17 @@ const CreateShipment = () => {
 
                               {reportPage === 2 && (
                                 <>
-                                  <td
-                                    className="py-3 px-4 font-medium truncate max-w-[200px]"
-                                    title={order?.clientName || client?.name}
-                                  >
-                                    {order?.clientName || client?.name || '-'}
+                                  <td className="py-3 px-4 font-mono-data font-bold text-primary">
+                                    <span className="inline-flex items-center gap-1.5">
+                                      {prioMap.has(order.id) && <PrioridadeDot nivel={prioMap.get(order.id)!.nivel} />}
+                                      {order.id}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 font-medium">
+                                    {repContact?.nome || order.representativeName || '-'}
                                   </td>
                                   <td className="py-3 px-4 font-mono-data text-xs">
-                                    {client?.cpfCnpj || order?.clientCode || '-'}
-                                  </td>
-                                  <td className="py-3 px-4 font-mono-data font-bold text-right text-[#1E3A5F]">
-                                    {formatCurrency(order?.totalPedidoVenda || getOrderTotal(order))}
+                                    {repContact?.telefone || order.representativePhone || '-'}
                                   </td>
                                 </>
                               )}

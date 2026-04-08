@@ -11,10 +11,13 @@ export type AppRouteKey =
   | 'pedido-suporte-liberacao'
   | 'producao'
   | 'programacao'
+  | 'programacao-cronograma'
+  | 'programacao-dashboard'
   | 'financeiro'
   | 'painel-pedidos'
   | 'atualizacao-status'
-  | 'pedidos';
+  | 'pedidos'
+  | 'prioridades';
 
 /** Actions a user can perform on a page */
 export type PageAction = 'view' | 'edit' | 'execute';
@@ -26,7 +29,7 @@ export type PagePermission = {
 };
 
 export type MenuItem =
-  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' }
+  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' }
   | { type: 'group'; label: string; icon: 'users' | 'box'; items: { label: string; href: string }[] };
 
 // ---------------------------------------------------------------------------
@@ -60,10 +63,13 @@ export const routeLabels: Record<AppRouteKey, string> = {
   'pedido-suporte-liberacao': 'Liberar Suporte p/ Produção',
   producao: 'Produção',
   programacao: 'Carregamento',
+  'programacao-cronograma': 'Cronograma Carregamento',
+  'programacao-dashboard': 'Dashboard Carregamento',
   financeiro: 'Financeiro',
   'painel-pedidos': 'Painel de Pedidos',
   'atualizacao-status': 'Atualização de Status',
   pedidos: 'Pedidos',
+  prioridades: 'Prioridades',
 };
 
 export const actionLabels: Record<PageAction, string> = {
@@ -86,15 +92,18 @@ export const availableActionsForRoute: Partial<Record<AppRouteKey, Array<'edit' 
   'pedido-suporte-liberacao':  ['execute'],
   producao:                    ['execute'],
   programacao:                 ['edit'],
+  'programacao-cronograma':    ['edit'],
+  'programacao-dashboard':     ['edit'],
   financeiro:                  ['edit'],
   'atualizacao-status':        ['execute'],
+  prioridades:                 ['edit'],
 };
 
 /** Routes grouped for the Users page UI */
 export const routeGroups: Array<{ label: string; routes: AppRouteKey[] }> = [
-  { label: 'Geral',       routes: ['dashboard', 'pedidos', 'painel-pedidos', 'atualizacao-status'] },
+  { label: 'Geral',       routes: ['dashboard', 'pedidos', 'painel-pedidos', 'atualizacao-status', 'prioridades'] },
   { label: 'Comercial',   routes: ['comercial', 'comercial-liberacao', 'pedido-suporte', 'pedido-suporte-liberacao'] },
-  { label: 'Operacional', routes: ['producao', 'programacao', 'financeiro'] },
+  { label: 'Operacional', routes: ['producao', 'programacao', 'programacao-cronograma', 'programacao-dashboard', 'financeiro'] },
   { label: 'Cadastro',    routes: ['representantes', 'motoristas', 'usuarios'] },
 ];
 
@@ -106,8 +115,10 @@ type RoleDefault = { route: AppRouteKey; extra: Array<'edit' | 'execute'> };
 
 const ROLE_DEFAULTS: Record<Exclude<UserRole, 'ADMIN'>, RoleDefault[]> = {
   FATURAMENTO: [
-    { route: 'programacao',    extra: ['edit'] },
-    { route: 'financeiro',     extra: ['edit'] },
+    { route: 'programacao',             extra: ['edit'] },
+    { route: 'programacao-cronograma',  extra: [] },
+    { route: 'programacao-dashboard',   extra: [] },
+    { route: 'financeiro',              extra: ['edit'] },
     { route: 'representantes', extra: ['edit'] },
     { route: 'motoristas',     extra: ['edit'] },
     { route: 'painel-pedidos', extra: [] },
@@ -118,6 +129,7 @@ const ROLE_DEFAULTS: Record<Exclude<UserRole, 'ADMIN'>, RoleDefault[]> = {
     { route: 'comercial-liberacao',        extra: ['execute'] },
     { route: 'pedido-suporte',             extra: ['edit', 'execute'] },
     { route: 'pedido-suporte-liberacao',   extra: ['execute'] },
+    { route: 'prioridades',               extra: ['edit'] },
   ],
   LOGISTICA: [
     { route: 'pedidos',            extra: [] },
@@ -125,10 +137,13 @@ const ROLE_DEFAULTS: Record<Exclude<UserRole, 'ADMIN'>, RoleDefault[]> = {
     { route: 'pedido-suporte',     extra: [] },
     { route: 'painel-pedidos',     extra: [] },
     { route: 'atualizacao-status', extra: ['execute'] },
+    { route: 'prioridades',        extra: ['edit'] },
   ],
   PRODUCAO: [
-    { route: 'producao',       extra: ['execute'] },
-    { route: 'programacao',    extra: [] },
+    { route: 'producao',                extra: ['execute'] },
+    { route: 'programacao',             extra: [] },
+    { route: 'programacao-cronograma',  extra: [] },
+    { route: 'programacao-dashboard',   extra: [] },
     { route: 'pedidos',        extra: [] },
     { route: 'painel-pedidos', extra: [] },
   ],
@@ -180,6 +195,7 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   if (path === '/financeiro') return 'financeiro';
   if (path.startsWith('/painel-pedidos')) return 'painel-pedidos';
   if (path.startsWith('/atualizacao-status')) return 'atualizacao-status';
+  if (path === '/prioridades') return 'prioridades';
   return null;
 }
 
@@ -202,6 +218,12 @@ export function canAccessRoute(
     return hubRoutes.some((r) => canDo(role, permissions ?? null, r, 'view'));
   }
 
+  // /carregamento is the hub — allow access if the user can view any of its sub-routes
+  if (path.startsWith('/carregamento')) {
+    const hubRoutes: AppRouteKey[] = ['programacao', 'programacao-cronograma', 'programacao-dashboard'];
+    return hubRoutes.some((r) => canDo(role, permissions ?? null, r, 'view'));
+  }
+
   const routeKey = pathnameToRouteKey(path);
   if (routeKey === null) return true;
   return canDo(role, permissions ?? null, routeKey, 'view');
@@ -212,6 +234,11 @@ const PEDIDOS_HUB_ROUTES: Set<AppRouteKey> = new Set([
   'pedidos', 'comercial', 'comercial-liberacao',
   'pedido-suporte', 'pedido-suporte-liberacao',
   'painel-pedidos', 'atualizacao-status',
+]);
+
+// Routes that live inside the /carregamento hub — collapse to single sidebar entry
+const CARREGAMENTO_HUB_ROUTES: Set<AppRouteKey> = new Set([
+  'programacao', 'programacao-cronograma', 'programacao-dashboard',
 ]);
 
 export function getHomePathForRole(role: UserRole, permissions?: PagePermission[] | null): string {
@@ -243,22 +270,25 @@ type MenuItemDef = {
   routeKey: AppRouteKey;
   label: string;
   href: string;
-  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card';
+  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory';
   group?: string;
 };
 
 const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
   { routeKey: 'dashboard',                label: 'Dashboard',               href: '/',                          icon: 'dashboard' },
-  { routeKey: 'pedidos',                  label: 'Pedidos',                  href: '/pedidos',                   icon: 'box' },
+  { routeKey: 'pedidos',                  label: 'Pedidos',                  href: '/pedidos',                   icon: 'clipboard-list' },
   { routeKey: 'comercial',               label: 'Pedidos de Venda',         href: '/comercial',                 icon: 'box' },
   { routeKey: 'comercial-liberacao',      label: 'Liberar p/ Produção',      href: '/comercial/liberacao',       icon: 'box' },
   { routeKey: 'pedido-suporte',           label: 'Pedidos de Suporte',       href: '/pedido-suporte',            icon: 'box' },
   { routeKey: 'pedido-suporte-liberacao', label: 'Liberar Suporte',          href: '/pedido-suporte/liberacao',  icon: 'box' },
-  { routeKey: 'producao',                label: 'Produção',                 href: '/producao',                  icon: 'box' },
+  { routeKey: 'producao',                label: 'Produção',                 href: '/producao',                  icon: 'factory' },
   { routeKey: 'programacao',             label: 'Carregamento',             href: '/carregamento',              icon: 'truck' },
+  { routeKey: 'programacao-cronograma', label: 'Cronograma Carregamento',  href: '/carregamento?tab=cronograma', icon: 'truck' },
+  { routeKey: 'programacao-dashboard',  label: 'Dashboard Carregamento',   href: '/carregamento?tab=dashboard',  icon: 'truck' },
   { routeKey: 'financeiro',              label: 'Financeiro',               href: '/financeiro',                icon: 'credit-card' },
   { routeKey: 'painel-pedidos',           label: 'Painel de Pedidos',        href: '/painel-pedidos',            icon: 'box' },
   { routeKey: 'atualizacao-status',       label: 'Atualização de Status',    href: '/atualizacao-status',        icon: 'box' },
+  { routeKey: 'prioridades',              label: 'Prioridades',              href: '/prioridades',               icon: 'flame' },
   { routeKey: 'representantes',          label: 'Representantes',           href: '/representantes',            icon: 'users', group: 'Cadastro' },
   { routeKey: 'motoristas',              label: 'Motoristas',               href: '/motoristas',                icon: 'users', group: 'Cadastro' },
   { routeKey: 'usuarios',               label: 'Usuários',                 href: '/usuarios',                  icon: 'users', group: 'Cadastro' },
@@ -269,7 +299,9 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
   if (role === 'ADMIN') {
     return [
       { type: 'link', label: 'Dashboard', href: '/', icon: 'dashboard' },
-      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
+      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'clipboard-list' },
+      { type: 'link', label: 'Prioridades', href: '/prioridades', icon: 'flame' },
+      { type: 'link', label: 'Produção', href: '/producao', icon: 'factory' },
       { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
       { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
       { type: 'group', label: 'Cadastro', icon: 'users', items: [
@@ -283,7 +315,7 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
     return [
       { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
       { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
-      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
+      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'clipboard-list' },
       { type: 'group', label: 'Cadastro', icon: 'users', items: [
         { label: 'Representantes', href: '/representantes' },
         { label: 'Motoristas', href: '/motoristas' },
@@ -293,17 +325,19 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
   if (role === 'PRODUCAO') {
     return [
       { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
-      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
+      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'clipboard-list' },
     ];
   }
   if (role === 'LOGISTICA') {
     return [
-      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
+      { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'clipboard-list' },
+      { type: 'link', label: 'Prioridades', href: '/prioridades', icon: 'flame' },
     ];
   }
   // COMERCIAL
   return [
-    { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' },
+    { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'clipboard-list' },
+    { type: 'link', label: 'Prioridades', href: '/prioridades', icon: 'flame' },
     { type: 'group', label: 'Cadastro', icon: 'users', items: [
       { label: 'Representantes', href: '/representantes' },
     ]},
@@ -342,12 +376,17 @@ export function getMenuForRole(role: UserRole, permissions?: PagePermission[] | 
   const links: MenuItem[] = [];
   const groups: Record<string, { label: string; href: string }[]> = {};
   let hasPedidosHub = false;
+  let hasCarregamentoHub = false;
 
   for (const def of ALL_MENU_ITEM_DEFS) {
     if (!allowed.has(def.routeKey)) continue;
     if (PEDIDOS_HUB_ROUTES.has(def.routeKey)) {
       hasPedidosHub = true;
       continue; // will add a single "Pedidos" entry below
+    }
+    if (CARREGAMENTO_HUB_ROUTES.has(def.routeKey)) {
+      hasCarregamentoHub = true;
+      continue; // will add a single "Carregamento" entry below
     }
     if (def.group) {
       if (!groups[def.group]) groups[def.group] = [];
@@ -359,9 +398,15 @@ export function getMenuForRole(role: UserRole, permissions?: PagePermission[] | 
 
   // Insert "Pedidos" hub entry right after dashboard (same position as admin menu)
   const dashIdx = links.findIndex((l) => 'href' in l && l.href === '/');
-  const pedidosItem: MenuItem = { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' };
   if (hasPedidosHub) {
-    links.splice(dashIdx + 1, 0, pedidosItem);
+    links.splice(dashIdx + 1, 0, { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' });
+  }
+  // Insert "Carregamento" hub entry
+  if (hasCarregamentoHub) {
+    const insertIdx = links.findIndex((l) => 'href' in l && l.href === '/financeiro');
+    const carregamentoItem: MenuItem = { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' };
+    if (insertIdx >= 0) links.splice(insertIdx, 0, carregamentoItem);
+    else links.push(carregamentoItem);
   }
 
   const result: MenuItem[] = [...links];
@@ -383,8 +428,11 @@ export const routeAccess: Record<AppRouteKey, UserRole[]> = {
   'pedido-suporte-liberacao': ['ADMIN', 'COMERCIAL'],
   producao: ['ADMIN', 'PRODUCAO'],
   programacao: ['ADMIN', 'FATURAMENTO'],
+  'programacao-cronograma': ['ADMIN', 'FATURAMENTO'],
+  'programacao-dashboard': ['ADMIN', 'FATURAMENTO'],
   financeiro: ['ADMIN', 'FATURAMENTO'],
   'painel-pedidos': ['ADMIN', 'FATURAMENTO', 'COMERCIAL', 'PRODUCAO'],
   'atualizacao-status': ['ADMIN', 'LOGISTICA'],
   pedidos: ['ADMIN', 'FATURAMENTO', 'COMERCIAL', 'PRODUCAO', 'LOGISTICA'],
+  prioridades: ['ADMIN', 'COMERCIAL', 'LOGISTICA'],
 };

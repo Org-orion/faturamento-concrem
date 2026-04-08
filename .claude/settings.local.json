@@ -1,0 +1,32 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx tsc:*)",
+      "Bash(npx skills:*)",
+      "Bash(python -c \"from playwright.sync_api import sync_playwright; print\\(''playwright ok''\\)\")",
+      "Bash(py --version)",
+      "Bash(xargs grep:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(ls .env*)",
+      "Bash(find \"C:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\supabase\\\\migrations\" -name \"*.sql\" -exec grep -l \"concrem_pedidos_venda\\\\|CREATE TABLE\" {} \\\\;)",
+      "Bash(grep -i \"total\" \"C:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\supabase\\\\migrations\"/*.sql)",
+      "Bash(find \"C:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\" -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) -exec grep -l \"concrem_pedidos_venda\" {} \\\\;)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(list\\(d[0].keys\\(\\)\\) if d else 'empty'\\)\")",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(list\\(d[0].keys\\(\\)\\) if d else 'empty table'\\)\")",
+      "Bash(find \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\" -type f \\\\\\( -name \"*.ts\" -o -name \"*.tsx\" \\\\\\) ! -path \"*/node_modules/*\" ! -path \"*/.claude/*\" -exec grep -l \"dayjs\\\\|moment\\\\|Intl\\\\.DateTimeFormat\" {} \\\\;)",
+      "Bash(findstr /r /s \"syncEntregaStatusFromOps\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\pages\\\\*.tsx\")",
+      "Bash(findstr /s \"syncEntrega\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\pages\\\\CreateShipment.tsx\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\pages\\\\AtualizacaoStatus.tsx\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\contexts\\\\AppContext.tsx\")",
+      "Bash(findstr \"normalizePhoneToE164\\\\|sendEvolutionText\\\\|isLeroy\\\\|isRevenda\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\pages\\\\ComercialLiberacao.tsx\")",
+      "Bash(findstr \"type UnifiedPedido\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\pages\\\\atualizacaoStatus\\\\types.ts\")",
+      "Bash(timeout 60)",
+      "Bash(findstr /s /n \"CAPACIDADE PESO\\\\|capacidade.*peso\\\\|totalWeight\\\\|pesoTotal\" src\\\\pages\\\\CreateShipment.tsx)",
+      "Bash(findstr /s /n \"CAPACIDADE PESO\\\\|totalWeight\\\\|pesoTotal\\\\|peso_liquido\" src\\\\pages\\\\Loads.tsx)",
+      "Bash(findstr /n /i \"CAPACIDADE\\\\|pesoTotal\\\\|totalWeight\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\pages\\\\CreateShipment.tsx\")",
+      "Bash(node_modules/.bin/tsc --noEmit)",
+      "Bash(find supabase/migrations -name \"*.sql\" -exec grep -l \"pedidos\\\\|orders\" {} \\\\;)",
+      "Bash(grep -A 50 \"create table.*pedidos[^_]\" supabase/migrations/*.sql)",
+      "Bash(grep -l \"embarque\\\\|carregamento\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow/supabase/migrations\"/*.sql)"
+    ]
+  }
+}

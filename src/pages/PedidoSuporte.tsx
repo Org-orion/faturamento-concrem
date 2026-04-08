@@ -6,10 +6,10 @@ import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
 import { btnPrimary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
 import { CheckCircle2, Eye, Plus } from 'lucide-react';
-import { StatusBadge } from '@/components/shared';
 import { supabase, supabaseOps, supabasePedidos } from '@/lib/supabase';
-import { Order, PedidoStatusRow, SupportOrder } from '@/types';
+import { Order, PedidoStatusRow, PedidoStatusValue, SupportOrder } from '@/types';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { tableColumns, suporteOr } from '@/contexts/AppContext';
@@ -20,6 +20,8 @@ import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/table/SortableHeader';
+import { usePrioridades } from '@/contexts/PrioridadesContext';
+import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
 
 const statusColors: Record<string, string> = {
   'Aguardando Avaliação': 'bg-status-warning/15 text-status-warning',
@@ -32,6 +34,7 @@ const PedidoSuporte = () => {
   const { showToast } = useToast();
   const navigate = useNavigate();
 
+  const { map: prioMap } = usePrioridades();
   const { sortState, toggleSort } = useTableSort();
 
   const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
@@ -55,6 +58,7 @@ const PedidoSuporte = () => {
 
   // Track ops status rows to filter out already-liberated orders
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [String(r.pedido_id), r] as const)), [statusRows]);
   const [liberatedIds, setLiberatedIds] = useState<Set<string>>(new Set());
 
   const debouncedFilterPedido = useDebounce(filterPedido, 400);
@@ -458,6 +462,7 @@ const PedidoSuporte = () => {
             <thead>
               <tr className="border-b border-border bg-muted/30">
                 <SortableHeader columnKey="id" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Nº Pedido</SortableHeader>
+                <th className="w-32 py-2 text-center" />
                 <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                 <SortableHeader columnKey="date" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Data</SortableHeader>
                 <SortableHeader columnKey="expiryDate" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
@@ -489,13 +494,16 @@ const PedidoSuporte = () => {
                           Suporte
                         </span>
                       </td>
+                      <td className="w-32 py-2 text-center align-middle">
+                        {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}
+                      </td>
                       <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
                       <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? fmtDate(o.date) : '-'}</td>
                       <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? fmtDate(o.expiryDate) : '-'}</td>
                       <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-2">
-                          <StatusBadge status={o.status} colorMap={statusColors} />
+                          <PedidoStatusBadge value={(statusByPedidoId.get(o.id)?.status_atual ?? 'aguardando_avaliacao') as PedidoStatusValue} />
                           {o.carregamentoId && (
                             <span className="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-orange-100 text-orange-700">
                               Em Carregamento
@@ -728,7 +736,7 @@ const PedidoSuporte = () => {
                         }
                       />
                     </td>
-                    <td className="py-3 px-4 font-mono-data font-bold text-primary">{o.id}</td>
+                    <td className="py-3 px-4 font-mono-data font-bold text-primary">{prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}{o.id}</td>
                     <td className="py-3 px-4">{o.representativeName}</td>
                     <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(o.total)}</td>
                   </tr>

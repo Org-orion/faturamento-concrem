@@ -6,6 +6,7 @@ import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
 import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, listPedidosStatusHistorico, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { listComercialPedidosMeta } from '@/lib/opsRepo';
 import { logisticaManualStatuses, getAutoFollowUpStatus, pedidoStatusFlow, shouldAutoLiberarComercial } from '@/lib/pedidoStatusFlow';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -39,6 +40,7 @@ const AtualizacaoStatus = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [pedidoObs, setPedidoObs] = useState<string | null>(null);
 
   const pedidos = useMemo(() => {
     const venda: UnifiedPedido[] = (orders || []).map((o) => ({
@@ -75,7 +77,7 @@ const AtualizacaoStatus = () => {
         ...(supportOrders || []).map((o) => o.id),
       ];
       if (supabaseOps) {
-        const { data, error } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
+        const { data, error } = await supabaseOps.from('pedidos_status').select('*').order('atualizado_em', { ascending: false }).limit(5000);
         if (error) {
           console.error('[AtualizacaoStatus] refresh query error:', error.message);
           return; // não sobrescreve o estado com dados vazios em caso de erro
@@ -155,6 +157,30 @@ const AtualizacaoStatus = () => {
     void refresh();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Realtime subscription: auto-refresh when pedidos_status changes externally
+  useEffect(() => {
+    if (!supabaseOps) return;
+    const ch = supabaseOps
+      .channel('atualizacao_status_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'pedidos_status' },
+        (payload) => {
+          const row = (payload as any)?.new as any;
+          if (!row?.pedido_id) return;
+          setStatusRows((prev) => {
+            const idx = prev.findIndex((r) => r.pedido_id === row.pedido_id);
+            if (idx === -1) return [...prev, row as PedidoStatusRow];
+            const next = prev.slice();
+            next[idx] = row as PedidoStatusRow;
+            return next;
+          });
+        },
+      )
+      .subscribe();
+    return () => { void supabaseOps.removeChannel(ch); };
+  }, []);
+
   useEffect(() => {
     if (presetId) setSelectedId(presetId);
   }, [presetId]);
@@ -227,13 +253,18 @@ const AtualizacaoStatus = () => {
     const loadHist = async () => {
       if (!selectedId) {
         setHistory([]);
+        setPedidoObs(null);
         return;
       }
       setHistoryLoading(true);
-      const items = await listPedidosStatusHistorico(selectedId);
+      const [items, meta] = await Promise.all([
+        listPedidosStatusHistorico(selectedId),
+        listComercialPedidosMeta([selectedId]),
+      ]);
       if (cancelled) return;
       setHistory(items);
       setHistoryLoading(false);
+      setPedidoObs(meta[selectedId]?.observacao ?? null);
     };
     void loadHist();
     return () => {
@@ -311,7 +342,7 @@ const AtualizacaoStatus = () => {
       <div className="bg-card rounded-xl p-4 border border-border shadow-card">
         <QuickFilterBar
           query={query}
-          onQueryChange={(v) => { setQuery(v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => /^\d{4,}$/.test(n)); nums.forEach(n => void searchErpByNumero(n)); }}
+          onQueryChange={(v) => { setQuery(v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => /^\d{3,}$/.test(n)); nums.forEach(n => void searchErpByNumero(n)); }}
           placeholder="Filtrar por cliente, representante ou n. do pedido..."
           statuses={statusButtons}
           activeStatus={activeStatus}
@@ -350,7 +381,7 @@ const AtualizacaoStatus = () => {
               onChange={e => {
                 const v = e.target.value;
                 colFilter.setFilter('numero', v);
-                const nums = v.split(/[,;]+/).map((n: string) => n.trim()).filter((n: string) => n.length >= 4); nums.forEach((n: string) => void searchErpByNumero(n));
+                const nums = v.split(/[,;]+/).map((n: string) => n.trim()).filter((n: string) => n.length >= 3); nums.forEach((n: string) => void searchErpByNumero(n));
               }}
               placeholder="Filtrar..."
               className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors"
@@ -392,6 +423,7 @@ const AtualizacaoStatus = () => {
             history={history}
             historyLoading={historyLoading}
             onOpenUpdate={() => setOpenUpdate(true)}
+            observacao={pedidoObs}
           />
         </div>
       </div>

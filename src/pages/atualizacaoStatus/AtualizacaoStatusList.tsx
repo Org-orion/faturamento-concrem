@@ -4,6 +4,8 @@ import { PedidoStatusValue } from '@/types';
 import { cn } from '@/lib/utils';
 import { UnifiedPedido, PedidoStatusById } from './types';
 import { fmtDateTime } from '@/lib/dateUtils';
+import { usePrioridades } from '@/contexts/PrioridadesContext';
+import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
 
 export function AtualizacaoStatusList({
   pedidos,
@@ -16,6 +18,7 @@ export function AtualizacaoStatusList({
   selectedId: string | null;
   onSelect: (id: string) => void;
 }) {
+  const { map: prioMap } = usePrioridades();
   return (
     <div className="space-y-3">
         {pedidos.length === 0 ? (
@@ -36,7 +39,10 @@ export function AtualizacaoStatusList({
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="min-w-0">
-                    <div className="font-bold truncate">{p.cliente}</div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-bold">{p.cliente}</span>
+                      {prioMap.has(p.id) && <PrioridadeIcon nivel={prioMap.get(p.id)!.nivel} motivo={prioMap.get(p.id)!.motivo} />}
+                    </div>
                     <div className="mt-1 text-sm text-muted-foreground">
                       <span className="font-mono-data font-bold text-primary">{p.numero}</span>
                       <span className="mx-2">•</span>

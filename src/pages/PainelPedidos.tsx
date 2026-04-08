@@ -4,6 +4,7 @@ import { useApp, tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { PedidoStatusRow, PedidoStatusHistoricoRow, PedidoStatusValue } from '@/types';
 import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, listPedidosStatusHistorico } from '@/lib/pedidosStatusRepo'; // listPedidosStatusByPedidoIds used as fallback
+import { listComercialPedidosMeta } from '@/lib/opsRepo';
 import { pedidoStatusFlow, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
@@ -17,7 +18,7 @@ import { PainelPedidosDetails } from '@/pages/painelPedidos/PainelPedidosDetails
 import type { UnifiedPedido } from '@/pages/painelPedidos/types';
 
 const statusButtons: StatusButton[] = pedidoStatusFlow
-  .filter((s) => ['aguardando_avaliacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
+  .filter((s) => ['aprovacao_politica', 'aguardando_avaliacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
   .sort((a, b) => a.order - b.order)
   .map((s) => ({ value: s.value, label: s.label }));
 
@@ -40,6 +41,7 @@ const PainelPedidos = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  const [pedidoObs, setPedidoObs] = useState<string | null>(null);
 
   const pedidos = useMemo(() => {
     const venda: UnifiedPedido[] = (orders || []).map((o) => ({
@@ -93,7 +95,7 @@ const PainelPedidos = () => {
       // Buscar todos os status do banco (inclui pedidos que não estão no AppContext)
       let allRows: PedidoStatusRow[] = [];
       if (supabaseOps) {
-        const { data, error } = await supabaseOps.from('pedidos_status').select('*').limit(5000);
+        const { data, error } = await supabaseOps.from('pedidos_status').select('*').order('atualizado_em', { ascending: false }).limit(5000);
         if (error) {
           console.error('[PainelPedidos] refresh query error:', error.message);
           return;
@@ -247,13 +249,18 @@ const PainelPedidos = () => {
     const loadHist = async () => {
       if (!selectedId) {
         setHistory([]);
+        setPedidoObs(null);
         return;
       }
       setHistoryLoading(true);
-      const items = await listPedidosStatusHistorico(selectedId);
+      const [items, meta] = await Promise.all([
+        listPedidosStatusHistorico(selectedId),
+        listComercialPedidosMeta([selectedId]),
+      ]);
       if (cancelled) return;
       setHistory(items);
       setHistoryLoading(false);
+      setPedidoObs(meta[selectedId]?.observacao ?? null);
     };
     void loadHist();
     return () => {
@@ -308,7 +315,7 @@ const PainelPedidos = () => {
           <div className="bg-card rounded-xl p-4 border border-border shadow-card space-y-3">
             <QuickFilterBar
               query={query}
-              onQueryChange={(v) => { setQuery(v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => /^\d{4,}$/.test(n)); nums.forEach(n => void searchErpByNumero(n)); }}
+              onQueryChange={(v) => { setQuery(v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => /^\d{3,}$/.test(n)); nums.forEach(n => void searchErpByNumero(n)); }}
               placeholder="Buscar por cliente, representante ou n. do pedido..."
               statuses={statusButtons}
               activeStatus={activeStatus}
@@ -342,7 +349,7 @@ const PainelPedidos = () => {
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mt-3">
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Nº Pedido</label>
-                <input type="text" value={colFilter.values.pedido || ''} onChange={e => { const v = e.target.value; colFilter.setFilter('pedido', v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => n.length >= 4); nums.forEach(n => void searchErpByNumero(n)); }} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
+                <input type="text" value={colFilter.values.pedido || ''} onChange={e => { const v = e.target.value; colFilter.setFilter('pedido', v); const nums = v.split(/[,;]+/).map(n => n.trim()).filter(n => n.length >= 3); nums.forEach(n => void searchErpByNumero(n)); }} placeholder="Filtrar..." className="w-full text-[11px] bg-background border border-border/60 rounded-md px-2 py-1 text-foreground font-normal placeholder:text-muted-foreground/50 focus:outline-none focus:ring-1 focus:ring-primary/30 transition-colors" />
               </div>
               <div>
                 <label className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider mb-1">Cliente</label>
@@ -373,7 +380,7 @@ const PainelPedidos = () => {
         </div>
 
         <div className="lg:col-span-4 space-y-4">
-          <PainelPedidosDetails pedido={selected} statusAtual={selectedStatus} history={history} historyLoading={historyLoading} />
+          <PainelPedidosDetails pedido={selected} statusAtual={selectedStatus} history={history} historyLoading={historyLoading} observacao={pedidoObs} />
         </div>
       </div>
     </div>

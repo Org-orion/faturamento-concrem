@@ -20,7 +20,9 @@ import { FilterConfiguratorDialog } from '@/components/filters/FilterConfigurato
 import { updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 import { fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
-import { findRepresentanteContato, upsertComercialPedidoMeta } from '@/lib/opsRepo';
+import { findRepresentanteContato, listComercialPedidosMeta, upsertComercialPedidoMeta } from '@/lib/opsRepo';
+import { usePrioridades } from '@/contexts/PrioridadesContext';
+import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useColumnFilters } from '@/hooks/useColumnFilters';
@@ -55,6 +57,7 @@ const TAB_LABELS: Record<TabKey, string> = {
 const ALL_TABS: TabKey[] = ['gerencia', 'confirmar', 'producao'];
 
 const ComercialLiberacao = () => {
+  const { map: prioMap } = usePrioridades();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const activeTab = useMemo<TabKey>(() => {
@@ -97,6 +100,8 @@ const ComercialLiberacao = () => {
       const statusMap = new Map((statusData as any[]).map((r: any) => [r.pedido_id, r] as const));
       setDirectOrders(mapped);
       setStatusRowsDirect(statusMap);
+      const meta = await listComercialPedidosMeta(ids);
+      setPedidoMetaMap(meta);
     } catch (e: any) {
       console.error('[ComercialLiberacao] refreshOrders error:', e);
       showToast('Erro ao carregar pedidos', 'error');
@@ -106,6 +111,7 @@ const ComercialLiberacao = () => {
   };
 
   const [statusRowsDirect, setStatusRowsDirect] = useState<Map<string, any>>(new Map());
+  const [pedidoMetaMap, setPedidoMetaMap] = useState<Record<string, { observacao?: string | null }>>({});
 
   useEffect(() => { void refreshOrders(); }, []);
 
@@ -497,13 +503,17 @@ const ComercialLiberacao = () => {
     const mesRef = pdfGerenciaMesRef.trim();
 
     const escHtml = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const fmtCurrency = (v?: number) => v != null ? `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
 
+    let totalValor = 0;
     const rows = pedidos.map((o) => {
+      totalValor += o.totalPedidoVenda || 0;
       const obs = pdfGerenciaObs[o.id] || '-';
       return `<tr>
         <td>${mesRef}</td>
         <td style="text-align:center;font-weight:700">${o.id}</td>
         <td>${o.clientName || o.clientCode || '-'}</td>
+        <td style="text-align:right">${fmtCurrency(o.totalPedidoVenda)}</td>
         <td>${escHtml(obs)}</td>
       </tr>`;
     }).join('');
@@ -539,15 +549,22 @@ const ComercialLiberacao = () => {
 </div>
 <div class="info">
   <div>Emissão: <span>${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span></div>
+  <div>Total Valor: <span>${fmtCurrency(totalValor)}</span></div>
 </div>
 <table>
   <thead><tr>
     <th style="text-align:left">Mês Referência</th>
     <th style="text-align:center">Nº Pedido</th>
     <th style="text-align:left">Cliente</th>
+    <th style="text-align:right">Valor</th>
     <th style="text-align:left">Observação</th>
   </tr></thead>
   <tbody>${rows}</tbody>
+  <tfoot><tr>
+    <td colspan="3" style="text-align:right;font-weight:800;border-top:3px solid #0a2315;padding:10px">TOTAL</td>
+    <td style="text-align:right;font-weight:800;border-top:3px solid #0a2315;padding:10px">${fmtCurrency(totalValor)}</td>
+    <td style="border-top:3px solid #0a2315"></td>
+  </tr></tfoot>
 </table>
 </body></html>`;
 
@@ -684,6 +701,7 @@ const ComercialLiberacao = () => {
                 <div className="space-y-2 max-h-[40vh] overflow-y-auto border border-border rounded-lg p-3">
                   {selectedOrders.map(o => (
                     <div key={o.id} className="flex items-center gap-3">
+                      {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}
                       <span className="font-mono-data font-bold text-primary text-sm w-20 shrink-0">{o.id}</span>
                       <span className="text-sm text-muted-foreground truncate w-40 shrink-0">{o.clientName || o.clientCode || '-'}</span>
                       <input
@@ -716,7 +734,15 @@ const ComercialLiberacao = () => {
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Pedidos Liberados — Enviar para Gerência</h2>
           <div className="flex items-center gap-2">
-            <button className={btnSecondary} onClick={() => { setPdfGerenciaObs({}); setShowPdfGerenciaModal(true); }} disabled={!s1Selected.length}>
+            <button className={btnSecondary} onClick={async () => {
+              const saved = await listComercialPedidosMeta(s1Selected);
+              const obs: Record<string, string> = {};
+              for (const id of s1Selected) {
+                if (saved[id]?.observacao) obs[id] = saved[id].observacao!;
+              }
+              setPdfGerenciaObs(obs);
+              setShowPdfGerenciaModal(true);
+            }} disabled={!s1Selected.length}>
               <Printer className="h-4 w-4" />
               Exportar PDF ({s1Selected.length})
             </button>
@@ -744,6 +770,7 @@ const ComercialLiberacao = () => {
                     <input type="checkbox" checked={s1Selected.length === s1Processed.length && s1Processed.length > 0} onChange={() => toggleAll(s1Selected, setS1Selected, s1Processed.map(o => o.id))} />
                   </th>
                   <SortableHeader columnKey="pedido" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <th className="w-32 py-2 text-center" />
                   <SortableHeader columnKey="cliente" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                   <SortableHeader columnKey="representante" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
                   <SortableHeader columnKey="grupo" sortState={s1Sort.sortState} onToggle={s1Sort.toggleSort} className="text-left py-4 px-6">Grupo</SortableHeader>
@@ -759,6 +786,7 @@ const ComercialLiberacao = () => {
                       <input type="checkbox" checked={s1Selected.includes(o.id)} onChange={() => setS1Selected(prev => prev.includes(o.id) ? prev.filter(x => x !== o.id) : [...prev, o.id])} />
                     </td>
                     <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
+                    <td className="w-32 py-2 text-center align-middle">{prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}</td>
                     <td className="py-4 px-6">
                       <span className="font-mono-data font-bold text-muted-foreground">{o.clientCode || '-'}</span>
                       <span className="ml-2 font-display font-semibold text-foreground">{o.clientName || '-'}</span>
@@ -801,21 +829,24 @@ const ComercialLiberacao = () => {
                     <input type="checkbox" checked={s2Selected.length === s2Processed.length && s2Processed.length > 0} onChange={() => toggleAll(s2Selected, setS2Selected, s2Processed.map(o => o.id))} />
                   </th>
                   <SortableHeader columnKey="pedido" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <th className="w-32 py-2 text-center" />
                   <SortableHeader columnKey="cliente" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                   <SortableHeader columnKey="representante" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
                   <SortableHeader columnKey="cidadeUf" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
                   <SortableHeader columnKey="validade" sortState={s2Sort.sortState} onToggle={s2Sort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
+                  <th className="py-4 px-6 text-left font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Observação</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s2Processed.length === 0 ? (
-                  <tr><td colSpan={6} className="py-10 text-center text-muted-foreground italic">Nenhum pedido aguardando confirmação da gerência.</td></tr>
+                  <tr><td colSpan={7} className="py-10 text-center text-muted-foreground italic">Nenhum pedido aguardando confirmação da gerência.</td></tr>
                 ) : s2Processed.map(o => (
                   <tr key={o.id} className="hover:bg-muted/20 transition-colors">
                     <td className="py-4 px-6 text-center">
                       <input type="checkbox" checked={s2Selected.includes(o.id)} onChange={() => setS2Selected(prev => prev.includes(o.id) ? prev.filter(x => x !== o.id) : [...prev, o.id])} />
                     </td>
                     <td className="py-4 px-6 font-mono-data font-bold text-primary">{o.id}</td>
+                    <td className="w-32 py-2 text-center align-middle">{prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}</td>
                     <td className="py-4 px-6">
                       <span className="font-mono-data font-bold text-muted-foreground">{o.clientCode || '-'}</span>
                       <span className="ml-2 font-display font-semibold text-foreground">{o.clientName || '-'}</span>
@@ -823,6 +854,7 @@ const ComercialLiberacao = () => {
                     <td className="py-4 px-6">{o.representativeName || '-'}</td>
                     <td className="py-4 px-6">{o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '-'}</td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">{formatDateBR(o.expiryDate)}</td>
+                    <td className="py-4 px-6 text-muted-foreground italic">{pedidoMetaMap[o.id]?.observacao || '-'}</td>
                   </tr>
                 ))}
               </tbody>
@@ -851,22 +883,25 @@ const ComercialLiberacao = () => {
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <SortableHeader columnKey="pedido" sortState={s3CandSort.sortState} onToggle={s3CandSort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <th className="w-32 py-2 text-center" />
                   <SortableHeader columnKey="cliente" sortState={s3CandSort.sortState} onToggle={s3CandSort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                   <SortableHeader columnKey="representante" sortState={s3CandSort.sortState} onToggle={s3CandSort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
                   <SortableHeader columnKey="cidadeUf" sortState={s3CandSort.sortState} onToggle={s3CandSort.toggleSort} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
                   <SortableHeader columnKey="validade" sortState={s3CandSort.sortState} onToggle={s3CandSort.toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
+                  <th className="py-4 px-6 text-left font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Observação</th>
                   <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border/50">
                 {s3CandProcessed.length === 0 ? (
-                  <tr><td colSpan={6} className="py-10 text-center text-muted-foreground italic">Nenhum pedido pronto para carga.</td></tr>
+                  <tr><td colSpan={7} className="py-10 text-center text-muted-foreground italic">Nenhum pedido pronto para carga.</td></tr>
                 ) : s3CandProcessed.map(o => (
                   <tr key={o.id} className="hover:bg-muted/20 transition-colors">
                     <td className="py-4 px-6 font-mono-data font-bold text-primary">
                       {o.id}
                       <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${o.kind === 'SUPORTE' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{o.kind}</span>
                     </td>
+                    <td className="w-32 py-2 text-center align-middle">{prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}</td>
                     <td className="py-4 px-6">
                       <span className="font-mono-data font-bold text-muted-foreground">{o.clientCode || '-'}</span>
                       <span className="ml-2 font-display font-semibold text-foreground">{o.clientName || '-'}</span>
@@ -874,6 +909,7 @@ const ComercialLiberacao = () => {
                     <td className="py-4 px-6">{o.representativeName || '-'}</td>
                     <td className="py-4 px-6">{o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '-'}</td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">{formatDateBR(o.expiryDate)}</td>
+                    <td className="py-4 px-6 text-muted-foreground italic">{pedidoMetaMap[o.id]?.observacao || '-'}</td>
                     <td className="py-4 px-6 text-right">
                       <button className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all" onClick={() => addToLoad(o.id)} title="Adicionar à carga">
                         <Plus className="h-4 w-4" />
@@ -912,6 +948,7 @@ const ComercialLiberacao = () => {
               <thead>
                 <tr className="border-b border-border bg-muted/30">
                   <SortableHeader columnKey="pedido" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Pedido</SortableHeader>
+                  <th className="w-32 py-2 text-center" />
                   <SortableHeader columnKey="cliente" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                   <SortableHeader columnKey="representante" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Representante</SortableHeader>
                   <SortableHeader columnKey="cidadeUf" sortState={s3Sort.sortState} onToggle={s3Sort.toggleSort} className="text-left py-4 px-6">Cidade / UF</SortableHeader>
@@ -928,6 +965,7 @@ const ComercialLiberacao = () => {
                       {o.id}
                       <span className={`ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold ${o.kind === 'SUPORTE' ? 'bg-purple-100 text-purple-800' : 'bg-blue-100 text-blue-800'}`}>{o.kind}</span>
                     </td>
+                    <td className="w-32 py-2 text-center align-middle">{prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}</td>
                     <td className="py-4 px-6">
                       <span className="font-mono-data font-bold text-muted-foreground">{o.clientCode || '-'}</span>
                       <span className="ml-2 font-display font-semibold text-foreground">{o.clientName || '-'}</span>

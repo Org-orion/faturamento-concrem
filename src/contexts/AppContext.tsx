@@ -31,7 +31,7 @@ import {
 } from '@/lib/opsRepo';
 import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
-import { ensurePedidosStatusInitializedBatch, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
+import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao } from '@/lib/pedidosStatusRepo';
 
 interface AppState {
   clients: Client[];
@@ -295,7 +295,7 @@ export const suporteOr = [
 ].join(',');
 
 export const tableColumns =
-  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete';
+  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete';
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [clients, setClients] = useState<Client[]>(sampleClients);
@@ -606,11 +606,54 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   useEffect(() => {
     if (!supabaseOps) return;
     const payload = [
-      ...(orders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: o.grupoCliente })),
-      ...(supportOrders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: o.grupoCliente })),
+      ...(orders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: o.grupoCliente, clienteNome: o.clientName || o.clientCode, representanteNome: o.representativeName })),
+      ...(supportOrders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: o.grupoCliente, clienteNome: o.clientName || o.clientCode, representanteNome: o.representativeName })),
     ];
-    void ensurePedidosStatusInitializedBatch(payload, user?.username || null);
+    ensurePedidosStatusInitializedBatch(payload, user?.username || null).then(({ upgradedCount }) => {
+      if (upgradedCount > 0) setPedidoStatusVersion((v) => v + 1);
+    });
   }, [orders, supportOrders, user?.username]);
+
+  // One-time migration: bulk set known suporte orders to liberado_producao
+  useEffect(() => {
+    if (!supabaseOps) return;
+    const MIGRATION_KEY = 'migration_suporte_liberado_producao_v1';
+    if (localStorage.getItem(MIGRATION_KEY)) return;
+
+    const SUPORTE_IDS = [
+      '86977','86916','104469','112923','112375','112788','112919','112943','113497','113694',
+      '113714','113868','112093','114870','114407','115013','114958','115423','115334','115687',
+      '116142','115823','116205','113964','116838','116837','116760','116455','116992','117671',
+      '117702','119774','119083','120228','120315','120869','83292','83783','83934','92853',
+      '97724','102637','101545','112085','112434','112324','112893','113413','113707','113698',
+      '113545','115112','115044','103987','115634','105809','116192','115419','115630','116203',
+      '116916','116487','107450','117142','117518','117223','117750','117408','117267','117885',
+      '117546','117181','117732','114091','114113','113985','113987','117257','118100','119758',
+      '120232','120025','120242','120475','120334','119150','120848','120491','121115','121411',
+      '121121','121321','122343','122239','122179','122104','121342','121469','121551','120027',
+      '121648','121647','121649','121646','121671','121535','121689','121711','121154','121408',
+      '121763','114998','121007','121059','121116','121080','121106','122776','121731','121974',
+      '117246','121267','121056','122421','121972','119221','118670','122460','121497','120624',
+      '120660','119128','124369','124404','114320','114323','107768','124060','124035','124090',
+      '124307','122024','122544','122519','120407','123144','118361','122572','107802','122983',
+      '120220','10Z460','122693','123277','122466','101346','122559','124074','122785','113164',
+      '122484','124638','124630','126035','124592','125235','125418','124634','118668','124471',
+      '122366','125745','118394','126246','126373','126224','124445','124593','125615','126002',
+      '47640','125735','125995','124644','124790','124916','125525','124557','125928','125915',
+      '125894','125833','126055','125854','127629','127199','127489','127148','127509','128451',
+      '128457','128580','128095','128121','128180','127682','127582','127320','122719','126709',
+      '126030','127640','127126','128640','128039','127857','126372','128322','126950','128162',
+      '127118','128440','128488','128676','128675','128261','1280701','128072','83511','83780',
+      '93434','95750','118203','119377','120076','122656','121440','120054','122227','121911',
+      '124421','125120','124881','125862','125505','126618','125266','126057',
+    ];
+
+    runMigrationSuporteLiberadoProducao(SUPORTE_IDS, user?.username || null).then((count) => {
+      localStorage.setItem(MIGRATION_KEY, '1');
+      if (count > 0) setPedidoStatusVersion((v) => v + 1);
+      console.log(`[Migration] ${MIGRATION_KEY}: ${count} pedidos atualizados para liberado_producao`);
+    });
+  }, [user?.username]);
 
   const addUser = useCallback(
     (u: Omit<AppUser, 'id'>) => {
@@ -856,8 +899,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     if (nextLoad.shipmentStatus === 'Em Rota') {
       const all = [...orders, ...supportOrders];
+      const currentStatuses = await listPedidosStatusByPedidoIds(nextLoad.orderIds);
       await Promise.all(
         nextLoad.orderIds.map(async (pedidoId) => {
+          const currentStatus = currentStatuses.find(s => s.pedido_id === pedidoId)?.status_atual;
+          if (currentStatus !== 'faturado') return;
           const o: any = all.find((x: any) => x.id === pedidoId);
           const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
           const repKey = String(o?.representativeId || o?.representativeName || '').trim();
@@ -934,8 +980,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const all = [...orders, ...supportOrders];
 
     if (l.shipmentStatus === 'Em Rota') {
+      const currentStatuses = await listPedidosStatusByPedidoIds(l.orderIds);
       await Promise.all(
         l.orderIds.map(async (pedidoId) => {
+          const currentStatus = currentStatuses.find(s => s.pedido_id === pedidoId)?.status_atual;
+          if (currentStatus !== 'faturado') return;
           const o: any = all.find((x: any) => x.id === pedidoId);
           const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
           const repKey = String(o?.representativeId || o?.representativeName || '').trim();
@@ -1182,21 +1231,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const entry: FreightEntry = { ...e, id: num, createdAt: new Date().toISOString() };
     setFreightEntries((prev) => [entry, ...prev]);
     void upsertLancamentoFinanceiro(entry);
-    // Lançamento concluído → todos os pedidos do carregamento recebem Finalizado
-    if (entry.status === 'Lançado') {
-      const load = entry.loadId ? loads.find(l => l.id === entry.loadId) : null;
-      const orderIds = load ? load.orderIds : [entry.orderId];
-      for (const oid of orderIds) {
-        void updatePedidoStatus({
-          pedidoId: oid,
-          numeroPedido: oid,
-          statusNovo: 'finalizado',
-          alteradoPor: null,
-          observacao: 'Despesas de frete lançadas no financeiro',
-        });
-      }
-    }
-  }, [loads]);
+  }, []);
 
   const updateFreightEntry = useCallback((id: string, patch: Partial<Omit<FreightEntry, 'id' | 'createdAt'>>) => {
     setFreightEntries((prev) => {
@@ -1213,13 +1248,28 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const setFreightEntryStatus = useCallback((id: string, status: FreightEntryStatus) => {
+    const entry = freightEntries.find(x => x.id === id);
     setFreightEntries((prev) => {
       const next = prev.map((x) => (x.id === id ? { ...x, status } : x));
       const updated = next.find((x) => x.id === id);
       if (updated) void upsertLancamentoFinanceiro(updated);
       return next;
     });
-  }, []);
+    // Conferido → todos os pedidos do carregamento recebem Finalizado
+    if (status === 'Conferido' && entry) {
+      const load = entry.loadId ? loads.find(l => l.id === entry.loadId) : null;
+      const orderIds = load ? load.orderIds : [entry.orderId];
+      for (const oid of orderIds) {
+        void updatePedidoStatus({
+          pedidoId: oid,
+          numeroPedido: oid,
+          statusNovo: 'finalizado',
+          alteradoPor: null,
+          observacao: 'Lançamento de frete conferido',
+        });
+      }
+    }
+  }, [freightEntries, loads]);
 
   return (
     <AppContext.Provider value={{
