@@ -54,7 +54,6 @@ const PedidoSuporte = () => {
 
   // Track ops status rows to filter out already-liberated orders
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
-  const [loadingStatus, setLoadingStatus] = useState(false);
   const statusByPedidoId = useMemo(() => new Map(statusRows.map((r) => [String(r.pedido_id), r] as const)), [statusRows]);
   const [liberatedIds, setLiberatedIds] = useState<Set<string>>(new Set());
 
@@ -89,28 +88,17 @@ const PedidoSuporte = () => {
     value: 'total_pedido_venda',
   };
 
-  // Load ops status rows when serverOrders change
+  // Load ops status rows when serverOrders change (for badge display)
   useEffect(() => {
     const ids = serverOrders.map(o => o.id);
-    if (!ids.length) { setStatusRows([]); setLoadingStatus(false); return; }
-    setLoadingStatus(true);
-    void listPedidosStatusByPedidoIds(ids).then(rows => {
-      setStatusRows(rows);
-      setLoadingStatus(false);
-    });
+    if (!ids.length) { setStatusRows([]); return; }
+    void listPedidosStatusByPedidoIds(ids).then(setStatusRows);
   }, [serverOrders]);
 
-  // Hide orders liberated in this session OR already processed (status != aguardando_avaliacao)
+  // Hide orders liberated in this session (already filtered by status at query level)
   const displayedOrders = useMemo(() => {
-    if (loadingStatus) return []; // wait for status rows before showing
-    return serverOrders.filter(o => {
-      if (liberatedIds.has(o.id)) return false;
-      const st = statusByPedidoId.get(o.id)?.status_atual;
-      // If there's an explicit status beyond aguardando_avaliacao, hide the order
-      if (st && st !== 'aguardando_avaliacao') return false;
-      return true;
-    });
-  }, [serverOrders, liberatedIds, statusByPedidoId, loadingStatus]);
+    return serverOrders.filter(o => !liberatedIds.has(o.id));
+  }, [serverOrders, liberatedIds]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(serverOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
@@ -197,12 +185,20 @@ const PedidoSuporte = () => {
 
   // Fetch paginated data from Supabase
   useEffect(() => {
-    if (!supabasePedidos) return;
+    if (!supabasePedidos || !supabaseOps) return;
     let cancelled = false;
 
     const fetchPage = async () => {
       setLoadingList(true);
       const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+
+      // Só mostrar pedidos com aguardando_avaliacao (ou sem status no banco = nunca avaliados)
+      const { data: statusData } = await supabaseOps
+        .from('pedidos_status')
+        .select('pedido_id')
+        .eq('status_atual', 'aguardando_avaliacao');
+      if (cancelled) return;
+      const allowedIds = (statusData || []).map((r: any) => String(r.pedido_id));
 
       const movedToSupport = Object.entries(moveOverride).filter(x => x[1] === 'SUPORTE').map(x => x[0]);
       const movedToVenda = Object.entries(moveOverride).filter(x => x[1] === 'VENDA').map(x => x[0]);
@@ -213,6 +209,19 @@ const PedidoSuporte = () => {
       }
 
       let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).or(finalOr);
+
+      // Intersect with pedidos that have aguardando_avaliacao status (or no status yet)
+      if (allowedIds.length > 0) {
+        query = query.in('numero_pedido', allowedIds);
+      } else {
+        // No orders with aguardando_avaliacao — skip fetching pedidos
+        if (!cancelled) {
+          setLoadingList(false);
+          setServerOrders([]);
+          setTotalCount(0);
+        }
+        return;
+      }
 
       if (movedToVenda.length > 0) {
         query = query.not('numero_pedido', 'in', `(${movedToVenda.map(x => `"${x}"`).join(',')})`);
@@ -535,10 +544,10 @@ const PedidoSuporte = () => {
             </tbody>
           </table>
         </div>
-        {!loadingList && serverOrders.length > 0 && (
+        {!loadingList && displayedOrders.length > 0 && (
           <div className="px-6 py-4 border-t border-border flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              Mostrando {serverOrders.length} de {totalCount} pedidos
+              Mostrando {displayedOrders.length} de {totalCount} pedidos
             </p>
             <div className="flex items-center gap-2">
               <button
