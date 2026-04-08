@@ -102,11 +102,7 @@ const ComercialLiberacao = () => {
         if (conf === 613 || conf === 665) return true;
         if (conf === 307 || conf === 309) {
           const tv = o.totalPedidoVenda ?? 0;
-          const pc = (o.pedCompraCliente ?? '').toUpperCase().trim();
-          const isApoModelo = pc.includes('APTO MODELO');
-          const isComplemento = pc.includes('COMPLEMENTO');
           if (tv < 20000) return true;
-          if (pc.length > 0 && !isApoModelo && !isComplemento) return true;
         }
         return false;
       };

@@ -283,17 +283,19 @@ const nextId = (prefix: string, key: keyof typeof counters) => {
 };
 
 // Venda: id_nota_conf 307 ou 309 com total >= 10k, ou total < 10k apenas se ped_compra_cliente = COMPLEMENTO ou APTO MODELO
-// Venda: 307/309 com valor efetivo >= 20000 E ped_compra_cliente nulo, APTO MODELO ou COMPLEMENTO
-// valor efetivo = total_pedido_venda se >= 0, senão total_produtos
+// Venda: 307/309 com valor efetivo >= 20000 (qualquer ped_compra_cliente)
+//        OU ped_compra_cliente contém 'APTO MODELO' ou 'COMPLEMENTO'
+// valor efetivo = total_pedido_venda se > 0, senão total_produtos
 export const vendasOr = [
-  'and(id_nota_conf.in.(307,309),or(total_pedido_venda.gte.20000,and(or(total_pedido_venda.is.null,total_pedido_venda.lt.0),total_produtos.gte.20000)),or(ped_compra_cliente.is.null,ped_compra_cliente.ilike.*APTO MODELO*,ped_compra_cliente.ilike.*COMPLEMENTO*))',
+  'and(id_nota_conf.in.(307,309),or(total_pedido_venda.gte.20000,and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),total_produtos.gte.20000)))',
+  'ped_compra_cliente.ilike.*APTO MODELO*',
+  'ped_compra_cliente.ilike.*COMPLEMENTO*',
 ].join(',');
 
-// Suporte: 613/665 (sempre); ou 307/309 com valor efetivo < 20000; ou 307/309 com ped_compra_cliente "outro" (não vazio, não APTO MODELO, não COMPLEMENTO)
+// Suporte: 613/665 sempre; ou 307/309 com valor efetivo < 20000 (exceto APTO MODELO/COMPLEMENTO que já foram para venda)
 export const suporteOr = [
   'id_nota_conf.in.(613,665)',
-  'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gte.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lt.0),or(total_produtos.is.null,total_produtos.lt.20000))))',
-  'and(id_nota_conf.in.(307,309),ped_compra_cliente.not.is.null,ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*)',
+  'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gt.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),or(total_produtos.is.null,total_produtos.lt.20000))))',
 ].join(',');
 
 export const tableColumns =
