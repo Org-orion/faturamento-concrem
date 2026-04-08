@@ -192,11 +192,11 @@ const PedidoSuporte = () => {
       setLoadingList(true);
       const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
-      // Só mostrar pedidos com aguardando_avaliacao (ou sem status no banco = nunca avaliados)
+      // Mostrar pedidos com aguardando_avaliacao ou liberado_producao
       const { data: statusData } = await supabaseOps
         .from('pedidos_status')
         .select('pedido_id')
-        .eq('status_atual', 'aguardando_avaliacao');
+        .in('status_atual', ['aguardando_avaliacao', 'liberado_producao']);
       if (cancelled) return;
       const allowedIds = (statusData || []).map((r: any) => String(r.pedido_id));
 
@@ -210,11 +210,11 @@ const PedidoSuporte = () => {
 
       let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).or(finalOr);
 
-      // Intersect with pedidos that have aguardando_avaliacao status (or no status yet)
+      // Intersect with pedidos that have allowed status
       if (allowedIds.length > 0) {
         query = query.in('numero_pedido', allowedIds);
       } else {
-        // No orders with aguardando_avaliacao — skip fetching pedidos
+        // No orders with allowed status — skip fetching pedidos
         if (!cancelled) {
           setLoadingList(false);
           setServerOrders([]);
