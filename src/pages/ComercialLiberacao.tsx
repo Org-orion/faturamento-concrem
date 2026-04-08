@@ -96,11 +96,14 @@ const ComercialLiberacao = () => {
         return;
       }
 
-      // totalPedidoVenda already has the fallback applied by pedidoMapper (uses total_produtos when tv <= 0)
+      // Mirror of suporteOr logic — totalPedidoVenda has fallback from pedidoMapper
       const isSuporteRow = (o: Order) => {
         const conf = o.idNotaConf;
         if (conf === 613 || conf === 665) return true;
         if (conf === 307 || conf === 309) {
+          const pc = (o.pedCompraCliente ?? '').toUpperCase().trim();
+          // APTO MODELO and COMPLEMENTO always go to Venda regardless of value
+          if (pc.includes('APTO MODELO') || pc.includes('COMPLEMENTO')) return false;
           const tv = o.totalPedidoVenda ?? 0;
           if (tv < 20000) return true;
         }
