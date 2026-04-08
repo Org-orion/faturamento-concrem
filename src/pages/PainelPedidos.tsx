@@ -18,7 +18,7 @@ import { PainelPedidosDetails } from '@/pages/painelPedidos/PainelPedidosDetails
 import type { UnifiedPedido } from '@/pages/painelPedidos/types';
 
 const statusButtons: StatusButton[] = pedidoStatusFlow
-  .filter((s) => ['aprovacao_politica', 'aguardando_avaliacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
+  .filter((s) => ['aguardando_avaliacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
   .sort((a, b) => a.order - b.order)
   .map((s) => ({ value: s.value, label: s.label }));
 

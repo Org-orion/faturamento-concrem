@@ -1,22 +1,23 @@
 import { PedidoStatusDef, PedidoStatusValue } from '@/types';
 
 export const pedidoStatusFlow: PedidoStatusDef[] = [
-  { order: 1,  label: 'Aprovação Política',        value: 'aprovacao_politica',      kind: 'manual' },
+  { order: 1,  label: 'Aguardando Avaliação',      value: 'aguardando_avaliacao',    kind: 'automatico' },
   { order: 2,  label: 'Aguardando Mapeamento',     value: 'aguardando_mapeamento',   kind: 'manual' },
   { order: 3,  label: 'Mapeamento Concluído',      value: 'mapeamento_concluido',    kind: 'manual' },
   { order: 4,  label: 'Aguardando Ferragem',       value: 'aguardando_ferragem',     kind: 'manual' },
   { order: 5,  label: 'Ferragem Recebida',         value: 'ferragem_recebida',       kind: 'manual' },
-  { order: 6,  label: 'Aguardando Avaliação',      value: 'aguardando_avaliacao',    kind: 'automatico' },
-  { order: 7,  label: 'Liberado Comercial',        value: 'liberado_comercial',      kind: 'automatico' },
-  { order: 8,  label: 'Aguardando Gerência',       value: 'aguardando_gerencia',     kind: 'automatico' },
-  { order: 9,  label: 'Confirmado Gerência',       value: 'confirmado_gerencia',     kind: 'automatico' },
-  { order: 10, label: 'Liberado Produção',         value: 'liberado_producao',       kind: 'automatico' },
-  { order: 11, label: 'Em Produção',               value: 'em_producao',             kind: 'manual' },
-  { order: 12, label: 'Produção Finalizada',       value: 'producao_finalizada',     kind: 'manual' },
-  { order: 13, label: 'Faturado',                  value: 'faturado',                kind: 'automatico' },
-  { order: 14, label: 'Em Rota',                   value: 'em_entrega',              kind: 'automatico' },
+  { order: 6,  label: 'Liberado Comercial',        value: 'liberado_comercial',      kind: 'automatico' },
+  { order: 7,  label: 'Aguardando Gerência',       value: 'aguardando_gerencia',     kind: 'automatico' },
+  { order: 8,  label: 'Confirmado Gerência',       value: 'confirmado_gerencia',     kind: 'automatico' },
+  { order: 9,  label: 'Liberado Produção',         value: 'liberado_producao',       kind: 'automatico' },
+  { order: 10, label: 'Em Produção',               value: 'em_producao',             kind: 'manual' },
+  { order: 11, label: 'Produção Finalizada',       value: 'producao_finalizada',     kind: 'manual' },
+  { order: 12, label: 'Faturado',                  value: 'faturado',                kind: 'automatico' },
+  { order: 13, label: 'Em Rota',                   value: 'em_entrega',              kind: 'automatico' },
+  { order: 14, label: 'Parcialmente Entregue',     value: 'parcialmente_entregue',   kind: 'automatico' },
   { order: 15, label: 'Entregue',                  value: 'entregue',                kind: 'automatico' },
-  { order: 16, label: 'Finalizado',                value: 'finalizado',              kind: 'automatico' },
+  { order: 16, label: 'Aguardando Pagamento',      value: 'aguardando_pagamento',    kind: 'manual' },
+  { order: 17, label: 'Finalizado',                value: 'finalizado',              kind: 'automatico' },
 ];
 
 const byValue = new Map(pedidoStatusFlow.map((s) => [s.value, s] as const));
@@ -79,7 +80,7 @@ export function toStageDates(history: Array<{ status_novo: PedidoStatusValue; al
   };
 
   return {
-    dataAprovacaoPolitica: pick('aprovacao_politica'),
+    dataAprovacaoPolitica: pick('aguardando_avaliacao'),
     dataMapeamento: pick('mapeamento_concluido'),
     dataFerragem: pick('ferragem_recebida'),
     dataAprovacao: pick('aguardando_avaliacao'),
@@ -96,19 +97,19 @@ export function toStageDates(history: Array<{ status_novo: PedidoStatusValue; al
 export function getStageForTimeline(value: PedidoStatusValue): number {
   const def = getPedidoStatusDef(value);
   if (!def.order) return 0;
-  if (def.order <= 1)  return 1;  // Aprovação Política
+  if (def.order <= 1)  return 1;  // Aguardando Avaliação
   if (def.order <= 3)  return 2;  // Mapeamento
   if (def.order <= 5)  return 3;  // Ferragens
-  if (def.order <= 9)  return 4;  // Comercial
-  if (def.order <= 12) return 5;  // Produção
-  if (def.order <= 13) return 6;  // Faturado
-  if (def.order <= 14) return 7;  // Em Rota
+  if (def.order <= 8)  return 4;  // Comercial
+  if (def.order <= 11) return 5;  // Produção
+  if (def.order <= 12) return 6;  // Faturado
+  if (def.order <= 13) return 7;  // Em Rota
   if (def.order <= 15) return 8;  // Entregue
   return 9; // Finalizado
 }
 
 export const panelTimelineStages: Array<{ id: number; label: string }> = [
-  { id: 1, label: 'Aprov. Política' },
+  { id: 1, label: 'Avaliação' },
   { id: 2, label: 'Mapeamento' },
   { id: 3, label: 'Ferragem' },
   { id: 4, label: 'Comercial' },
@@ -121,15 +122,15 @@ export const panelTimelineStages: Array<{ id: number; label: string }> = [
 
 // The order at which each stage is considered fully *completed* (not just entered).
 const stageCompletionOrder: Record<number, number> = {
-  1: 1,  // aprovacao_politica
+  1: 1,  // aguardando_avaliacao
   2: 3,  // mapeamento_concluido
   3: 5,  // ferragem_recebida
-  4: 9,  // confirmado_gerencia
-  5: 12, // producao_finalizada
-  6: 13, // faturado
-  7: 14, // em_entrega
+  4: 8,  // confirmado_gerencia
+  5: 11, // producao_finalizada
+  6: 12, // faturado
+  7: 13, // em_entrega
   8: 15, // entregue
-  9: 16, // finalizado
+  9: 17, // finalizado
 };
 
 export function getStageState(currentStatus: PedidoStatusValue, stageId: number): 'done' | 'current' | 'future' {

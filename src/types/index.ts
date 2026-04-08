@@ -95,13 +95,12 @@ export type OrderStatus =
   | 'Cancelado';
 
 export type PedidoStatusValue =
-  | 'aprovacao_politica'
+  | 'aguardando_avaliacao'
   | 'aguardando_mapeamento'
   | 'mapeamento_andamento'
   | 'mapeamento_concluido'
   | 'aguardando_ferragem'
   | 'ferragem_recebida'
-  | 'aguardando_avaliacao'
   | 'liberado_comercial'
   | 'aguardando_gerencia'
   | 'confirmado_gerencia'
@@ -110,7 +109,9 @@ export type PedidoStatusValue =
   | 'producao_finalizada'
   | 'faturado'
   | 'em_entrega'
+  | 'parcialmente_entregue'
   | 'entregue'
+  | 'aguardando_pagamento'
   | 'finalizado';
 
 export type PedidoStatusKind = 'manual' | 'automatico';

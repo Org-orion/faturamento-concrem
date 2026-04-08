@@ -72,7 +72,7 @@ export async function ensurePedidoStatusInitialized(pedidoId: string, numeroPedi
   const existing = await getPedidoStatus(pedidoId);
   if (existing) return;
   const now = new Date().toISOString();
-  const statusNovo: PedidoStatusValue = 'aprovacao_politica';
+  const statusNovo: PedidoStatusValue = 'aguardando_avaliacao';
 
   let upsertErr: { message: string } | null = null;
   try {
@@ -175,7 +175,7 @@ export async function ensurePedidosStatusInitializedBatch(
   // Upgrade LEROY orders stuck before liberado_producao → liberado_producao
   const now = new Date().toISOString();
   const LEROY_TARGET: PedidoStatusValue = 'liberado_producao';
-  const LEROY_BEFORE = ['aprovacao_politica','aguardando_mapeamento','mapeamento_concluido','aguardando_ferragem','ferragem_recebida','aguardando_avaliacao','liberado_comercial','aguardando_gerencia','confirmado_gerencia'];
+  const LEROY_BEFORE = ['aguardando_avaliacao','aguardando_mapeamento','mapeamento_concluido','aguardando_ferragem','ferragem_recebida','liberado_comercial','aguardando_gerencia','confirmado_gerencia'];
   const leroyToUpgrade = ids
     .filter((id) => {
       const st = existingMap.get(id) ?? '';
@@ -213,7 +213,7 @@ export async function ensurePedidosStatusInitializedBatch(
 
   // Upgrade REVENDA orders that are still in aprovacao_politica/aguardando_avaliacao → liberado_comercial
   const revendaToUpgrade = ids
-    .filter((id) => ['aprovacao_politica', 'aguardando_avaliacao'].includes(existingMap.get(id) ?? '') && isRevenda(unique.get(id)?.grupoCliente))
+    .filter((id) => existingMap.get(id) === 'aguardando_avaliacao' && isRevenda(unique.get(id)?.grupoCliente))
     .map((id) => unique.get(id)!);
 
   for (const p of revendaToUpgrade) {
@@ -263,7 +263,7 @@ export async function ensurePedidosStatusInitializedBatch(
           batch.map((p) => {
             const status: PedidoStatusValue = isLeroy(p.clienteNome, p.representanteNome)
               ? 'liberado_producao'
-              : isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aprovacao_politica';
+              : isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aguardando_avaliacao';
             return {
               pedido_id: p.pedidoId,
               numero_pedido: p.numeroPedido,
@@ -288,7 +288,7 @@ export async function ensurePedidosStatusInitializedBatch(
           const leroyOrder = isLeroy(p.clienteNome, p.representanteNome);
           const status: PedidoStatusValue = leroyOrder
             ? 'liberado_producao'
-            : isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aprovacao_politica';
+            : isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aguardando_avaliacao';
           return {
             pedido_id: p.pedidoId,
             numero_pedido: p.numeroPedido,
