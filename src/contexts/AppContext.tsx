@@ -54,7 +54,7 @@ interface AppState {
   updateOrder: (o: Order) => void;
   updateOrderStatus: (id: string, status: OrderStatus) => void;
   assignDriver: (orderId: string, driverId: string) => void;
-  addLoad: (l: Omit<Load, 'id' | 'createdAt' | 'createdBy'>) => Promise<void>;
+  addLoad: (l: Omit<Load, 'id' | 'createdAt' | 'createdBy'>) => Promise<string>;
   updateLoad: (l: Load) => Promise<void>;
   deleteLoad: (id: string) => Promise<void>;
   addInvoice: (i: Omit<Invoice, 'id'>) => void;
@@ -921,6 +921,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }),
       );
     }
+
+    return newLoadId;
   }, [mapLoadToOrderStatus, orders, resolveRepPhoneRaw, supportOrders, user?.username]);
 
   const updateLoad = useCallback(async (l: Load) => {

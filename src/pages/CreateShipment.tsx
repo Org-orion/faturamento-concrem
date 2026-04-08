@@ -186,21 +186,28 @@ const CreateShipment = () => {
       const delivered: string[] = [];
       const kits: Record<string, number> = {};
       const pallets: Record<string, number> = {};
-      const volumes: Record<string, number> = {};
+      const volumes: Record<string, string> = {};
       for (const row of rows) {
         if (row.ordem_entrega != null) seq[row.pedido_id] = row.ordem_entrega;
         if (row.numero_nota) nf[row.pedido_id] = row.numero_nota;
         if (row.status === 'entregue') delivered.push(row.pedido_id);
         if (row.qtd_kits != null) kits[row.pedido_id] = row.qtd_kits;
         if (row.qtd_pallets != null) pallets[row.pedido_id] = row.qtd_pallets;
-        if (row.qtd_volumes != null) volumes[row.pedido_id] = row.qtd_volumes;
+        if (row.qtd_volumes != null) volumes[row.pedido_id] = String(row.qtd_volumes);
       }
       setOrderSequence(seq);
       setInvoiceNumbers(nf);
       setDeliveredOrderIds(delivered);
       setQtdKits(kits);
       setQtdPallets(pallets);
-      setQtdVolumes(volumes);
+      // Merge: preserva valores que o usuário já digitou antes do fetch terminar
+      setQtdVolumes(prev => {
+        const next = { ...volumes };
+        for (const [k, v] of Object.entries(prev)) {
+          if (v !== '' && v !== undefined) next[k] = v;
+        }
+        return next;
+      });
     });
   }, [id]);
 
@@ -302,7 +309,7 @@ const CreateShipment = () => {
     return Array.from(map.values());
   }, [directPedidos, orders, supportOrders]);
 
-  // Pré-preencher qtdKits e qtdVolumes com valores do pedido quando não há valor salvo
+  // Pré-preencher qtdKits com valores do pedido quando não há valor salvo
   useEffect(() => {
     if (selectedOrderIds.length === 0) return;
     setQtdKits(prev => {
@@ -311,15 +318,6 @@ const CreateShipment = () => {
         if (next[oid] !== undefined && next[oid] !== '') continue;
         const order = allCandidates.find(o => o.id === oid);
         if (order?.totalQtd != null) next[oid] = String(order.totalQtd);
-      }
-      return next;
-    });
-    setQtdVolumes(prev => {
-      const next = { ...prev };
-      for (const oid of selectedOrderIds) {
-        if (next[oid] !== undefined && next[oid] !== '') continue;
-        const order = allCandidates.find(o => o.id === oid);
-        if (order?.totalQtdM3 != null) next[oid] = String(order.totalQtdM3).replace('.', ',');
       }
       return next;
     });
@@ -955,15 +953,20 @@ const CreateShipment = () => {
   }, [allCandidates, selectedOrderIds]);
 
   const saveReport = async () => {
+    if (!id) {
+      showToast('Salve a programação antes de salvar o relatório.', 'error');
+      return;
+    }
+
     // Sort selectedOrderIds based on the orderSequence
     const sortedOrderIds = [...selectedOrderIds].sort((a, b) => {
       const seqA = orderSequence[a] || 0;
       const seqB = orderSequence[b] || 0;
       return seqA - seqB;
     });
-    
+
     setSelectedOrderIds(sortedOrderIds);
-    
+
     if (id) {
       const old = loads.find((x) => x.id === id);
       if (old) {
@@ -1086,7 +1089,7 @@ const CreateShipment = () => {
         showToast('Programação atualizada com sucesso!');
         return; // Permanecer na página de edição
       } else {
-        await addLoad({
+        const newId = await addLoad({
           driverId,
           orderIds: selectedOrderIds,
           plannedDate: shipmentDate,
@@ -1097,6 +1100,8 @@ const CreateShipment = () => {
           freightValue: finalFreightValue,
         });
         showToast('Programação criada com sucesso!');
+        navigate(`/carregamento/editar/${newId}`);
+        return;
       }
 
       // Auto-update pedido_status based on shipment status
