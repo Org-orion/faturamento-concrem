@@ -281,6 +281,14 @@ const Commercial = () => {
       try {
         const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
+        // Cross-reference with pedidos_status: only show aguardando_avaliacao or liberado_producao
+        const { data: statusData } = await supabaseOps
+          .from('pedidos_status')
+          .select('pedido_id')
+          .in('status_atual', ['aguardando_avaliacao', 'liberado_producao']);
+        if (cancelled) return;
+        const allowedIds = (statusData || []).map((r: any) => String(r.pedido_id));
+
         const movedToSupport = Object.entries(moveOverride).filter((x) => x[1] === 'SUPORTE').map((x) => x[0]);
         const movedToVenda = Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0]);
 
@@ -289,7 +297,17 @@ const Commercial = () => {
           finalOr += `,numero_pedido.in.(${movedToVenda.map((x) => `"${x}"`).join(',')})`;
         }
 
-        let query = supabasePedidos.from(table).select(tableColumns, { count: 'estimated' }).or(finalOr);
+        let query = supabasePedidos.from(table).select(tableColumns, { count: 'estimated' })
+          .or(finalOr)
+          .in('id_nota_conf', [307, 309, 613, 665]);
+
+        // Intersect with allowed status IDs
+        if (allowedIds.length > 0) {
+          query = query.in('numero_pedido', allowedIds);
+        } else {
+          if (!cancelled) { setLoadingList(false); setServerOrders([]); setTotalCount(0); }
+          return;
+        }
 
         if (movedToSupport.length > 0) {
           query = query.not('numero_pedido', 'in', `(${movedToSupport.map((x) => `"${x}"`).join(',')})`);

@@ -208,7 +208,7 @@ const PedidoSuporte = () => {
         finalOr += `,numero_pedido.in.(${movedToSupport.map(x => `"${x}"`).join(',')})`;
       }
 
-      let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).or(finalOr);
+      let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).or(finalOr).in('id_nota_conf', [307, 309, 613, 665]);
 
       // Intersect with pedidos that have allowed status
       if (allowedIds.length > 0) {
