@@ -2,9 +2,10 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import Modal from '@/components/Modal';
 import { btnPrimary, btnSecondary, btnDanger, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
-import { ProductionSchedule, Order, SupportOrder } from '@/types';
+import { ProductionSchedule, Order, SupportOrder, PedidoStatusRow } from '@/types';
 import { Calendar, Eye, Play, CheckCircle2, Printer, Plus, Pencil, RotateCcw } from 'lucide-react';
 import { desfazerProducaoConcluido, insertProducaoConcluido, listProducaoConcluidos } from '@/lib/opsRepo';
+import { supabaseOps } from '@/lib/supabase';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
@@ -66,6 +67,19 @@ const Producao = () => {
 
   const [concluidos, setConcluidos] = useState<ConcluidoRow[]>([]);
   const [loadingConcluidos, setLoadingConcluidos] = useState(false);
+
+  // Status real de cada pedido (fonte de verdade para exibição na lista de produção)
+  const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const statusByPedidoId = useMemo(() => new Map(statusRows.map(r => [r.pedido_id, r] as const)), [statusRows]);
+
+  useEffect(() => {
+    if (!supabaseOps) return;
+    supabaseOps
+      .from('pedidos_status')
+      .select('pedido_id, status_atual')
+      .in('status_atual', ['liberado_producao', 'em_producao', 'producao_finalizada'])
+      .then(({ data }) => { if (data) setStatusRows(data as any); });
+  }, []);
 
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const [openDetails, setOpenDetails] = useState(false);
@@ -139,11 +153,17 @@ const Producao = () => {
     setDateTo(to);
   }, [conditions]);
 
+  const isLiberadoProducao = (o: Order | SupportOrder) => {
+    const st = statusByPedidoId.get(o.id)?.status_atual;
+    if (st) return st === 'liberado_producao';
+    return o.status === 'Liberado p/ Produção';
+  };
+
   const eligibleOrders = useMemo(() => {
-    const sale = orders.filter((o) => o.status === 'Liberado p/ Produção' && !o.carregamentoId);
-    const sup = supportOrders.filter((o) => o.status === 'Liberado p/ Produção' && !o.carregamentoId);
+    const sale = orders.filter((o) => isLiberadoProducao(o) && !o.carregamentoId);
+    const sup = supportOrders.filter((o) => isLiberadoProducao(o) && !o.carregamentoId);
     return [...sale, ...sup].sort((a, b) => a.id.localeCompare(b.id));
-  }, [orders, supportOrders]);
+  }, [orders, supportOrders, statusByPedidoId]);
 
   const summary = useMemo(() => {
     const awaiting = productionSchedules.filter((s) => s.status === 'Aguardando Início').length;
@@ -151,8 +171,8 @@ const Producao = () => {
     const ym = currentYearMonthBR();
     const doneMonth = productionSchedules.filter((s) => s.status === 'Concluído' && s.createdAt.startsWith(ym)).length;
     const queuedOrders =
-      orders.filter((o) => ['Liberado p/ Produção', 'Em Carregamento'].includes(o.status)).length +
-      supportOrders.filter((o) => ['Liberado p/ Produção', 'Em Carregamento'].includes(o.status)).length;
+      orders.filter((o) => { const st = statusByPedidoId.get(o.id)?.status_atual; return st ? st === 'liberado_producao' : ['Liberado p/ Produção', 'Em Carregamento'].includes(o.status); }).length +
+      supportOrders.filter((o) => { const st = statusByPedidoId.get(o.id)?.status_atual; return st ? st === 'liberado_producao' : ['Liberado p/ Produção', 'Em Carregamento'].includes(o.status); }).length;
     return { awaiting, doing, doneMonth, queuedOrders };
   }, [orders, productionSchedules, supportOrders]);
 
@@ -312,15 +332,15 @@ const Producao = () => {
 
     const sale = orders.filter((o) => {
       if ((editing.orderIds || []).includes(o.id)) return true;
-      return o.status === 'Liberado p/ Produção' && !o.carregamentoId;
+      return isLiberadoProducao(o) && !o.carregamentoId;
     });
     const sup = supportOrders.filter((o) => {
       if ((editing.orderIds || []).includes(o.id)) return true;
-      return o.status === 'Liberado p/ Produção' && !o.carregamentoId;
+      return isLiberadoProducao(o) && !o.carregamentoId;
     });
 
     return [...sale, ...sup].sort((a, b) => a.id.localeCompare(b.id));
-  }, [editing, orders, supportOrders]);
+  }, [editing, orders, supportOrders, statusByPedidoId]);
 
   useEffect(() => {
     const onAfterPrint = () => setPrintId(null);
