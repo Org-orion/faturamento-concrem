@@ -125,7 +125,7 @@ const PedidoSuporte = () => {
       }
 
       const { data, error } = await supabaseOps
-        .from('comercial_pedidos_acoes')
+        .from('concrem_comercial_pedidos_acoes')
         .select('pedido_id, acao, criado_em')
         .in('pedido_id', ids)
         .in('acao', ['mover_para_suporte', 'mover_para_venda']);
@@ -194,7 +194,7 @@ const PedidoSuporte = () => {
 
       // Mostrar pedidos com aguardando_avaliacao ou liberado_producao
       const { data: statusData } = await supabaseOps
-        .from('pedidos_status')
+        .from('concrem_pedidos_status')
         .select('pedido_id')
         .in('status_atual', ['aguardando_avaliacao', 'liberado_producao']);
       if (cancelled) return;
@@ -403,7 +403,7 @@ const PedidoSuporte = () => {
 
     const username = user?.username;
     if (!supabaseOps || !username) return;
-    const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert([
+    const { error } = await supabaseOps.from('concrem_comercial_pedidos_acoes').insert([
       {
         pedido_id: selectedOrderDetails.id,
         acao: 'mover_para_venda',

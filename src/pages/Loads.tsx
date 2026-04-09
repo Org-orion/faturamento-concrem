@@ -80,7 +80,7 @@ const LoadsPage = () => {
     void (async () => {
       // Buscar status
       if (supabaseOps) {
-        const { data } = await supabaseOps.from('pedidos_status').select('*').in('pedido_id', allOrderIds);
+        const { data } = await supabaseOps.from('concrem_pedidos_status').select('*').in('pedido_id', allOrderIds);
         if (data) {
           setPedidoStatusMap(new Map((data as PedidoStatusRow[]).map((r) => [r.pedido_id, r])));
         }

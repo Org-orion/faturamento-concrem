@@ -119,7 +119,7 @@ const Commercial = () => {
       .channel('commercial_realtime_status')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'pedidos_status' },
+        { event: '*', schema: 'public', table: 'concrem_pedidos_status' },
         (payload) => {
           const row = (payload as any)?.new as any;
           const pedidoId = String(row?.pedido_id || '');
@@ -190,7 +190,7 @@ const Commercial = () => {
       }
 
       const { data, error } = await supabaseOps
-        .from('comercial_pedidos_acoes')
+        .from('concrem_comercial_pedidos_acoes')
         .select('pedido_id, acao, criado_em')
         .in('pedido_id', ids)
         .in('acao', ['mover_para_suporte', 'mover_para_venda']);
@@ -466,7 +466,7 @@ const Commercial = () => {
 
     const username = user?.username;
     if (!supabaseOps || !username) return;
-    const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert([
+    const { error } = await supabaseOps.from('concrem_comercial_pedidos_acoes').insert([
       {
         pedido_id: selectedOrderDetails.id,
         acao: 'mover_para_suporte',

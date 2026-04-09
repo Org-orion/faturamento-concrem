@@ -407,7 +407,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     let cancelled = false;
 
     const loadOps = async () => {
-      const { data, error } = await supabaseOps.from('programacoes_embarque').select('*');
+      const { data, error } = await supabaseOps.from('concrem_programacoes_embarque').select('*');
       if (cancelled) return;
       if (error || !data) {
         if (error) console.error('[Supabase OPS] Falha ao carregar programacoes_embarque:', error.message);
@@ -569,7 +569,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (supabaseOps) {
       try {
         const { data, error } = await supabaseOps
-          .from('usuarios')
+          .from('concrem_usuarios')
           .select('*')
           .eq('email', username)
           .eq('ativo', true)

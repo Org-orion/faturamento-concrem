@@ -39,7 +39,7 @@ export async function upsertProgramacaoCarregamento(load: Load) {
     updated_at: new Date().toISOString(),
   };
 
-  const { error } = await supabaseOps.from('programacoes_embarque').upsert(payload);
+  const { error } = await supabaseOps.from('concrem_programacoes_embarque').upsert(payload);
   if (error) {
     console.error('[Supabase OPS] upsert programacoes_embarque:', error.message);
   }
@@ -47,7 +47,7 @@ export async function upsertProgramacaoCarregamento(load: Load) {
 
 export async function deleteProgramacaoCarregamento(id: string) {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps.from('programacoes_embarque').delete().eq('id', id);
+  const { error } = await supabaseOps.from('concrem_programacoes_embarque').delete().eq('id', id);
   if (error) {
     console.error('[Supabase OPS] delete programacoes_embarque:', error.message);
   }
@@ -55,7 +55,7 @@ export async function deleteProgramacaoCarregamento(id: string) {
 
 export async function insertProducaoConfirmacao(programacaoId: string, confirmadoPor: string, observacao?: string) {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps.from('producao_confirmacoes').insert({
+  const { error } = await supabaseOps.from('concrem_producao_confirmacoes').insert({
     programacao_id: programacaoId,
     confirmado_em: new Date().toISOString(),
     confirmado_por: confirmadoPor,
@@ -69,7 +69,7 @@ export async function insertProducaoConfirmacao(programacaoId: string, confirmad
 export async function listProducaoConcluidos() {
   if (!supabaseOps) return [] as ProducaoConcluidoRow[];
   const { data, error } = await supabaseOps
-    .from('producao_concluidos')
+    .from('concrem_producao_concluidos')
     .select('*')
     .eq('desfeito', false)
     .order('data_conclusao', { ascending: false });
@@ -87,7 +87,7 @@ export async function insertProducaoConcluido(row: {
   criado_por?: string | null;
 }) {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps.from('producao_concluidos').insert({
+  const { error } = await supabaseOps.from('concrem_producao_concluidos').insert({
     embarque_id: row.embarque_id,
     pedido_id: row.pedido_id ?? null,
     motorista_id: row.motorista_id ?? null,
@@ -103,7 +103,7 @@ export async function insertProducaoConcluido(row: {
 export async function desfazerProducaoConcluido(carregamentoId: string) {
   if (!supabaseOps) return;
   const { error } = await supabaseOps
-    .from('producao_concluidos')
+    .from('concrem_producao_concluidos')
     .update({ desfeito: true })
     .eq('embarque_id', carregamentoId)
     .eq('desfeito', false);
@@ -120,7 +120,7 @@ export async function upsertEntregas(programacaoId: string, pedidoIds: string[],
     status,
     entregue_em: status === 'entregue' ? new Date().toISOString() : null,
   }));
-  const { error } = await supabaseOps.from('entregas').upsert(rows, { onConflict: 'programacao_id,pedido_id' });
+  const { error } = await supabaseOps.from('concrem_entregas').upsert(rows, { onConflict: 'programacao_id,pedido_id' });
   if (error) {
     console.error('[Supabase OPS] upsert entregas:', error.message);
   }
@@ -136,7 +136,7 @@ export async function upsertEntregasDetalhes(programacaoId: string, rows: Array<
     numero_nota: r.numero_nota ?? null,
     ordem_entrega: r.ordem_entrega ?? null,
   }));
-  const { error } = await supabaseOps.from('entregas').upsert(payload as any, { onConflict: 'programacao_id,pedido_id' });
+  const { error } = await supabaseOps.from('concrem_entregas').upsert(payload as any, { onConflict: 'programacao_id,pedido_id' });
   if (error) {
     console.error('[Supabase OPS] upsert entregas (detalhes):', error.message);
   }
@@ -158,7 +158,7 @@ export async function upsertEntregasDetalhesSafe(programacaoId: string, rows: Ar
   }));
 
   const { error } = await supabaseOps
-    .from('entregas')
+    .from('concrem_entregas')
     .upsert(payload as any, { onConflict: 'programacao_id,pedido_id' });
   if (error) {
     console.error('[Supabase OPS] upsert entregas:', error.message);
@@ -168,7 +168,7 @@ export async function upsertEntregasDetalhesSafe(programacaoId: string, rows: Ar
 export async function listEntregas(programacaoId: string) {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
-    .from('entregas')
+    .from('concrem_entregas')
     .select('*')
     .eq('programacao_id', programacaoId);
   if (error) {
@@ -211,7 +211,7 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
     ].filter(Boolean);
 
     const { data, error } = await supabaseOps
-      .from('representantes')
+      .from('concrem_representantes')
       .select(select)
       .or(orParts.join(','))
       .limit(20);
@@ -253,7 +253,7 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
   }
 
   const { data: byName, error: nameError } = await supabaseOps
-    .from('representantes')
+    .from('concrem_representantes')
     .select(select)
     .ilike('nome', `%${nameKey}%`)
     .limit(5);
@@ -273,7 +273,7 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
 
 export async function insertNotificacaoRepresentante(programacaoId: string, representante: string) {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps.from('notificacoes_representantes').insert({
+  const { error } = await supabaseOps.from('concrem_notificacoes_representantes').insert({
     programacao_id: programacaoId,
     representante,
     enviado_em: new Date().toISOString(),
@@ -302,7 +302,7 @@ export async function upsertComercialPedidoMeta(meta: {
     ...meta,
     atualizado_em: new Date().toISOString(),
   };
-  const { error } = await supabaseOps.from('comercial_pedidos_meta').upsert(payload);
+  const { error } = await supabaseOps.from('concrem_comercial_pedidos_meta').upsert(payload);
   if (error) {
     console.error('[Supabase OPS] upsert comercial_pedidos_meta:', error.message);
   }
@@ -311,7 +311,7 @@ export async function upsertComercialPedidoMeta(meta: {
 export async function listComercialPedidosMeta(pedidoIds: string[]): Promise<Record<string, { observacao?: string | null }>> {
   if (!supabaseOps || pedidoIds.length === 0) return {};
   const { data, error } = await supabaseOps
-    .from('comercial_pedidos_meta')
+    .from('concrem_comercial_pedidos_meta')
     .select('pedido_id, observacao')
     .in('pedido_id', pedidoIds);
   if (error) {
@@ -332,7 +332,7 @@ export async function insertComercialPedidoAcao(row: {
   payload?: any;
 }) {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert({
+  const { error } = await supabaseOps.from('concrem_comercial_pedidos_acoes').insert({
     pedido_id: row.pedido_id,
     acao: row.acao,
     criado_em: new Date().toISOString(),
@@ -346,7 +346,7 @@ export async function insertComercialPedidoAcao(row: {
 
 export async function insertNotificacaoRepresentantePedido(pedidoId: string, representante: string) {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps.from('notificacoes_representantes_pedidos').insert({
+  const { error } = await supabaseOps.from('concrem_notificacoes_representantes_pedidos').insert({
     pedido_id: pedidoId,
     representante,
     enviado_em: new Date().toISOString(),
@@ -362,7 +362,7 @@ export async function insertNotificacaoRepresentantePedido(pedidoId: string, rep
 
 export async function listTiposDespesa() {
   if (!supabaseOps) return [];
-  const { data, error } = await supabaseOps.from('tipos_despesa').select('*').order('nome', { ascending: true });
+  const { data, error } = await supabaseOps.from('concrem_tipos_despesa').select('*').order('nome', { ascending: true });
   if (error) {
     console.error('[Supabase OPS] list tipos_despesa:', error.message);
     return [];
@@ -384,7 +384,7 @@ export async function upsertTipoDespesa(expenseType: ExpenseType) {
     ativo: expenseType.active,
     atualizado_em: new Date().toISOString(),
   };
-  const { error } = await supabaseOps.from('tipos_despesa').upsert(payload);
+  const { error } = await supabaseOps.from('concrem_tipos_despesa').upsert(payload);
   if (error) {
     console.error('[Supabase OPS] upsert tipos_despesa:', error.message);
   }
@@ -394,7 +394,7 @@ export async function listLancamentosFinanceiros() {
   if (!supabaseOps) return [];
   
   const { data: lancamentos, error: lancError } = await supabaseOps
-    .from('lancamentos_financeiros')
+    .from('concrem_lancamentos_financeiros')
     .select(`
       *,
       lancamentos_despesas (
@@ -445,14 +445,14 @@ export async function upsertLancamentoFinanceiro(entry: FreightEntry) {
     atualizado_em: new Date().toISOString(),
   };
 
-  const { error: lancError } = await supabaseOps.from('lancamentos_financeiros').upsert(payloadLancamento);
+  const { error: lancError } = await supabaseOps.from('concrem_lancamentos_financeiros').upsert(payloadLancamento);
   if (lancError) {
     console.error('[Supabase OPS] upsert lancamentos_financeiros:', lancError.message);
     return;
   }
 
   // 2. Salvar as despesas vinculadas (apagando as antigas primeiro para simplificar a sincronização)
-  await supabaseOps.from('lancamentos_despesas').delete().eq('lancamento_id', entry.id);
+  await supabaseOps.from('concrem_lancamentos_despesas').delete().eq('lancamento_id', entry.id);
 
   if (entry.expenses.length > 0) {
     const payloadDespesas = entry.expenses.map(e => ({
@@ -462,7 +462,7 @@ export async function upsertLancamentoFinanceiro(entry: FreightEntry) {
       observacao: e.note,
     }));
     
-    const { error: despError } = await supabaseOps.from('lancamentos_despesas').insert(payloadDespesas);
+    const { error: despError } = await supabaseOps.from('concrem_lancamentos_despesas').insert(payloadDespesas);
     if (despError) {
       console.error('[Supabase OPS] insert lancamentos_despesas:', despError.message);
     }
@@ -471,7 +471,7 @@ export async function upsertLancamentoFinanceiro(entry: FreightEntry) {
 
 export async function deleteLancamentoFinanceiro(id: string) {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps.from('lancamentos_financeiros').delete().eq('id', id);
+  const { error } = await supabaseOps.from('concrem_lancamentos_financeiros').delete().eq('id', id);
   if (error) {
     console.error('[Supabase OPS] delete lancamentos_financeiros:', error.message);
   }
@@ -501,7 +501,7 @@ export async function upsertRelatorioEntregaAnexo(row: {
   criado_por: string | null;
 }) {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps.from('relatorio_entrega_anexos').upsert(
+  const { error } = await supabaseOps.from('concrem_relatorio_entrega_anexos').upsert(
     { ...row, criado_em: new Date().toISOString() },
     { onConflict: 'carregamento_id,pedido_id,tipo' },
   );
@@ -513,7 +513,7 @@ export async function upsertRelatorioEntregaAnexo(row: {
 export async function listRelatorioEntregaAnexos(carregamentoId: string): Promise<RelatorioEntregaAnexo[]> {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
-    .from('relatorio_entrega_anexos')
+    .from('concrem_relatorio_entrega_anexos')
     .select('*')
     .eq('carregamento_id', carregamentoId);
   if (error) {

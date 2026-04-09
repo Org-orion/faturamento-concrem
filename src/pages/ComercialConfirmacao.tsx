@@ -124,7 +124,7 @@ const ComercialConfirmacao = () => {
       const ids = awaitingOrders.map((o) => o.id);
       if (!ids.length) { setConfirmedIds([]); return; }
       const { data, error } = await supabaseOps
-        .from('comercial_pedidos_acoes')
+        .from('concrem_comercial_pedidos_acoes')
         .select('pedido_id')
         .in('pedido_id', ids)
         .eq('acao', 'confirmar_diretoria');
@@ -243,7 +243,7 @@ const ComercialConfirmacao = () => {
         pedido_id: pedidoId, acao: 'confirmar_diretoria',
         criado_em: new Date().toISOString(), criado_por: username, payload: null,
       }));
-      const { error } = await supabaseOps.from('comercial_pedidos_acoes').insert(rows as any);
+      const { error } = await supabaseOps.from('concrem_comercial_pedidos_acoes').insert(rows as any);
       if (error) console.error('[Supabase OPS] confirmar_diretoria:', error.message);
     }
 

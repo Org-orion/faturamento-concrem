@@ -98,7 +98,7 @@ const PainelPedidos = () => {
       if (supabaseOps) {
         try {
           allRows = await fetchAllPages<PedidoStatusRow>((from, to) =>
-            supabaseOps.from('pedidos_status').select('*').order('atualizado_em', { ascending: false }).range(from, to)
+            supabaseOps.from('concrem_pedidos_status').select('*').order('atualizado_em', { ascending: false }).range(from, to)
           ) as PedidoStatusRow[];
         } catch (e: any) {
           console.error('[PainelPedidos] refresh query error:', e?.message);
@@ -153,7 +153,7 @@ const PainelPedidos = () => {
     let statusRow: PedidoStatusRow | null = null;
     if (supabaseOps) {
       await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero, grupoCliente: found.grupoCliente }], user?.username || null);
-      const { data: statusData } = await supabaseOps.from('pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
+      const { data: statusData } = await supabaseOps.from('concrem_pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
       if (statusData?.length) statusRow = (statusData as any[])[0] as PedidoStatusRow;
     }
 
@@ -193,7 +193,7 @@ const PainelPedidos = () => {
       .channel('painel_pedidos_realtime')
       .on(
         'postgres_changes',
-        { event: '*', schema: 'public', table: 'pedidos_status' },
+        { event: '*', schema: 'public', table: 'concrem_pedidos_status' },
         (payload) => {
           const row = (payload as any)?.new as any;
           if (!row?.pedido_id) return;

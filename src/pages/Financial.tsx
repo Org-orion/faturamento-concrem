@@ -50,7 +50,7 @@ const Financial = () => {
   const [pedidoStatusRows, setPedidoStatusRows] = useState<PedidoStatusRow[]>([]);
   useEffect(() => {
     if (!supabaseOps) return;
-    void supabaseOps.from('pedidos_status').select('pedido_id,status_atual').then(({ data }) => {
+    void supabaseOps.from('concrem_pedidos_status').select('pedido_id,status_atual').then(({ data }) => {
       if (data) setPedidoStatusRows(data as PedidoStatusRow[]);
     });
   }, []);

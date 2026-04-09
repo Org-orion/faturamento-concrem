@@ -19,7 +19,7 @@ type StatusUpdateInput = {
 export async function getPedidoStatus(pedidoId: string): Promise<PedidoStatusRow | null> {
   if (!supabaseOps) return null;
   const { data, error } = await supabaseOps
-    .from('pedidos_status')
+    .from('concrem_pedidos_status')
     .select('*')
     .eq('pedido_id', pedidoId)
     .maybeSingle();
@@ -43,7 +43,7 @@ export async function listPedidosStatusByPedidoIds(pedidoIds: string[]): Promise
   const batches = chunk(pedidoIds, 200);
   const results: PedidoStatusRow[] = [];
   for (const batch of batches) {
-    const { data, error } = await supabaseOps.from('pedidos_status').select('*').in('pedido_id', batch);
+    const { data, error } = await supabaseOps.from('concrem_pedidos_status').select('*').in('pedido_id', batch);
     if (error) {
       console.error('[Supabase OPS] listPedidosStatusByPedidoIds:', error.message);
       continue;
@@ -56,7 +56,7 @@ export async function listPedidosStatusByPedidoIds(pedidoIds: string[]): Promise
 export async function listPedidosStatusHistorico(pedidoId: string): Promise<PedidoStatusHistoricoRow[]> {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
-    .from('pedidos_status_historico')
+    .from('concrem_pedidos_status_historico')
     .select('*')
     .eq('pedido_id', pedidoId)
     .order('alterado_em', { ascending: false });
@@ -77,7 +77,7 @@ export async function ensurePedidoStatusInitialized(pedidoId: string, numeroPedi
   let upsertErr: { message: string } | null = null;
   try {
     const res = await supabaseOps
-      .from('pedidos_status')
+      .from('concrem_pedidos_status')
       .upsert(
         {
           pedido_id: pedidoId,
@@ -100,7 +100,7 @@ export async function ensurePedidoStatusInitialized(pedidoId: string, numeroPedi
 
   let histErr: { message: string } | null = null;
   try {
-    const res = await supabaseOps.from('pedidos_status_historico').insert({
+    const res = await supabaseOps.from('concrem_pedidos_status_historico').insert({
       pedido_id: pedidoId,
       numero_pedido: numeroPedido,
       status_anterior: null,
@@ -153,7 +153,7 @@ export async function ensurePedidosStatusInitializedBatch(
     let batchData: any[] | null = null;
     let batchErr: { message: string } | null = null;
     try {
-      const res = await supabaseOps.from('pedidos_status').select('pedido_id, status_atual').in('pedido_id', idBatch);
+      const res = await supabaseOps.from('concrem_pedidos_status').select('pedido_id, status_atual').in('pedido_id', idBatch);
       batchData = res.data as any;
       batchErr = res.error as any;
     } catch (err) {
@@ -186,7 +186,7 @@ export async function ensurePedidosStatusInitializedBatch(
 
   for (const p of leroyToUpgrade) {
     try {
-      const res = await supabaseOps.from('pedidos_status').update({
+      const res = await supabaseOps.from('concrem_pedidos_status').update({
         status_atual: LEROY_TARGET,
         atualizado_em: now,
         atualizado_por: userName,
@@ -195,7 +195,7 @@ export async function ensurePedidosStatusInitializedBatch(
         console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upgrade leroy:', res.error.message);
         continue;
       }
-      await supabaseOps.from('pedidos_status_historico').insert({
+      await supabaseOps.from('concrem_pedidos_status_historico').insert({
         pedido_id: p.pedidoId,
         numero_pedido: p.numeroPedido,
         status_anterior: existingMap.get(p.pedidoId) ?? null,
@@ -218,7 +218,7 @@ export async function ensurePedidosStatusInitializedBatch(
 
   for (const p of revendaToUpgrade) {
     try {
-      const res = await supabaseOps.from('pedidos_status').update({
+      const res = await supabaseOps.from('concrem_pedidos_status').update({
         status_atual: 'liberado_comercial',
         atualizado_em: now,
         atualizado_por: userName,
@@ -227,7 +227,7 @@ export async function ensurePedidosStatusInitializedBatch(
         console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upgrade revenda:', res.error.message);
         continue;
       }
-      await supabaseOps.from('pedidos_status_historico').insert({
+      await supabaseOps.from('concrem_pedidos_status_historico').insert({
         pedido_id: p.pedidoId,
         numero_pedido: p.numeroPedido,
         status_anterior: 'aguardando_avaliacao',
@@ -258,7 +258,7 @@ export async function ensurePedidosStatusInitializedBatch(
 
     try {
       const res = await supabaseOps
-        .from('pedidos_status')
+        .from('concrem_pedidos_status')
         .upsert(
           batch.map((p) => {
             const status: PedidoStatusValue = isLeroy(p.clienteNome, p.representanteNome)
@@ -283,7 +283,7 @@ export async function ensurePedidosStatusInitializedBatch(
     }
 
     try {
-      const res = await supabaseOps.from('pedidos_status_historico').insert(
+      const res = await supabaseOps.from('concrem_pedidos_status_historico').insert(
         batch.map((p) => {
           const leroyOrder = isLeroy(p.clienteNome, p.representanteNome);
           const status: PedidoStatusValue = leroyOrder
@@ -328,7 +328,7 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
   }
 
   try {
-    const { error: upsertErr } = await supabaseOps.from('pedidos_status').upsert(
+    const { error: upsertErr } = await supabaseOps.from('concrem_pedidos_status').upsert(
       {
         pedido_id: input.pedidoId,
         numero_pedido: input.numeroPedido,
@@ -348,7 +348,7 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
   }
 
   try {
-    const { error: histErr } = await supabaseOps.from('pedidos_status_historico').insert({
+    const { error: histErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert({
       pedido_id: input.pedidoId,
       numero_pedido: input.numeroPedido,
       status_anterior: statusAnterior,
@@ -435,7 +435,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
     }
   }
 
-  const { error: upsertErr } = await supabaseOps.from('pedidos_status').upsert(
+  const { error: upsertErr } = await supabaseOps.from('concrem_pedidos_status').upsert(
     {
       pedido_id: params.pedidoId,
       numero_pedido: params.numeroPedido,
@@ -450,7 +450,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
     return { ok: false, previous: statusAnterior, notified: false, notifyError: upsertErr.message };
   }
 
-  const { error: histErr } = await supabaseOps.from('pedidos_status_historico').insert({
+  const { error: histErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert({
     pedido_id: params.pedidoId,
     numero_pedido: params.numeroPedido,
     status_anterior: statusAnterior,
@@ -481,7 +481,7 @@ export async function syncEntregaStatusFromOps(params: {
 }): Promise<{ ok: boolean; target: PedidoStatusValue | null }> {
   if (!supabaseOps) return { ok: false, target: null };
 
-  const { data, error } = await supabaseOps.from('entregas').select('status').eq('pedido_id', params.pedidoId);
+  const { data, error } = await supabaseOps.from('concrem_entregas').select('status').eq('pedido_id', params.pedidoId);
   if (error) {
     console.error('[Supabase OPS] syncEntregaStatusFromOps select entregas:', error.message);
     return { ok: false, target: null };
@@ -566,7 +566,7 @@ export async function runMigrationSuporteLiberadoProducao(
   for (const batch of chunk(ids, 200)) {
     try {
       const { data, error } = await supabaseOps
-        .from('pedidos_status')
+        .from('concrem_pedidos_status')
         .select('pedido_id, status_atual')
         .in('pedido_id', batch);
       if (error) { console.error('[Migration] fetch status:', error.message); continue; }
@@ -595,12 +595,12 @@ export async function runMigrationSuporteLiberadoProducao(
   for (const batch of chunk(toUpgrade, 100)) {
     try {
       const { error } = await supabaseOps
-        .from('pedidos_status')
+        .from('concrem_pedidos_status')
         .update({ status_atual: TARGET, atualizado_em: now, atualizado_por: userName })
         .in('pedido_id', batch);
       if (error) { console.error('[Migration] update:', error.message); continue; }
 
-      const { error: histErr } = await supabaseOps.from('pedidos_status_historico').insert(
+      const { error: histErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert(
         batch.map((id) => ({
           pedido_id: id,
           numero_pedido: id,
@@ -621,7 +621,7 @@ export async function runMigrationSuporteLiberadoProducao(
   if (toInsert.length) {
     for (const batch of chunk(toInsert, 100)) {
       try {
-        const { error } = await supabaseOps.from('pedidos_status').upsert(
+        const { error } = await supabaseOps.from('concrem_pedidos_status').upsert(
           batch.map((id) => ({
             pedido_id: id,
             numero_pedido: id,
@@ -633,7 +633,7 @@ export async function runMigrationSuporteLiberadoProducao(
         );
         if (error) { console.error('[Migration] upsert new:', error.message); continue; }
 
-        const { error: histErr } = await supabaseOps.from('pedidos_status_historico').insert(
+        const { error: histErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert(
           batch.map((id) => ({
             pedido_id: id,
             numero_pedido: id,

@@ -55,7 +55,7 @@ export const safeJsonParse = <T>(value: string | null | undefined, fallback: T):
 export async function listRepresentantes() {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
-    .from('representantes')
+    .from('concrem_representantes')
     .select('id,codigo_representante,nome,cpf,telefone_whatsapp,regiao_atuacao,endereco,criado_em,atualizado_em')
     .order('nome', { ascending: true });
   if (error) throw new Error(error.message);
@@ -65,7 +65,7 @@ export async function listRepresentantes() {
 export async function insertRepresentante(payload: Partial<RepresentanteRow>) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
-    .from('representantes')
+    .from('concrem_representantes')
     .insert([payload])
     .select('id,codigo_representante,nome,cpf,telefone_whatsapp,regiao_atuacao,endereco,criado_em,atualizado_em')
     .single();
@@ -76,7 +76,7 @@ export async function insertRepresentante(payload: Partial<RepresentanteRow>) {
 export async function updateRepresentante(id: string, payload: Partial<RepresentanteRow>) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
-    .from('representantes')
+    .from('concrem_representantes')
     .update(payload)
     .eq('id', id)
     .select('id,codigo_representante,nome,cpf,telefone_whatsapp,regiao_atuacao,endereco,criado_em,atualizado_em')
@@ -87,14 +87,14 @@ export async function updateRepresentante(id: string, payload: Partial<Represent
 
 export async function deleteRepresentante(id: string) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
-  const { error } = await supabaseOps.from('representantes').delete().eq('id', id);
+  const { error } = await supabaseOps.from('concrem_representantes').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
 
 export async function listMotoristas() {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
-    .from('motoristas')
+    .from('concrem_motoristas')
     .select('id,nome,cpf,telefone,cnh_numero,cnh_categoria,placa_veiculo,tipo_veiculo,volume_suportado_m3,peso_suportado_kg,criado_em,atualizado_em')
     .order('nome', { ascending: true });
   if (error) throw new Error(error.message);
@@ -104,7 +104,7 @@ export async function listMotoristas() {
 export async function insertMotorista(payload: Partial<MotoristaRow>) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
-    .from('motoristas')
+    .from('concrem_motoristas')
     .insert([payload])
     .select('id,nome,cpf,telefone,cnh_numero,cnh_categoria,placa_veiculo,tipo_veiculo,volume_suportado_m3,peso_suportado_kg,criado_em,atualizado_em')
     .single();
@@ -115,7 +115,7 @@ export async function insertMotorista(payload: Partial<MotoristaRow>) {
 export async function updateMotorista(id: string, payload: Partial<MotoristaRow>) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
-    .from('motoristas')
+    .from('concrem_motoristas')
     .update(payload)
     .eq('id', id)
     .select('id,nome,cpf,telefone,cnh_numero,cnh_categoria,placa_veiculo,tipo_veiculo,volume_suportado_m3,peso_suportado_kg,criado_em,atualizado_em')
@@ -126,7 +126,7 @@ export async function updateMotorista(id: string, payload: Partial<MotoristaRow>
 
 export async function deleteMotorista(id: string) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
-  const { error } = await supabaseOps.from('motoristas').delete().eq('id', id);
+  const { error } = await supabaseOps.from('concrem_motoristas').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
 
@@ -134,14 +134,14 @@ export async function listUsuarios() {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   // Try with paginas_acesso first; fall back if the column doesn't exist yet
   const { data, error } = await supabaseOps
-    .from('usuarios')
+    .from('concrem_usuarios')
     .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
     .order('nome', { ascending: true });
   if (error) {
     if (error.message?.includes('paginas_acesso')) {
       // Column not yet created — fetch without it
       const fallback = await supabaseOps
-        .from('usuarios')
+        .from('concrem_usuarios')
         .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
         .order('nome', { ascending: true });
       if (fallback.error) throw new Error(fallback.error.message);
@@ -155,7 +155,7 @@ export async function listUsuarios() {
 export async function insertUsuario(payload: Partial<UsuarioRow>) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
-    .from('usuarios')
+    .from('concrem_usuarios')
     .insert([payload])
     .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
     .single();
@@ -163,7 +163,7 @@ export async function insertUsuario(payload: Partial<UsuarioRow>) {
     if (error.message?.includes('paginas_acesso')) {
       const { paginas_acesso: _pa, ...rest } = payload as any;
       const fallback = await supabaseOps
-        .from('usuarios')
+        .from('concrem_usuarios')
         .insert([rest])
         .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
         .single();
@@ -178,7 +178,7 @@ export async function insertUsuario(payload: Partial<UsuarioRow>) {
 export async function updateUsuario(id: string, payload: Partial<UsuarioRow>) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
-    .from('usuarios')
+    .from('concrem_usuarios')
     .update(payload)
     .eq('id', id)
     .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
@@ -187,7 +187,7 @@ export async function updateUsuario(id: string, payload: Partial<UsuarioRow>) {
     if (error.message?.includes('paginas_acesso')) {
       const { paginas_acesso: _pa, ...rest } = payload as any;
       const fallback = await supabaseOps
-        .from('usuarios')
+        .from('concrem_usuarios')
         .update(rest)
         .eq('id', id)
         .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
@@ -202,6 +202,6 @@ export async function updateUsuario(id: string, payload: Partial<UsuarioRow>) {
 
 export async function deleteUsuario(id: string) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
-  const { error } = await supabaseOps.from('usuarios').delete().eq('id', id);
+  const { error } = await supabaseOps.from('concrem_usuarios').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
