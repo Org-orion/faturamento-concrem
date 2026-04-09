@@ -18,6 +18,7 @@ import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, Fil
 import { cn } from '@/lib/utils';
 import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas } from '@/lib/opsRepo';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
+import { fetchAllPages } from '@/lib/supabaseUtils';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeIcon, PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
 import { todayBR, fmtDate, currentHourBR } from '@/lib/dateUtils';
@@ -267,21 +268,27 @@ const CreateShipment = () => {
     const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
     const load = async () => {
-      const { data: statusData, error: statusError } = await supabaseOps
-        .from('pedidos_status')
-        .select('*')
-        .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES);
-      if (statusError || !statusData?.length) return;
+      const statusRows = await fetchAllPages((from, to) =>
+        supabaseOps!.from('pedidos_status').select('*').in('status_atual', CARREGAMENTO_ALLOWED_STATUSES).range(from, to)
+      );
+      if (!statusRows.length) return;
 
-      setPedidoStatusRows(statusData as any);
+      setPedidoStatusRows(statusRows as any);
 
-      const ids = (statusData as any[]).map((r: any) => r.pedido_id);
-      const { data: pedidosData } = await supabasePedidos
-        .from(table)
-        .select(tableColumns)
-        .in('numero_pedido', ids);
+      const ids = statusRows.map((r: any) => r.pedido_id);
+      // Chunk to avoid URL length limits on large .in() queries
+      const chunkArr = <T,>(arr: T[], size: number): T[][] => {
+        const out: T[][] = [];
+        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+        return out;
+      };
+      const allPedidos: any[] = [];
+      for (const batch of chunkArr(ids, 200)) {
+        const { data: batchData } = await supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch);
+        allPedidos.push(...(batchData || []));
+      }
 
-      const mapped = (pedidosData || []).map((row: any) => rowToOrder(row, 'CLI-001'));
+      const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001'));
       setDirectPedidos(mapped);
     };
     void load();

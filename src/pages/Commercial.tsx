@@ -18,6 +18,7 @@ import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus, isLeroy } from '@/lib/pedidosStatusRepo';
 import { getPedidoStatusDef } from '@/lib/pedidoStatusFlow';
+import { fetchAllPages } from '@/lib/supabaseUtils';
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -58,8 +59,7 @@ const Commercial = () => {
   const [conditions, setConditions] = useState<FilterCondition[]>([]);
 
   const [page, setPage] = useState(1);
-  const [serverOrders, setServerOrders] = useState<Order[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
+  const [allOrders, setAllOrders] = useState<Order[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
@@ -74,17 +74,17 @@ const Commercial = () => {
     setStatusRows(rows);
   };
 
-  // Load status rows when serverOrders change or when batch upgrades run
+  // Load status rows when allOrders change or when batch upgrades run
   useEffect(() => {
-    const ids = serverOrders.map(o => o.id);
+    const ids = allOrders.map(o => o.id);
     if (ids.length) void refreshStatusRows(ids);
-  }, [serverOrders, pedidoStatusVersion]);
+  }, [allOrders, pedidoStatusVersion]);
 
   // Self-healing: auto-upgrade any LEROY orders still stuck before liberado_producao
   useEffect(() => {
-    if (!statusRows.length || !serverOrders.length) return;
+    if (!statusRows.length || !allOrders.length) return;
     const LEROY_TARGET_ORDER = 10; // liberado_producao = order 10
-    const toUpgrade = serverOrders.filter((o) => {
+    const toUpgrade = allOrders.filter((o) => {
       const st = statusRows.find((r) => r.pedido_id === o.id)?.status_atual;
       if (!st) return false;
       return isLeroy(o.clientName, o.representativeName) && getPedidoStatusDef(st).order < LEROY_TARGET_ORDER;
@@ -101,29 +101,16 @@ const Commercial = () => {
           observacao: 'LEROY — liberado automaticamente para produção',
         });
       }
-      const ids = serverOrders.map((x) => x.id);
+      const ids = allOrders.map((x) => x.id);
       if (ids.length) {
         const rows = await listPedidosStatusByPedidoIds(ids);
         setStatusRows(rows);
       }
     };
     void doUpgrade();
-  }, [statusRows, serverOrders, user?.username]);
+  }, [statusRows, allOrders, user?.username]);
 
-  // Map UI sort keys → Supabase column names
-  const sortColumnMap: Record<string, string> = {
-    id: 'numero_pedido',
-    cliente: 'cliente_nome',
-    date: 'data_emissao',
-    expiryDate: 'data_validade',
-    value: 'total_pedido_venda',
-  };
-
-  // Sort and filtering are server-side; show all fetched records
-  const displayedOrders = serverOrders;
-
-  // Reset page when sort changes
-  useEffect(() => { setPage(1); }, [sortState]);
+  // filteredOrders / displayedOrders are declared after debouncedFilterCliente (line ~287) to avoid TDZ
 
   useEffect(() => {
     if (!supabaseOps) return;
@@ -236,15 +223,79 @@ const Commercial = () => {
 
   const debouncedFilterCliente = useDebounce(filterCliente, 400);
 
+  // Client-side filtering: status, move overrides, text filters, sort
+  const filteredOrders = useMemo(() => {
+    const ALLOWED = new Set(['aguardando_avaliacao', 'liberado_producao']);
+    const movedToSupportSet = new Set(
+      Object.entries(moveOverride).filter((x) => x[1] === 'SUPORTE').map((x) => x[0])
+    );
+
+    let result = allOrders.filter((o) => {
+      if (movedToSupportSet.has(o.id)) return false;
+      const st = statusByPedidoId.get(o.id)?.status_atual;
+      // If status not yet loaded, show optimistically; if loaded, must be in ALLOWED
+      if (st && !ALLOWED.has(st)) return false;
+      return true;
+    });
+
+    if (debouncedFilterPedido) {
+      const nums = debouncedFilterPedido.split(/[,;]+/).map((v) => v.trim()).filter(Boolean);
+      if (nums.length > 1) result = result.filter((o) => nums.some((n) => o.id.includes(n)));
+      else result = result.filter((o) => o.id.toLowerCase().includes(debouncedFilterPedido.toLowerCase()));
+    }
+    if (debouncedFilterCliente) {
+      result = result.filter((o) => (o.clientName || '').toLowerCase().includes(debouncedFilterCliente.toLowerCase()));
+    }
+    if (debouncedFilterConf) {
+      result = result.filter((o) => String(o.idNotaConf ?? '') === debouncedFilterConf);
+    }
+    if (debouncedFilterRep) {
+      result = result.filter((o) => (o.representativeName || '').toLowerCase().includes(debouncedFilterRep.toLowerCase()));
+    }
+    if (issueDate) result = result.filter((o) => (o.date || '').startsWith(issueDate));
+    if (validDate) result = result.filter((o) => (o.expiryDate || '').startsWith(validDate));
+
+    if (sortState.key) {
+      const dir = sortState.direction === 'asc' ? 1 : -1;
+      result = [...result].sort((a, b) => {
+        let av: any, bv: any;
+        switch (sortState.key) {
+          case 'id': av = a.id; bv = b.id; break;
+          case 'cliente': av = a.clientName || ''; bv = b.clientName || ''; break;
+          case 'date': av = a.date || ''; bv = b.date || ''; break;
+          case 'expiryDate': av = a.expiryDate || ''; bv = b.expiryDate || ''; break;
+          case 'value': av = getOrderTotal(a); bv = getOrderTotal(b); break;
+          default: return 0;
+        }
+        if (av < bv) return -dir;
+        if (av > bv) return dir;
+        return 0;
+      });
+    } else {
+      result = [...result].sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    }
+
+    return result;
+  }, [allOrders, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, issueDate, validDate, sortState]);
+
+  // Client-side pagination slice
+  const displayedOrders = useMemo(() => {
+    const from = (page - 1) * 20;
+    return filteredOrders.slice(from, from + 20);
+  }, [filteredOrders, page]);
+
+  // Reset page when filters/sort change
+  useEffect(() => { setPage(1); }, [debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, issueDate, validDate, sortState]);
+
   const uniqueClientes = useMemo(() => {
-    const set = new Set(serverOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
+    const set = new Set(allOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [serverOrders]);
+  }, [allOrders]);
 
   const uniqueRepresentantes = useMemo(() => {
-    const set = new Set(serverOrders.map((o) => o.representativeName).filter((r): r is string => Boolean(r)));
+    const set = new Set(allOrders.map((o) => o.representativeName).filter((r): r is string => Boolean(r)));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [serverOrders]);
+  }, [allOrders]);
 
   const filterFields = useMemo(() => {
     return [
@@ -271,107 +322,43 @@ const Commercial = () => {
     setPage(1);
   }, [conditions]);
 
-  // Fetch paginated data from Supabase
+  // Fetch ALL venda orders — filtering/sorting/pagination are done client-side
   useEffect(() => {
     if (!supabasePedidos) return;
     let cancelled = false;
 
-    const fetchPage = async () => {
+    const fetchAll = async () => {
       setLoadingList(true);
       try {
         const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
-        // Cross-reference with pedidos_status: only show aguardando_avaliacao or liberado_producao
-        const { data: statusData } = await supabaseOps
-          .from('pedidos_status')
-          .select('pedido_id')
-          .in('status_atual', ['aguardando_avaliacao', 'liberado_producao']);
-        if (cancelled) return;
-        const allowedIds = (statusData || []).map((r: any) => String(r.pedido_id));
-
-        const movedToSupport = Object.entries(moveOverride).filter((x) => x[1] === 'SUPORTE').map((x) => x[0]);
         const movedToVenda = Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0]);
-
         let finalOr = vendasOr;
         if (movedToVenda.length > 0) {
           finalOr += `,numero_pedido.in.(${movedToVenda.map((x) => `"${x}"`).join(',')})`;
         }
 
-        let query = supabasePedidos.from(table).select(tableColumns, { count: 'estimated' })
-          .or(finalOr)
-          .in('id_nota_conf', [307, 309, 613, 665]);
+        const rows = await fetchAllPages((from, to) =>
+          supabasePedidos!.from(table).select(tableColumns)
+            .or(finalOr)
+            .in('id_nota_conf', [307, 309, 613, 665])
+            .range(from, to) as any
+        );
 
-        // Intersect with allowed status IDs
-        if (allowedIds.length > 0) {
-          query = query.in('numero_pedido', allowedIds);
-        } else {
-          if (!cancelled) { setLoadingList(false); setServerOrders([]); setTotalCount(0); }
-          return;
-        }
-
-        if (movedToSupport.length > 0) {
-          query = query.not('numero_pedido', 'in', `(${movedToSupport.map((x) => `"${x}"`).join(',')})`);
-        }
-
-        if (debouncedFilterPedido) {
-          const nums = debouncedFilterPedido.split(/[,;]+/).map((v) => v.trim()).filter(Boolean);
-          if (nums.length > 1) {
-            query = query.or(nums.map((n) => `numero_pedido.ilike.%${n}%`).join(','));
-          } else {
-            query = query.ilike('numero_pedido', `%${debouncedFilterPedido}%`);
-          }
-        }
-        if (debouncedFilterCliente) {
-          query = query.ilike('cliente_nome', `%${debouncedFilterCliente}%`);
-        }
-        if (debouncedFilterConf) {
-          query = query.eq('id_nota_conf', debouncedFilterConf);
-        }
-        if (debouncedFilterRep) {
-          query = query.ilike('representante', `%${debouncedFilterRep}%`);
-        }
-        if (issueDate) {
-          query = query.gte('data_emissao', `${issueDate}T00:00:00`).lte('data_emissao', `${issueDate}T23:59:59`);
-        }
-        if (validDate) {
-          query = query.gte('data_validade', `${validDate}T00:00:00`).lte('data_validade', `${validDate}T23:59:59`);
-        }
-
-        const from = (page - 1) * 20;
-        const to = from + 19;
-        const sortCol = sortState.key ? sortColumnMap[sortState.key] : null;
-        query = query.range(from, to).order(sortCol || 'data_emissao', { ascending: sortCol ? sortState.direction === 'asc' : false });
-
-        const { data, count, error } = await query;
         if (cancelled) return;
-
-        if (error) {
-          console.error('[Supabase] Erro ao buscar página:', error.message);
-          if (String(error.message || '').includes('Failed to fetch')) {
-            showToast('Falha ao conectar ao Supabase. Verifique URL/Key e CORS liberado para localhost.', 'error');
-          }
-          return;
-        }
-
-        if (data) {
-          const mapped = data.map((row: any) => rowToOrder(row, 'CLI-001'));
-          setServerOrders(mapped);
-        }
-        if (count !== null) {
-          setTotalCount(count);
-        }
+        setAllOrders(rows.map((row: any) => rowToOrder(row, 'CLI-001')));
       } catch (e: any) {
         if (cancelled) return;
-        console.error('[Supabase] Erro ao buscar página:', e?.message || e);
+        console.error('[Commercial] fetchAll error:', e?.message || e);
         showToast('Falha ao conectar ao Supabase. Verifique URL/Key e CORS liberado para localhost.', 'error');
       } finally {
         if (!cancelled) setLoadingList(false);
       }
     };
 
-    fetchPage();
+    fetchAll();
     return () => { cancelled = true; };
-  }, [debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, issueDate, moveOverride, page, sortState, validDate]);
+  }, [moveOverride]);
 
   const totals = useMemo(() => {
     const awaiting = orders.filter((o) => o.status === 'Aguardando Avaliação');
@@ -392,7 +379,7 @@ const Commercial = () => {
 
 
   const openDetails = async (id: string) => {
-    const o = serverOrders.find((x) => x.id === id);
+    const o = allOrders.find((x) => x.id === id);
     if (!o) return;
     
     setSelectedId(id);
@@ -464,7 +451,7 @@ const Commercial = () => {
   const confirmRelease = async () => {
     if (!selectedOrderDetails) return;
     // Refresh status rows
-    await refreshStatusRows(serverOrders.map(o => o.id));
+    await refreshStatusRows(allOrders.map(o => o.id));
 
     showToast(`Pedido ${selectedOrderDetails.id} liberado para o comercial`);
     setOpenConfirm(null);
@@ -474,7 +461,7 @@ const Commercial = () => {
   const moveToSupport = async () => {
     if (!selectedOrderDetails) return;
     setMoveOverride((prev) => ({ ...prev, [selectedOrderDetails.id]: 'SUPORTE' }));
-    setServerOrders(prev => prev.filter(o => o.id !== selectedOrderDetails.id));
+    setAllOrders(prev => prev.filter(o => o.id !== selectedOrderDetails.id));
     setOpenDetail(false);
 
     const username = user?.username;
@@ -613,10 +600,10 @@ const Commercial = () => {
             </tbody>
           </table>
         </div>
-        {!loadingList && serverOrders.length > 0 && (
+        {!loadingList && filteredOrders.length > 0 && (
           <div className="px-6 py-4 border-t border-border flex items-center justify-between">
             <p className="text-xs text-muted-foreground">
-              Mostrando {displayedOrders.length} de {totalCount} pedidos
+              Mostrando {Math.min(page * 20, filteredOrders.length)} de {filteredOrders.length} pedidos
             </p>
             <div className="flex items-center gap-2">
               <button
@@ -627,7 +614,7 @@ const Commercial = () => {
                 Anterior
               </button>
               <button
-                disabled={page * 20 >= totalCount}
+                disabled={page * 20 >= filteredOrders.length}
                 onClick={() => setPage(p => p + 1)}
                 className="px-3 py-1.5 rounded border border-border bg-card text-xs font-semibold disabled:opacity-50"
               >

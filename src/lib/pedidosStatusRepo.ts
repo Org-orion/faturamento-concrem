@@ -43,7 +43,7 @@ export async function listPedidosStatusByPedidoIds(pedidoIds: string[]): Promise
   const batches = chunk(pedidoIds, 200);
   const results: PedidoStatusRow[] = [];
   for (const batch of batches) {
-    const { data, error } = await supabaseOps.from('pedidos_status').select('*').in('pedido_id', batch).limit(500);
+    const { data, error } = await supabaseOps.from('pedidos_status').select('*').in('pedido_id', batch);
     if (error) {
       console.error('[Supabase OPS] listPedidosStatusByPedidoIds:', error.message);
       continue;
@@ -153,7 +153,7 @@ export async function ensurePedidosStatusInitializedBatch(
     let batchData: any[] | null = null;
     let batchErr: { message: string } | null = null;
     try {
-      const res = await supabaseOps.from('pedidos_status').select('pedido_id, status_atual').in('pedido_id', idBatch).limit(500);
+      const res = await supabaseOps.from('pedidos_status').select('pedido_id, status_atual').in('pedido_id', idBatch);
       batchData = res.data as any;
       batchErr = res.error as any;
     } catch (err) {
@@ -568,8 +568,7 @@ export async function runMigrationSuporteLiberadoProducao(
       const { data, error } = await supabaseOps
         .from('pedidos_status')
         .select('pedido_id, status_atual')
-        .in('pedido_id', batch)
-        .limit(500);
+        .in('pedido_id', batch);
       if (error) { console.error('[Migration] fetch status:', error.message); continue; }
       existing.push(...((data || []) as any));
     } catch (e) { console.error('[Migration] fetch status (fetch):', e); }

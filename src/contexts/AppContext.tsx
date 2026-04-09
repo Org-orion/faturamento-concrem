@@ -32,6 +32,7 @@ import {
 import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
 import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao } from '@/lib/pedidosStatusRepo';
+import { fetchAllPages } from '@/lib/supabaseUtils';
 
 interface AppState {
   clients: Client[];
@@ -334,12 +335,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const columns = tableColumns;
 
       try {
-        vendasRes = await supabasePedidos.from(table).select(columns).or(vendasOr).limit(5000);
+        const rows = await fetchAllPages((from, to) =>
+          supabasePedidos.from(table).select(columns).or(vendasOr).range(from, to)
+        );
+        vendasRes = { data: rows, error: null };
       } catch (e: any) {
         vendasRes = { data: null, error: { message: e?.message || String(e) } };
       }
       try {
-        suporteRes = await supabasePedidos.from(table).select(columns).or(suporteOr).limit(5000);
+        const rows = await fetchAllPages((from, to) =>
+          supabasePedidos.from(table).select(columns).or(suporteOr).range(from, to)
+        );
+        suporteRes = { data: rows, error: null };
       } catch (e: any) {
         suporteRes = { data: null, error: { message: e?.message || String(e) } };
       }
@@ -356,7 +363,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const suporte: SupportOrder[] = suporteRes.error ? [] : (suporteRes.data || []).map((row: any) => rowToSupportOrder(row));
 
       if (venda.length === 0 && suporte.length === 0) {
-        const fallbackRes = await supabasePedidos.from(table).select(columns).order('data_emissao', { ascending: false }).limit(2000);
+        const fallbackRows = await fetchAllPages((from, to) =>
+          supabasePedidos.from(table).select(columns).order('data_emissao', { ascending: false }).range(from, to)
+        );
+        const fallbackRes = { data: fallbackRows, error: null };
         if (cancelled) return;
         if (fallbackRes.error) {
           console.error(`[Supabase] Falha ao carregar fallback de ${table}:`, fallbackRes.error.message);

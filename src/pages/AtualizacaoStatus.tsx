@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { ClipboardCheck } from 'lucide-react';
 import { useApp, tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
+import { fetchAllPages } from '@/lib/supabaseUtils';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
@@ -77,12 +78,14 @@ const AtualizacaoStatus = () => {
         ...(supportOrders || []).map((o) => o.id),
       ];
       if (supabaseOps) {
-        const { data, error } = await supabaseOps.from('pedidos_status').select('*').order('atualizado_em', { ascending: false }).limit(5000);
-        if (error) {
-          console.error('[AtualizacaoStatus] refresh query error:', error.message);
+        try {
+          allRows = await fetchAllPages<PedidoStatusRow>((from, to) =>
+            supabaseOps!.from('pedidos_status').select('*').order('atualizado_em', { ascending: false }).range(from, to)
+          );
+        } catch (err) {
+          console.error('[AtualizacaoStatus] refresh query error:', err);
           return; // não sobrescreve o estado com dados vazios em caso de erro
         }
-        allRows = (data || []) as PedidoStatusRow[];
       } else {
         allRows = await listPedidosStatusByPedidoIds(knownIdList);
       }

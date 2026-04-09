@@ -7,6 +7,7 @@ import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, list
 import { listComercialPedidosMeta } from '@/lib/opsRepo';
 import { pedidoStatusFlow, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { fetchAllPages } from '@/lib/supabaseUtils';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import { cn } from '@/lib/utils';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
@@ -95,12 +96,14 @@ const PainelPedidos = () => {
       // Buscar todos os status do banco (inclui pedidos que não estão no AppContext)
       let allRows: PedidoStatusRow[] = [];
       if (supabaseOps) {
-        const { data, error } = await supabaseOps.from('pedidos_status').select('*').order('atualizado_em', { ascending: false }).limit(5000);
-        if (error) {
-          console.error('[PainelPedidos] refresh query error:', error.message);
+        try {
+          allRows = await fetchAllPages<PedidoStatusRow>((from, to) =>
+            supabaseOps.from('pedidos_status').select('*').order('atualizado_em', { ascending: false }).range(from, to)
+          ) as PedidoStatusRow[];
+        } catch (e: any) {
+          console.error('[PainelPedidos] refresh query error:', e?.message);
           return;
         }
-        allRows = (data || []) as PedidoStatusRow[];
       } else {
         allRows = await listPedidosStatusByPedidoIds(payload.map((p) => p.pedidoId));
       }
