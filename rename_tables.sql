@@ -20,6 +20,9 @@ ALTER TABLE IF EXISTS relatorio_entrega_anexos         RENAME TO concrem_relator
 ALTER TABLE IF EXISTS representantes                   RENAME TO concrem_representantes;
 ALTER TABLE IF EXISTS tipos_despesa                    RENAME TO concrem_tipos_despesa;
 ALTER TABLE IF EXISTS usuarios                         RENAME TO concrem_usuarios;
+ALTER TABLE IF EXISTS confirmacao_diretoria            RENAME TO concrem_confirmacao_diretoria;
+ALTER TABLE IF EXISTS financeiro_embarque              RENAME TO concrem_financeiro_embarque;
+ALTER TABLE IF EXISTS pedido_prioridades               RENAME TO concrem_pedido_prioridades;
 
 -- ============================================================
 -- Após renomear, recrie as policies de RLS se existirem,

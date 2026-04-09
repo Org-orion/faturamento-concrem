@@ -15,7 +15,7 @@ export interface PedidoPrioridade {
 export async function listPrioridadesAtivas(): Promise<PedidoPrioridade[]> {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
-    .from('pedido_prioridades')
+    .from('concrem_pedido_prioridades')
     .select('*')
     .eq('ativo', true)
     .order('criado_em', { ascending: false });
@@ -34,7 +34,7 @@ export async function upsertPrioridade(row: {
 }): Promise<PedidoPrioridade | null> {
   if (!supabaseOps) return null;
   const { data, error } = await supabaseOps
-    .from('pedido_prioridades')
+    .from('concrem_pedido_prioridades')
     .upsert(
       {
         pedido_id: row.pedido_id,
@@ -58,7 +58,7 @@ export async function upsertPrioridade(row: {
 export async function desativarPrioridade(pedidoId: string): Promise<void> {
   if (!supabaseOps) return;
   const { error } = await supabaseOps
-    .from('pedido_prioridades')
+    .from('concrem_pedido_prioridades')
     .update({ ativo: false })
     .eq('pedido_id', pedidoId);
   if (error) {
