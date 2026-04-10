@@ -75,7 +75,7 @@ const Producao = () => {
   useEffect(() => {
     if (!supabaseOps) return;
     supabaseOps
-      .from('pedidos_status')
+      .from('concrem_pedidos_status')
       .select('pedido_id, status_atual')
       .in('status_atual', ['liberado_producao', 'em_producao', 'producao_finalizada'])
       .then(({ data }) => { if (data) setStatusRows(data as any); });

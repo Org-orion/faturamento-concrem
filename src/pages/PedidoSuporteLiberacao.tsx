@@ -45,7 +45,7 @@ const PedidoSuporteLiberacao = () => {
     setLoading(true);
     try {
       const { data: statusData } = await supabaseOps
-        .from('pedidos_status')
+        .from('concrem_pedidos_status')
         .select('pedido_id')
         .eq('status_atual', 'liberado_comercial');
       if (!statusData?.length) { setSuporteOrders([]); return; }

@@ -269,7 +269,7 @@ const CreateShipment = () => {
 
     const load = async () => {
       const statusRows = await fetchAllPages((from, to) =>
-        supabaseOps!.from('pedidos_status').select('*').in('status_atual', CARREGAMENTO_ALLOWED_STATUSES).range(from, to)
+        supabaseOps!.from('concrem_pedidos_status').select('*').in('status_atual', CARREGAMENTO_ALLOWED_STATUSES).range(from, to)
       );
       if (!statusRows.length) return;
 

@@ -79,7 +79,7 @@ const ComercialLiberacao = () => {
     setLoading(true);
     try {
       const { data: statusData } = await supabaseOps
-        .from('pedidos_status')
+        .from('concrem_pedidos_status')
         .select('*')
         .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia']);
       if (!statusData?.length) { setDirectOrders([]); return; }
