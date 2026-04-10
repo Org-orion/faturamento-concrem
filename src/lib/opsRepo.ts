@@ -397,7 +397,7 @@ export async function listLancamentosFinanceiros() {
     .from('concrem_lancamentos_financeiros')
     .select(`
       *,
-      lancamentos_despesas (
+      concrem_lancamentos_despesas (
         id,
         tipo_despesa_id,
         valor,
@@ -421,7 +421,7 @@ export async function listLancamentosFinanceiros() {
     driverValue: Number(row.valor_motorista || 0),
     status: row.status as FreightEntry['status'],
     createdAt: row.criado_em,
-    expenses: (row.lancamentos_despesas || []).map((d: any) => ({
+    expenses: (row.concrem_lancamentos_despesas || []).map((d: any) => ({
       expenseTypeId: d.tipo_despesa_id,
       value: Number(d.valor || 0),
       note: d.observacao || '',
