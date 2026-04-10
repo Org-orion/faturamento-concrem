@@ -15,6 +15,24 @@ function isConfigured(): boolean {
   return Boolean(BASE_URL && API_KEY && INSTANCE);
 }
 
+function missingVars(): string {
+  const missing: string[] = [];
+  if (!BASE_URL) missing.push('VITE_EVOLUTION_API_URL');
+  if (!API_KEY) missing.push('VITE_EVOLUTION_API_KEY');
+  if (!INSTANCE) missing.push('VITE_EVOLUTION_INSTANCE');
+  return missing.join(', ');
+}
+
+/** Expõe o estado de configuração para debug no console */
+export function logEvolutionConfig(): void {
+  console.group('[EvolutionAPI] Configuração atual');
+  console.log('VITE_EVOLUTION_API_URL :', BASE_URL || '⚠️  vazio');
+  console.log('VITE_EVOLUTION_API_KEY :', API_KEY ? '✅ definido' : '⚠️  vazio');
+  console.log('VITE_EVOLUTION_INSTANCE:', INSTANCE || '⚠️  vazio');
+  console.log('isConfigured()         :', isConfigured());
+  console.groupEnd();
+}
+
 function headers(): Record<string, string> {
   return {
     'Content-Type': 'application/json',
@@ -35,8 +53,9 @@ export type EvolutionResult = {
  */
 export async function sendEvolutionText(phone: string, text: string): Promise<EvolutionResult> {
   if (!isConfigured()) {
-    console.warn('[EvolutionAPI] Variáveis de ambiente não configuradas (VITE_EVOLUTION_API_URL / VITE_EVOLUTION_API_KEY / VITE_EVOLUTION_INSTANCE).');
-    return { ok: false, messageId: null, error: 'Evolution API não configurada.' };
+    const missing = missingVars();
+    console.warn(`[EvolutionAPI] Variável(is) faltando: ${missing}`);
+    return { ok: false, messageId: null, error: `Evolution API não configurada. Faltando: ${missing}` };
   }
 
   try {
