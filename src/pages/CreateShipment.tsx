@@ -745,13 +745,14 @@ const CreateShipment = () => {
       }
       const repName = repInfo?.nome || repOrders[0]?.representativeName || 'Desconhecido';
       const repPhoneRaw = repInfo?.telefone || repOrders[0]?.representativePhone || '';
+      // Remove prefixo de código do representante (ex: "40054798 - DISTRIBUIDORA / DANILO" → "DISTRIBUIDORA / DANILO")
+      const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
 
       // Montar mensagem conforme modelo
       let message = `${saudacao}\nCarregamento referente ao dia ${dataEmbarque}\n\n`;
       for (const order of repOrders) {
-        const client = clients.find((c) => c.id === order.clientId);
         const nf = invoiceNumbers[order.id] || 'S/N';
-        message += `· ${nf} - ${client?.name || order.clientName || 'Cliente'}\n`;
+        message += `· ${nf} - ${repDisplayName}\n`;
       }
       message += `\nPrevisão de entrega a partir do dia ${dataPrevisaoEntrega}.\n\n`;
       message += `Gentileza contatar o motorista para informações sobre o local de entrega.\n`;
