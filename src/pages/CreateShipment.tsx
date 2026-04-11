@@ -983,7 +983,7 @@ const CreateShipment = () => {
         });
       }
 
-      await upsertEntregasDetalhesSafe(
+      const saveErr = await upsertEntregasDetalhesSafe(
         id,
         sortedOrderIds.map((pedidoId) => ({
           pedido_id: pedidoId,
@@ -996,6 +996,10 @@ const CreateShipment = () => {
           qtd_volumes: (() => { const v = parseFloat(String(qtdVolumes[pedidoId] ?? '').replace(',', '.')); return isNaN(v) ? null : v; })(),
         })),
       );
+      if (saveErr) {
+        showToast(`Erro ao salvar relatório: ${saveErr.message}`, 'error');
+        return;
+      }
 
       await Promise.all(
         sortedOrderIds.map(async (pedidoId) => {

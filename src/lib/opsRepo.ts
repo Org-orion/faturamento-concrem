@@ -162,7 +162,9 @@ export async function upsertEntregasDetalhesSafe(programacaoId: string, rows: Ar
     .upsert(payload as any, { onConflict: 'programacao_id,pedido_id' });
   if (error) {
     console.error('[Supabase OPS] upsert entregas:', error.message);
+    return error;
   }
+  return null;
 }
 
 export async function listEntregas(programacaoId: string) {
