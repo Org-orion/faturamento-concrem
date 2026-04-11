@@ -20,6 +20,13 @@ import type { ColDef } from '@/hooks/useColumnFilters';
 import type { ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import { updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 import { fmtDate } from '@/lib/dateUtils';
+import { fetchAllPages } from '@/lib/supabaseUtils';
+
+const chunkArr = <T,>(arr: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
 
 const formatDateBR = (iso?: string) => {
   if (!iso) return '-';
@@ -44,20 +51,26 @@ const PedidoSuporteLiberacao = () => {
     if (!supabaseOps || !supabasePedidos) return;
     setLoading(true);
     try {
-      const { data: statusData } = await supabaseOps
-        .from('concrem_pedidos_status')
-        .select('pedido_id')
-        .eq('status_atual', 'liberado_comercial');
-      if (!statusData?.length) { setSuporteOrders([]); return; }
+      const statusData = await fetchAllPages((from, to) =>
+        supabaseOps!.from('concrem_pedidos_status')
+          .select('pedido_id')
+          .eq('status_atual', 'liberado_comercial')
+          .range(from, to) as any
+      );
+      if (!statusData.length) { setSuporteOrders([]); return; }
 
-      const ids = (statusData as any[]).map((r: any) => String(r.pedido_id));
-      const { data: pedidosData, error } = await supabasePedidos
-        .from(table)
-        .select(tableColumns)
-        .in('numero_pedido', ids);
-      if (error) { console.error('[PedidoSuporteLiberacao] pedidos query:', error.message); return; }
+      const ids = statusData.map((r: any) => String(r.pedido_id));
+      const allPedidos: any[] = [];
+      for (const batch of chunkArr(ids, 200)) {
+        const { data: batchData, error: batchErr } = await supabasePedidos!
+          .from(table)
+          .select(tableColumns)
+          .in('numero_pedido', batch);
+        if (batchErr) { console.error('[PedidoSuporteLiberacao] pedidos query:', batchErr.message); return; }
+        allPedidos.push(...(batchData || []));
+      }
 
-      const mapped = (pedidosData || []).map((row: any) => rowToSupportOrder(row));
+      const mapped = allPedidos.map((row: any) => rowToSupportOrder(row));
       setSuporteOrders(mapped);
     } finally {
       setLoading(false);

@@ -18,6 +18,7 @@ import { FilterConfiguratorDialog } from '@/components/filters/FilterConfigurato
 
 
 import { updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
+import { fetchAllPages } from '@/lib/supabaseUtils';
 import { fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { findRepresentanteContato, listComercialPedidosMeta, upsertComercialPedidoMeta } from '@/lib/opsRepo';
@@ -74,26 +75,39 @@ const ComercialLiberacao = () => {
 
   const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
+  const chunkArr = <T,>(arr: T[], size: number): T[][] => {
+    const out: T[][] = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  };
+
   const refreshOrders = async () => {
     if (!supabaseOps || !supabasePedidos) return;
     setLoading(true);
     try {
-      const { data: statusData } = await supabaseOps
-        .from('concrem_pedidos_status')
-        .select('*')
-        .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia']);
-      if (!statusData?.length) { setDirectOrders([]); return; }
+      const statusData = await fetchAllPages((from, to) =>
+        supabaseOps!.from('concrem_pedidos_status')
+          .select('*')
+          .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia'])
+          .range(from, to) as any
+      );
+      if (!statusData.length) { setDirectOrders([]); return; }
 
-      const ids = (statusData as any[]).map((r: any) => r.pedido_id);
-      const { data: pedidosData, error: pedidosError } = await supabasePedidos
-        .from(table)
-        .select(tableColumns)
-        .in('numero_pedido', ids);
+      const ids = statusData.map((r: any) => r.pedido_id);
 
-      if (pedidosError) {
-        console.error('[ComercialLiberacao] pedidos query error:', pedidosError.message);
-        showToast(`Erro ao carregar pedidos: ${pedidosError.message}`, 'error');
-        return;
+      // Chunk .in() to avoid URL length limits
+      const allPedidos: any[] = [];
+      for (const batch of chunkArr(ids, 200)) {
+        const { data: batchData, error: batchErr } = await supabasePedidos
+          .from(table)
+          .select(tableColumns)
+          .in('numero_pedido', batch);
+        if (batchErr) {
+          console.error('[ComercialLiberacao] pedidos query error:', batchErr.message);
+          showToast(`Erro ao carregar pedidos: ${batchErr.message}`, 'error');
+          return;
+        }
+        allPedidos.push(...(batchData || []));
       }
 
       // Mirror of suporteOr logic — totalPedidoVenda has fallback from pedidoMapper
@@ -109,8 +123,8 @@ const ComercialLiberacao = () => {
         }
         return false;
       };
-      const mapped = (pedidosData || []).map((row: any) => rowToOrder(row, 'CLI-001')).filter(o => !isSuporteRow(o));
-      const statusMap = new Map((statusData as any[]).map((r: any) => [r.pedido_id, r] as const));
+      const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001')).filter(o => !isSuporteRow(o));
+      const statusMap = new Map(statusData.map((r: any) => [r.pedido_id, r] as const));
       setDirectOrders(mapped);
       setStatusRowsDirect(statusMap);
       const meta = await listComercialPedidosMeta(ids);
