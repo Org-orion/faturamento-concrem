@@ -31,6 +31,7 @@ export async function upsertProgramacaoCarregamento(load: Load) {
     criado_por: load.createdBy,
     driver_id: load.driverId,
     planned_date: load.plannedDate,
+    previsao_entrega: load.previsaoEntrega ?? null,
     obs: load.obs,
     estimated_weight: load.estimatedWeight,
     freight_value: load.freightValue,

@@ -166,6 +166,7 @@ const CreateShipment = () => {
         // otherwise let auto-calc fill it from the orders
         setFreightManual(storedFreight > 0);
         setShipmentStatusDate(loadToEdit.plannedDate || todayBR());
+        setPrevisaoEntregaDate(loadToEdit.previsaoEntrega || todayBR());
       } else {
         showToast('Carregamento não encontrado.', 'error');
         navigate('/carregamento');
@@ -885,12 +886,21 @@ const CreateShipment = () => {
       // Comprovante anexado → status Entregue (nunca para LEROY)
       const orderForComp = allCandidates.find((o) => o.id === orderId);
       if (type === 'comprovante' && !isLeroy(orderForComp?.clientName || orderForComp?.clientCode, orderForComp?.representativeName)) {
-        await updatePedidoStatus({
+        const repId = String(orderForComp?.representativeId || '').trim();
+        const repNameComp = String(orderForComp?.representativeName || '').trim();
+        const repContactComp = repContacts[repId] || repContacts[repNameComp];
+        const repPhoneComp = repContactComp?.telefone || orderForComp?.representativePhone || null;
+        const clienteNomeComp = orderForComp?.clientName || orderForComp?.clientCode || 'Cliente';
+        await setPedidoStatusWithOptionalNotify({
           pedidoId: orderId,
           numeroPedido: orderId,
           statusNovo: 'entregue',
           alteradoPor: user?.username || null,
           observacao: 'Comprovante de entrega anexado',
+          notifyRepresentante: true,
+          representantePhoneRaw: repPhoneComp,
+          representanteNome: repContactComp?.nome || repNameComp || null,
+          clienteNome: clienteNomeComp,
         });
 
         // Verifica se todos os pedidos do carregamento têm comprovante
@@ -1094,6 +1104,7 @@ const CreateShipment = () => {
           driverId,
           orderIds: selectedOrderIds,
           plannedDate: shipmentDate,
+          previsaoEntrega: previsaoEntregaDate,
           shipmentStatus: shipmentStatus,
           estimatedWeight: totals.weight,
           freightValue: finalFreightValue,
@@ -1105,6 +1116,7 @@ const CreateShipment = () => {
           driverId,
           orderIds: selectedOrderIds,
           plannedDate: shipmentDate,
+          previsaoEntrega: previsaoEntregaDate,
           obs: '',
           productionStatus: 'Aguardando Produção',
           shipmentStatus: shipmentStatus,

@@ -229,6 +229,7 @@ export interface Load {
   driverId: string;
   orderIds: string[];
   plannedDate: string;
+  previsaoEntrega?: string;
   obs: string;
   createdBy: string;
   createdAt: string;

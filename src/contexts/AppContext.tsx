@@ -416,11 +416,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       const mapped: Load[] = (data as any[]).map((row) => {
         const plannedDateRaw = String(row.planned_date || row.plannedDate || '').slice(0, 10);
+        const previsaoEntregaRaw = String(row.previsao_entrega || '').slice(0, 10) || undefined;
         return {
           id: String(row.id),
           driverId: String(row.driver_id || row.driverId || ''),
           orderIds: Array.isArray(row.pedidos) ? row.pedidos.map(String) : Array.isArray(row.orderIds) ? row.orderIds.map(String) : [],
           plannedDate: plannedDateRaw || new Date().toISOString().slice(0, 10),
+          previsaoEntrega: previsaoEntregaRaw,
           obs: String(row.obs || ''),
           createdBy: String(row.criado_por || row.createdBy || 'ops'),
           createdAt: String(row.criado_em || row.createdAt || new Date().toISOString()),
