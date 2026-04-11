@@ -807,12 +807,12 @@ const CreateShipment = () => {
         showToast(`Representante ${repName} sem telefone cadastrado.`, 'error');
       }
 
-      // Atualizar status de cada pedido para faturado
+      // Atualizar status de cada pedido para em_entrega (Em Rota)
       for (const order of repOrders) {
         await updatePedidoStatus({
           pedidoId: order.id,
           numeroPedido: order.id,
-          statusNovo: 'faturado',
+          statusNovo: 'em_entrega',
           alteradoPor: user?.username || null,
           observacao: `Relatório enviado via WhatsApp${hasBoleto ? ' com boleto' : ''}`,
         });
