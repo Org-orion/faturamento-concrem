@@ -155,6 +155,9 @@ export interface Order {
   clientCode?: string;
   clientCity?: string;
   clientUF?: string;
+  clientCep?: string;
+  clientEndereco?: string;
+  clientBairro?: string;
   clienteFantasia?: string;
   pedCompraCliente?: string;
   previsaoCarregamento?: string;

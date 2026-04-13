@@ -441,11 +441,13 @@ const CreateShipment = () => {
           ? `${client.address.city || ''} - ${client.address.state || ''}`
           : '-';
 
-    const enderecoRaw = repAddress
-      ? `${repAddress.street || ''}, ${repAddress.number || ''}${repAddress.neighborhood ? ' - ' + repAddress.neighborhood : ''}`
-      : client
-        ? `${client.address.street || ''}, ${client.address.number || ''}${client.address.neighborhood ? ' - ' + client.address.neighborhood : ''}`
-        : '-';
+    const enderecoRaw = order.clientEndereco
+      ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}${order.clientCep ? ' - CEP: ' + order.clientCep : ''}`
+      : repAddress
+        ? `${repAddress.street || ''}, ${repAddress.number || ''}${repAddress.neighborhood ? ' - ' + repAddress.neighborhood : ''}`
+        : client
+          ? `${client.address.street || ''}, ${client.address.number || ''}${client.address.neighborhood ? ' - ' + client.address.neighborhood : ''}`
+          : '-';
 
     const empresaLabel = order.clientCode
       ? `${order.clientCode} - ${order.clientName || client?.name || '-'}`
@@ -1689,14 +1691,20 @@ const CreateShipment = () => {
                                       placeholder="-"
                                     />
                                   </td>
-                                  <td className="py-3 px-4 truncate max-w-[200px]" title={repAddress ? `${repAddress.street}, ${repAddress.number} - ${repAddress.neighborhood}` : `${client?.address.street}, ${client?.address.number} - ${client?.address.neighborhood}`}>
-                                    {repAddress ? `${repAddress.street}, ${repAddress.number}` : (client ? `${client.address.street}, ${client.address.number}` : '-')}
+                                  <td className="py-3 px-4 truncate max-w-[200px]" title={order.clientEndereco || repAddress?.street || client?.address.street || '-'}>
+                                    {order.clientEndereco
+                                      ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}`
+                                      : repAddress
+                                        ? `${repAddress.street || ''}, ${repAddress.number || ''}`
+                                        : client
+                                          ? `${client.address.street || ''}, ${client.address.number || ''}`
+                                          : '-'}
                                   </td>
-                                  <td className="py-3 px-4 truncate max-w-[150px]" title={repAddress?.city || client?.address.city}>
-                                    {repAddress?.city || client?.address.city || '-'}
+                                  <td className="py-3 px-4 truncate max-w-[150px]" title={order.clientCity || repAddress?.city || client?.address.city}>
+                                    {order.clientCity || repAddress?.city || client?.address.city || '-'}
                                   </td>
                                   <td className="py-3 px-4 font-mono-data font-bold text-center">
-                                    {repAddress?.state || client?.address.state || '-'}
+                                    {order.clientUF || repAddress?.state || client?.address.state || '-'}
                                   </td>
                                 </>
                               )}

@@ -304,7 +304,7 @@ export const suporteOr = [
 ].join(',');
 
 export const tableColumns =
-  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete';
+  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_cep, cliente_endereco, cliente_bairro, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete';
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [clients, setClients] = useState<Client[]>(sampleClients);
