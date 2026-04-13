@@ -59,9 +59,12 @@ const CreateShipment = () => {
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [deliveredOrderIds, setDeliveredOrderIds] = useState<string[]>([]);
 
-  type AttachmentType = 'boleto' | 'nf' | 'comprovante';
   type PendingAttachment = { url: string; nome: string; saved: boolean };
-  const [orderAttachments, setOrderAttachments] = useState<Record<string, Partial<Record<AttachmentType, PendingAttachment>>>>({});
+  type OrderAttachments = { boletos: PendingAttachment[]; nf?: PendingAttachment; comprovante?: PendingAttachment };
+  type AttachmentType = 'boleto' | 'nf' | 'comprovante';
+  const boletoTipo = (idx: number): string => idx === 0 ? 'boleto' : `boleto_${idx + 1}`;
+  const isBoletoTipo = (tipo: string): boolean => tipo === 'boleto' || /^boleto_\d+$/.test(tipo);
+  const [orderAttachments, setOrderAttachments] = useState<Record<string, OrderAttachments>>({});
   const [reportPage, setReportPage] = useState(0);
   const [filters, setFilters] = useState({
     id: '',
@@ -217,14 +220,17 @@ const CreateShipment = () => {
   useEffect(() => {
     if (!id) return;
     void listRelatorioEntregaAnexos(id).then((rows) => {
-      const grouped: Record<string, Partial<Record<AttachmentType, PendingAttachment>>> = {};
+      const grouped: Record<string, OrderAttachments> = {};
       for (const row of rows) {
-        if (!grouped[row.pedido_id]) grouped[row.pedido_id] = {};
-        grouped[row.pedido_id][row.tipo as AttachmentType] = {
-          url: row.arquivo_url,
-          nome: row.arquivo_nome,
-          saved: true,
-        };
+        if (!grouped[row.pedido_id]) grouped[row.pedido_id] = { boletos: [] };
+        const att: PendingAttachment = { url: row.arquivo_url, nome: row.arquivo_nome, saved: true };
+        if (isBoletoTipo(row.tipo)) {
+          grouped[row.pedido_id].boletos.push(att);
+        } else if (row.tipo === 'nf') {
+          grouped[row.pedido_id].nf = att;
+        } else if (row.tipo === 'comprovante') {
+          grouped[row.pedido_id].comprovante = att;
+        }
       }
       setOrderAttachments(grouped);
     });
@@ -693,7 +699,7 @@ const CreateShipment = () => {
     // e somente se TODOS os pedidos do embarque estiverem com status 'faturado')
     const attachs = orderAttachments[orderId] || {};
     const orderForStatus = allCandidates.find((o) => o.id === orderId);
-    if (attachs.nf?.url && attachs.boleto?.url && !isLeroy(orderForStatus?.clientName || orderForStatus?.clientCode, orderForStatus?.representativeName)) {
+    if (attachs.nf?.url && (attachs.boletos?.length ?? 0) > 0 && !isLeroy(orderForStatus?.clientName || orderForStatus?.clientCode, orderForStatus?.representativeName)) {
       const shipmentStatuses = await listPedidosStatusByPedidoIds(selectedOrderIds);
       const allFaturado = selectedOrderIds.every(oid => {
         const s = shipmentStatuses.find(r => r.pedido_id === oid);
@@ -763,12 +769,15 @@ const CreateShipment = () => {
       message += `MOTORISTA / CONTATO\n${driverName} - ${driverPhone}`;
 
       // Coletar anexos (PDFs) para envio direto
-      const hasBoleto = repOrders.some(o => orderAttachments[o.id]?.boleto?.url);
+      const hasBoleto = repOrders.some(o => (orderAttachments[o.id]?.boletos?.length ?? 0) > 0);
       type DocAttach = { url: string; label: string; orderId: string };
       const docAttachs: DocAttach[] = [];
       for (const order of repOrders) {
-        const attachs = orderAttachments[order.id] || {};
-        if (attachs.boleto?.url) docAttachs.push({ url: attachs.boleto.url, label: `Boleto-${order.id}.pdf`, orderId: order.id });
+        const attachs = orderAttachments[order.id] || { boletos: [] };
+        (attachs.boletos || []).forEach((b, idx) => {
+          const suffix = idx === 0 ? '' : `_${idx + 1}`;
+          docAttachs.push({ url: b.url, label: `Boleto${suffix}-${order.id}.pdf`, orderId: order.id });
+        });
         if (attachs.nf?.url) docAttachs.push({ url: attachs.nf.url, label: `NotaFiscal-${order.id}.pdf`, orderId: order.id });
         // comprovante de entrega NÃO é enviado ao representante
       }
@@ -862,7 +871,10 @@ const CreateShipment = () => {
       if (!file) return;
 
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-      const path = `${id}/${orderId}/${type}/${sanitizedName}`;
+      // For boletos, use an indexed subfolder so multiple boletos can coexist
+      const boletoIdx = type === 'boleto' ? (orderAttachments[orderId]?.boletos?.length ?? 0) : 0;
+      const storageTipo = type === 'boleto' ? boletoTipo(boletoIdx) : type;
+      const path = `${id}/${orderId}/${storageTipo}/${sanitizedName}`;
 
       const { error: uploadErr } = await supabaseOps.storage
         .from('relatorio-entrega')
@@ -877,13 +889,18 @@ const CreateShipment = () => {
         .from('relatorio-entrega')
         .getPublicUrl(path);
 
-      setOrderAttachments((prev) => ({
-        ...prev,
-        [orderId]: {
-          ...(prev[orderId] || {}),
-          [type]: { url: urlData.publicUrl, nome: file.name, saved: false },
-        },
-      }));
+      const newAtt: PendingAttachment = { url: urlData.publicUrl, nome: file.name, saved: false };
+      if (type === 'boleto') {
+        setOrderAttachments((prev) => {
+          const cur = prev[orderId] || { boletos: [] };
+          return { ...prev, [orderId]: { ...cur, boletos: [...(cur.boletos || []), newAtt] } };
+        });
+      } else {
+        setOrderAttachments((prev) => ({
+          ...prev,
+          [orderId]: { ...(prev[orderId] || { boletos: [] }), [type]: newAtt },
+        }));
+      }
 
       // Comprovante anexado → status Entregue (nunca para LEROY)
       const orderForComp = allCandidates.find((o) => o.id === orderId);
@@ -1034,13 +1051,18 @@ const CreateShipment = () => {
       );
 
       // Salvar anexos pendentes na tabela relatorio_entrega_anexos
-      const pendingEntries = Object.entries(orderAttachments).flatMap(([pedidoId, attachments]) =>
-        Object.entries(attachments || {})
-          .filter(([, info]) => info && !info.saved)
-          .map(([tipo, info]) => ({ pedidoId, tipo, info: info! })),
-      );
+      type PendingEntry = { pedidoId: string; tipo: string; info: PendingAttachment; boletoIdx?: number };
+      const pendingEntries: PendingEntry[] = [];
+      for (const [pedidoId, attachments] of Object.entries(orderAttachments)) {
+        const atts = attachments || { boletos: [] };
+        (atts.boletos || []).forEach((b, idx) => {
+          if (!b.saved) pendingEntries.push({ pedidoId, tipo: boletoTipo(idx), info: b, boletoIdx: idx });
+        });
+        if (atts.nf && !atts.nf.saved) pendingEntries.push({ pedidoId, tipo: 'nf', info: atts.nf });
+        if (atts.comprovante && !atts.comprovante.saved) pendingEntries.push({ pedidoId, tipo: 'comprovante', info: atts.comprovante });
+      }
 
-      for (const { pedidoId, tipo, info } of pendingEntries) {
+      for (const { pedidoId, tipo, info, boletoIdx } of pendingEntries) {
         await upsertRelatorioEntregaAnexo({
           carregamento_id: id,
           pedido_id: pedidoId,
@@ -1049,10 +1071,15 @@ const CreateShipment = () => {
           arquivo_url: info.url,
           criado_por: user?.username || null,
         });
-        setOrderAttachments((prev) => ({
-          ...prev,
-          [pedidoId]: { ...(prev[pedidoId] || {}), [tipo]: { ...info, saved: true } },
-        }));
+        setOrderAttachments((prev) => {
+          const cur = prev[pedidoId] || { boletos: [] };
+          if (boletoIdx !== undefined) {
+            const newBoletos = [...(cur.boletos || [])];
+            newBoletos[boletoIdx] = { ...info, saved: true };
+            return { ...prev, [pedidoId]: { ...cur, boletos: newBoletos } };
+          }
+          return { ...prev, [pedidoId]: { ...cur, [tipo]: { ...info, saved: true } } };
+        });
       }
 
       // Se todos os pedidos do carregamento estão marcados como entregues → avançar shipmentStatus para 'Entregue'
@@ -1781,9 +1808,18 @@ const CreateShipment = () => {
                                   {orderAttachments[id]?.nf && (
                                     <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.nf?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.nf?.saved ? 'NF salva' : 'NF pendente'}>NF</span>
                                   )}
-                                  {orderAttachments[id]?.boleto && (
-                                    <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.boleto?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.boleto?.saved ? 'Boleto salvo' : 'Boleto pendente'}>B</span>
-                                  )}
+                                  {(orderAttachments[id]?.boletos?.length ?? 0) > 0 && (() => {
+                                    const boletos = orderAttachments[id]?.boletos || [];
+                                    const allSaved = boletos.every(b => b.saved);
+                                    return (
+                                      <span
+                                        className={`text-[9px] font-bold px-1 rounded ${allSaved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}
+                                        title={`${boletos.length} boleto(s) – ${allSaved ? 'salvos' : 'pendente(s)'}`}
+                                      >
+                                        B{boletos.length > 1 ? `(${boletos.length})` : ''}
+                                      </span>
+                                    );
+                                  })()}
                                   {orderAttachments[id]?.comprovante && (
                                     <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.comprovante?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.comprovante?.saved ? 'Comprovante salvo' : 'Comprovante pendente'}>C</span>
                                   )}
@@ -1811,14 +1847,13 @@ const CreateShipment = () => {
                                       )}
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'boleto')}>
-                                        <Upload className="mr-2 h-4 w-4" />
-                                        {orderAttachments[id]?.boleto ? 'Substituir Boleto' : 'Anexar Boleto'}
+                                        <Upload className="mr-2 h-4 w-4" /> Adicionar Boleto
                                       </DropdownMenuItem>
-                                      {orderAttachments[id]?.boleto && (
-                                        <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(orderAttachments[id]?.boleto?.url, '_blank')}>
-                                          <Eye className="mr-2 h-4 w-4" /> Ver Boleto
+                                      {(orderAttachments[id]?.boletos || []).map((b, bIdx) => (
+                                        <DropdownMenuItem key={bIdx} className="cursor-pointer" onClick={() => window.open(b.url, '_blank')}>
+                                          <Eye className="mr-2 h-4 w-4" /> Ver Boleto{(orderAttachments[id]?.boletos?.length ?? 0) > 1 ? ` ${bIdx + 1}` : ''}
                                         </DropdownMenuItem>
-                                      )}
+                                      ))}
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'comprovante')}>
                                         <Upload className="mr-2 h-4 w-4" />
