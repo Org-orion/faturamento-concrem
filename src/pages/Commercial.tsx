@@ -17,7 +17,7 @@ import { FilterConfiguratorDialog } from '@/components/filters/FilterConfigurato
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus, isLeroy } from '@/lib/pedidosStatusRepo';
-import { getPedidoStatusDef } from '@/lib/pedidoStatusFlow';
+import { getPedidoStatusDef, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
 import { fetchAllPages } from '@/lib/supabaseUtils';
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
@@ -265,6 +265,11 @@ const Commercial = () => {
           case 'date': av = a.date || ''; bv = b.date || ''; break;
           case 'expiryDate': av = a.expiryDate || ''; bv = b.expiryDate || ''; break;
           case 'value': av = getOrderTotal(a); bv = getOrderTotal(b); break;
+          case 'status': {
+            const sa = statusByPedidoId.get(a.id)?.status_atual || 'aguardando_avaliacao';
+            const sb = statusByPedidoId.get(b.id)?.status_atual || 'aguardando_avaliacao';
+            return comparePedidoStatus(sa, sb) * dir;
+          }
           default: return 0;
         }
         if (av < bv) return -dir;

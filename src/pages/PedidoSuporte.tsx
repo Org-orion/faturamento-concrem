@@ -13,6 +13,7 @@ import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { tableColumns, suporteOr } from '@/contexts/AppContext';
+import { comparePedidoStatus } from '@/lib/pedidoStatusFlow';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
@@ -95,10 +96,19 @@ const PedidoSuporte = () => {
     void listPedidosStatusByPedidoIds(ids).then(setStatusRows);
   }, [serverOrders]);
 
-  // Hide orders liberated in this session (already filtered by status at query level)
+  // Hide orders liberated in this session; apply client-side status sort when selected
   const displayedOrders = useMemo(() => {
-    return serverOrders.filter(o => !liberatedIds.has(o.id));
-  }, [serverOrders, liberatedIds]);
+    let result = serverOrders.filter(o => !liberatedIds.has(o.id));
+    if (sortState.key === 'status') {
+      const dir = sortState.direction === 'asc' ? 1 : -1;
+      result = [...result].sort((a, b) => {
+        const sa = statusByPedidoId.get(a.id)?.status_atual || 'aguardando_avaliacao';
+        const sb = statusByPedidoId.get(b.id)?.status_atual || 'aguardando_avaliacao';
+        return comparePedidoStatus(sa, sb) * dir;
+      });
+    }
+    return result;
+  }, [serverOrders, liberatedIds, sortState, statusByPedidoId]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(serverOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
