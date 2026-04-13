@@ -202,6 +202,25 @@ const PedidoSuporte = () => {
       setLoadingList(true);
       const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
+      // Busca direta por número: bypass de categoria/status para localizar qualquer pedido
+      const numericSearch = debouncedFilterPedido?.split(/[,;]+/).map(v => v.trim()).filter(v => /^\d+$/.test(v)) ?? [];
+      if (numericSearch.length > 0) {
+        const from = (page - 1) * 20;
+        const to = from + 19;
+        let directQuery = supabasePedidos.from(table).select(tableColumns, { count: 'exact' });
+        if (numericSearch.length === 1) directQuery = directQuery.ilike('numero_pedido', `%${numericSearch[0]}%`);
+        else directQuery = directQuery.or(numericSearch.map(n => `numero_pedido.ilike.%${n}%`).join(','));
+        directQuery = directQuery.range(from, to).order('data_emissao', { ascending: false });
+        const { data, count, error } = await directQuery;
+        if (cancelled) return;
+        setLoadingList(false);
+        if (!error && data) {
+          setServerOrders(data.map((row: any) => rowToOrder(row, 'CLI-001') as unknown as SupportOrder));
+          setTotalCount(count ?? 0);
+        }
+        return;
+      }
+
       // Mostrar pedidos com aguardando_avaliacao ou liberado_producao
       const { data: statusData } = await supabaseOps
         .from('concrem_pedidos_status')

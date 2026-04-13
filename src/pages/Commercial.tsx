@@ -60,6 +60,7 @@ const Commercial = () => {
 
   const [page, setPage] = useState(1);
   const [allOrders, setAllOrders] = useState<Order[]>([]);
+  const [extraSearchOrders, setExtraSearchOrders] = useState<Order[]>([]);
   const [loadingList, setLoadingList] = useState(false);
   const [loadingDetails, setLoadingDetails] = useState(false);
   const [selectedOrderDetails, setSelectedOrderDetails] = useState<Order | null>(null);
@@ -145,6 +146,23 @@ const Commercial = () => {
   const debouncedFilterConf = useDebounce(filterConf, 400);
   const debouncedFilterRep = useDebounce(filterRep, 400);
 
+  // Busca direta por número de pedido — sem filtro de id_nota_conf nem categoria
+  useEffect(() => {
+    if (!supabasePedidos || !debouncedFilterPedido) { setExtraSearchOrders([]); return; }
+    const nums = debouncedFilterPedido.split(/[,;]+/).map(v => v.trim()).filter(v => /^\d+$/.test(v));
+    if (!nums.length) { setExtraSearchOrders([]); return; }
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    void (async () => {
+      const allExtra: any[] = [];
+      for (let i = 0; i < nums.length; i += 200) {
+        const batch = nums.slice(i, i + 200);
+        const { data } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', batch);
+        if (data) allExtra.push(...data);
+      }
+      setExtraSearchOrders(allExtra.map((row: any) => rowToOrder(row, 'CLI-001')));
+    })();
+  }, [debouncedFilterPedido]);
+
   const [openDetail, setOpenDetail] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [openConfirm, setOpenConfirm] = useState<null | { type: 'liberar' }>(null);
@@ -223,6 +241,20 @@ const Commercial = () => {
 
   const debouncedFilterCliente = useDebounce(filterCliente, 400);
 
+  // Merge allOrders + extraSearchOrders (deduped) — extraSearchOrders bypasses category filters
+  const allOrdersMerged = useMemo(() => {
+    if (!extraSearchOrders.length) return allOrders;
+    const map = new Map(allOrders.map(o => [o.id, o]));
+    for (const o of extraSearchOrders) if (!map.has(o.id)) map.set(o.id, o);
+    return Array.from(map.values());
+  }, [allOrders, extraSearchOrders]);
+
+  // Trigger status refresh when extra orders are fetched
+  useEffect(() => {
+    const ids = extraSearchOrders.map(o => o.id);
+    if (ids.length) void refreshStatusRows([...allOrders.map(o => o.id), ...ids]);
+  }, [extraSearchOrders]);
+
   // Client-side filtering: status, move overrides, text filters, sort
   const filteredOrders = useMemo(() => {
     const ALLOWED = new Set(['aguardando_avaliacao', 'liberado_producao']);
@@ -230,8 +262,13 @@ const Commercial = () => {
       Object.entries(moveOverride).filter((x) => x[1] === 'SUPORTE').map((x) => x[0])
     );
 
-    let result = allOrders.filter((o) => {
+    // When searching by specific number, show regardless of status (to allow finding any order)
+    const isNumericSearch = debouncedFilterPedido && /^\d/.test(debouncedFilterPedido.trim());
+
+    let result = allOrdersMerged.filter((o) => {
       if (movedToSupportSet.has(o.id)) return false;
+      // Ao pesquisar por número específico, mostrar o pedido independente do status
+      if (isNumericSearch) return true;
       const st = statusByPedidoId.get(o.id)?.status_atual;
       // If status not yet loaded, show optimistically; if loaded, must be in ALLOWED
       if (st && !ALLOWED.has(st)) return false;
@@ -281,7 +318,7 @@ const Commercial = () => {
     }
 
     return result;
-  }, [allOrders, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, issueDate, validDate, sortState]);
+  }, [allOrdersMerged, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, issueDate, validDate, sortState]);
 
   // Client-side pagination slice
   const displayedOrders = useMemo(() => {
