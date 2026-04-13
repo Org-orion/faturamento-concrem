@@ -97,9 +97,19 @@ const PainelPedidos = () => {
       let allRows: PedidoStatusRow[] = [];
       if (supabaseOps) {
         try {
-          allRows = await fetchAllPages<PedidoStatusRow>((from, to) =>
+          const rawRows = await fetchAllPages<PedidoStatusRow>((from, to) =>
             supabaseOps.from('concrem_pedidos_status').select('*').order('atualizado_em', { ascending: false }).range(from, to)
           ) as PedidoStatusRow[];
+          // Deduplicar por pedido_id (paginação pode retornar duplicatas se rows são inseridas durante o fetch)
+          const deduped = new Map<string, PedidoStatusRow>();
+          for (const r of rawRows) {
+            const id = String(r.pedido_id);
+            const existing = deduped.get(id);
+            if (!existing || (r.atualizado_em || '') >= (existing.atualizado_em || '')) {
+              deduped.set(id, r);
+            }
+          }
+          allRows = Array.from(deduped.values());
         } catch (e: any) {
           console.error('[PainelPedidos] refresh query error:', e?.message);
           return;
@@ -111,12 +121,18 @@ const PainelPedidos = () => {
       // Pedidos extras: estão no banco mas não no AppContext
       if (supabasePedidos && allRows.length > 0) {
         const knownIds = new Set(payload.map((p) => p.pedidoId));
-        const missingIds = allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id));
+        const missingIds = [...new Set(allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id)))];
         const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
         if (missingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-          const { data: extraData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
-          const fetched: UnifiedPedido[] = ((extraData || []) as any[]).map((row: any) => {
+          // Buscar em lotes de 200 para não exceder limite de URL do Supabase
+          const allExtraRows: any[] = [];
+          for (let i = 0; i < missingIds.length; i += 200) {
+            const batch = missingIds.slice(i, i + 200);
+            const { data: batchData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', batch);
+            if (batchData) allExtraRows.push(...batchData);
+          }
+          const fetched: UnifiedPedido[] = allExtraRows.map((row: any) => {
             const o = rowToOrder(row, 'CLI-001');
             return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
           });
@@ -216,9 +232,11 @@ const PainelPedidos = () => {
     const knownIds = new Set(fromContext.map((p) => p.id));
     // Pedidos que estão em pedidos_status mas não vieram do AppContext (ex: filtrados pelo ERP)
     const fromStatusOnly: UnifiedPedido[] = [];
+    const seenInStatus = new Set<string>(knownIds);
     for (const row of statusRows) {
       const id = String(row.pedido_id);
-      if (!knownIds.has(id)) {
+      if (!seenInStatus.has(id)) {
+        seenInStatus.add(id);
         fromStatusOnly.push({ id, numero: id, cliente: '-', representante: '-', valor: 0 });
       }
     }
