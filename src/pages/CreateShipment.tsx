@@ -1625,32 +1625,8 @@ const CreateShipment = () => {
               Relatório de Entrega
             </h3>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5">
-                <label className="text-xs font-bold font-display text-muted-foreground uppercase tracking-tight whitespace-nowrap">Prev. Entrega</label>
-                <input
-                  type="date"
-                  value={previsaoEntregaDate}
-                  onChange={e => setPrevisaoEntregaDate(e.target.value)}
-                  className="px-2 py-1 rounded-lg border border-input bg-card text-foreground font-mono-data text-xs focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-                />
-              </div>
-              <button
-                onClick={openSendModal}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors font-display text-xs font-bold uppercase tracking-tight"
-                title="Enviar para o motorista"
-              >
-                <MessageCircle className="h-3.5 w-3.5" />
-                Enviar
-              </button>
-              <button 
-                onClick={saveReport}
-                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors font-display text-xs font-bold uppercase tracking-tight"
-              >
-                <Save className="h-3.5 w-3.5" />
-                Salvar
-              </button>
               <div className="h-4 w-[1px] bg-border mx-1" />
-              <button 
+              <button
                 onClick={() => setReportPage(prev => Math.max(0, prev - 1))}
                 disabled={reportPage === 0}
                 className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
@@ -1660,7 +1636,7 @@ const CreateShipment = () => {
               <span className="text-xs font-mono-data font-bold text-muted-foreground">
                 Página {reportPage + 1}
               </span>
-              <button 
+              <button
                 onClick={() => setReportPage(prev => Math.min(3, prev + 1))}
                 disabled={reportPage === 3}
                 className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
@@ -1946,6 +1922,24 @@ const CreateShipment = () => {
               </tbody>
             </table>
           </div>
+        </div>
+
+        {/* Ações do Relatório de Entrega */}
+        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
+          <button
+            onClick={openSendModal}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors font-display text-sm font-bold uppercase tracking-tight"
+          >
+            <MessageCircle className="h-4 w-4" />
+            Enviar
+          </button>
+          <button
+            onClick={saveReport}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors font-display text-sm font-bold uppercase tracking-tight"
+          >
+            <Save className="h-4 w-4" />
+            Salvar
+          </button>
         </div>
 
         {/* Cards de Ocupação Lado a Lado (Final da Página) */}
