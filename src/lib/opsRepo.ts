@@ -525,3 +525,51 @@ export async function listRelatorioEntregaAnexos(carregamentoId: string): Promis
   }
   return (data || []) as RelatorioEntregaAnexo[];
 }
+
+// ==============================================================================
+// Relatório de Entrega — Notificações de Representantes
+// ==============================================================================
+
+export type RelatorioEntregaNotificacao = {
+  id: string;
+  carregamento_id: string;
+  representante_key: string;
+  representante_nome: string | null;
+  notificado_em: string;
+  previsao_entrega: string | null;
+  criado_por: string | null;
+};
+
+export async function upsertRelatorioEntregaNotificacao(row: {
+  carregamento_id: string;
+  representante_key: string;
+  representante_nome: string | null;
+  previsao_entrega: string | null;
+  criado_por: string | null;
+}) {
+  if (!supabaseOps) return;
+  const { error } = await supabaseOps
+    .from('concrem_relatorio_entrega_notificacoes')
+    .upsert(
+      { ...row, notificado_em: new Date().toISOString() },
+      { onConflict: 'carregamento_id,representante_key' },
+    );
+  if (error) {
+    console.error('[Supabase OPS] upsert relatorio_entrega_notificacoes:', error.message);
+  }
+}
+
+export async function listRelatorioEntregaNotificacoes(
+  carregamentoId: string,
+): Promise<RelatorioEntregaNotificacao[]> {
+  if (!supabaseOps) return [];
+  const { data, error } = await supabaseOps
+    .from('concrem_relatorio_entrega_notificacoes')
+    .select('*')
+    .eq('carregamento_id', carregamentoId);
+  if (error) {
+    console.error('[Supabase OPS] list relatorio_entrega_notificacoes:', error.message);
+    return [];
+  }
+  return (data || []) as RelatorioEntregaNotificacao[];
+}

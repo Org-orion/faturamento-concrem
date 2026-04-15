@@ -16,7 +16,7 @@ import {
 } from '@/components/shared';
 import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas } from '@/lib/opsRepo';
+import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas, upsertRelatorioEntregaNotificacao, listRelatorioEntregaNotificacoes, type RelatorioEntregaNotificacao } from '@/lib/opsRepo';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 import { fetchAllPages } from '@/lib/supabaseUtils';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
@@ -65,6 +65,22 @@ const CreateShipment = () => {
   const boletoTipo = (idx: number): string => idx === 0 ? 'boleto' : `boleto_${idx + 1}`;
   const isBoletoTipo = (tipo: string): boolean => tipo === 'boleto' || /^boleto_\d+$/.test(tipo);
   const [orderAttachments, setOrderAttachments] = useState<Record<string, OrderAttachments>>({});
+
+  // --- Modal de envio WhatsApp ---
+  type RepSendItem = {
+    repKey: string;
+    repName: string;
+    repPhone: string;
+    orders: Order[];
+    previsao: string;       // data de previsão para esse rep (yyyy-mm-dd)
+    checked: boolean;       // selecionado para envio
+    notificacao?: RelatorioEntregaNotificacao; // se já foi notificado antes
+  };
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [sendModalItems, setSendModalItems] = useState<RepSendItem[]>([]);
+  const [sending, setSending] = useState(false);
+  const [notificacoes, setNotificacoes] = useState<RelatorioEntregaNotificacao[]>([]);
+
   const [reportPage, setReportPage] = useState(0);
   const [filters, setFilters] = useState({
     id: '',
@@ -234,6 +250,7 @@ const CreateShipment = () => {
       }
       setOrderAttachments(grouped);
     });
+    void listRelatorioEntregaNotificacoes(id).then(setNotificacoes);
   }, [id]);
 
   // --- Pedidos disponíveis para carregamento (query direta, sem filtro de id_nota_conf) ---
@@ -717,7 +734,8 @@ const CreateShipment = () => {
     }
   };
 
-  const sendReportWhatsapp = async () => {
+  // Abre o modal de seleção de representantes para envio
+  const openSendModal = async () => {
     const reportOrders = selectedOrderIds
       .map((oid) => allCandidates.find((o) => o.id === oid))
       .filter(Boolean) as Order[];
@@ -726,16 +744,6 @@ const CreateShipment = () => {
       showToast('Nenhum pedido selecionado no relatório.', 'error');
       return;
     }
-
-    const driver = drivers.find((d) => d.id === driverId);
-    const driverName = driver?.name || '-';
-    const driverPhone = driver?.phone || '-';
-    const [ay, am, ad] = shipmentDate.split('-');
-    const dataEmbarque = `${ad}/${am}/${ay}`;
-    const [py, pm, pd] = previsaoEntregaDate.split('-');
-    const dataPrevisaoEntrega = `${pd}/${pm}/${py}`;
-    const hora = currentHourBR();
-    const saudacao = hora < 12 ? 'Bom dia!' : hora < 18 ? 'Boa tarde!' : 'Boa noite!';
 
     // Agrupar pedidos por representante
     const byRep = new Map<string, Order[]>();
@@ -746,6 +754,9 @@ const CreateShipment = () => {
       byRep.set(repKey, list);
     }
 
+    const notifMap = new Map(notificacoes.map(n => [n.representante_key, n]));
+
+    const items: RepSendItem[] = [];
     for (const [repKey, repOrders] of byRep.entries()) {
       let repInfo = await findRepresentanteContato(repKey);
       const repNameFromPedido = String(repOrders[0]?.representativeName || '').trim();
@@ -754,10 +765,45 @@ const CreateShipment = () => {
       }
       const repName = repInfo?.nome || repOrders[0]?.representativeName || 'Desconhecido';
       const repPhoneRaw = repInfo?.telefone || repOrders[0]?.representativePhone || '';
-      // Remove prefixo de código do representante (ex: "40054798 - DISTRIBUIDORA / DANILO" → "DISTRIBUIDORA / DANILO")
+      const notif = notifMap.get(repKey);
+      const jaNotificado = !!notif;
+      // LEROY: não aparece no modal
+      if (isLeroy(repOrders[0]?.clientName || repOrders[0]?.clientCode, repName)) continue;
+      items.push({
+        repKey,
+        repName,
+        repPhone: repPhoneRaw,
+        orders: repOrders,
+        previsao: notif?.previsao_entrega || previsaoEntregaDate,
+        checked: !jaNotificado, // desmarcado se já foi notificado
+        notificacao: notif,
+      });
+    }
+
+    setSendModalItems(items);
+    setSendModalOpen(true);
+  };
+
+  // Executa o envio para os representantes marcados no modal
+  const executeSendWhatsapp = async () => {
+    setSending(true);
+    const driver = drivers.find((d) => d.id === driverId);
+    const driverName = driver?.name || '-';
+    const driverPhone = driver?.phone || '-';
+    const [ay, am, ad] = shipmentDate.split('-');
+    const dataEmbarque = `${ad}/${am}/${ay}`;
+    const hora = currentHourBR();
+    const saudacao = hora < 12 ? 'Bom dia!' : hora < 18 ? 'Boa tarde!' : 'Boa noite!';
+
+    const toSend = sendModalItems.filter(item => item.checked);
+
+    for (const item of toSend) {
+      const { repKey, repName, repPhone: repPhoneRaw, orders: repOrders, previsao } = item;
+      const [py, pm, pd] = previsao.split('-');
+      const dataPrevisaoEntrega = `${pd}/${pm}/${py}`;
       const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
 
-      // Montar mensagem conforme modelo
+      // Montar mensagem
       let message = `${saudacao}\nCarregamento referente ao dia ${dataEmbarque}\n\n`;
       for (const order of repOrders) {
         const nf = invoiceNumbers[order.id] || 'S/N';
@@ -768,22 +814,18 @@ const CreateShipment = () => {
       message += `Lembrando a importância do representante sempre acompanhar a descarga.\n\n`;
       message += `MOTORISTA / CONTATO\n${driverName} - ${driverPhone}`;
 
-      // Coletar anexos (PDFs) para envio direto
+      // Coletar anexos
       const hasBoleto = repOrders.some(o => (orderAttachments[o.id]?.boletos?.length ?? 0) > 0);
-      type DocAttach = { url: string; label: string; orderId: string };
+      type DocAttach = { url: string; label: string };
       const docAttachs: DocAttach[] = [];
       for (const order of repOrders) {
         const attachs = orderAttachments[order.id] || { boletos: [] };
         (attachs.boletos || []).forEach((b, idx) => {
           const suffix = idx === 0 ? '' : `_${idx + 1}`;
-          docAttachs.push({ url: b.url, label: `Boleto${suffix}-${order.id}.pdf`, orderId: order.id });
+          docAttachs.push({ url: b.url, label: `Boleto${suffix}-${order.id}.pdf` });
         });
-        if (attachs.nf?.url) docAttachs.push({ url: attachs.nf.url, label: `NotaFiscal-${order.id}.pdf`, orderId: order.id });
-        // comprovante de entrega NÃO é enviado ao representante
+        if (attachs.nf?.url) docAttachs.push({ url: attachs.nf.url, label: `NotaFiscal-${order.id}.pdf` });
       }
-
-      // LEROY: não enviar nenhuma mensagem WhatsApp
-      if (isLeroy(repOrders[0]?.clientName || repOrders[0]?.clientCode, repName)) continue;
 
       // Enviar via Evolution API
       if (repPhoneRaw) {
@@ -791,12 +833,10 @@ const CreateShipment = () => {
         if (phoneE164) {
           const result = await sendEvolutionText(phoneE164, message);
           if (result.ok) {
-            showToast(`Mensagem enviada para ${repName}.`);
+            showToast(`Mensagem enviada para ${repDisplayName}.`);
           } else {
-            showToast(`Falha ao enviar para ${repName}: ${result.error}`, 'error');
+            showToast(`Falha ao enviar para ${repDisplayName}: ${result.error}`, 'error');
           }
-
-          // Enviar cada PDF diretamente como arquivo
           for (const doc of docAttachs) {
             try {
               const blob = await fetch(doc.url).then(r => r.blob());
@@ -806,20 +846,19 @@ const CreateShipment = () => {
                 reader.onerror = reject;
                 reader.readAsDataURL(blob);
               });
-              const mime = blob.type || 'application/pdf';
-              await sendEvolutionMedia(phoneE164, base64, mime, doc.label);
+              await sendEvolutionMedia(phoneE164, base64, blob.type || 'application/pdf', doc.label);
             } catch (e) {
               console.error(`Erro ao enviar arquivo ${doc.label}:`, e);
             }
           }
         } else {
-          showToast(`Número inválido para ${repName}: ${repPhoneRaw}`, 'error');
+          showToast(`Número inválido para ${repDisplayName}: ${repPhoneRaw}`, 'error');
         }
       } else {
-        showToast(`Representante ${repName} sem telefone cadastrado.`, 'error');
+        showToast(`Representante ${repDisplayName} sem telefone cadastrado.`, 'error');
       }
 
-      // Atualizar status de cada pedido para em_entrega (Em Rota)
+      // Atualizar status dos pedidos para em_entrega
       for (const order of repOrders) {
         await updatePedidoStatus({
           pedidoId: order.id,
@@ -830,10 +869,32 @@ const CreateShipment = () => {
         });
       }
 
+      // Salvar notificação no banco
       if (id) {
+        await upsertRelatorioEntregaNotificacao({
+          carregamento_id: id,
+          representante_key: repKey,
+          representante_nome: repName,
+          previsao_entrega: previsao || null,
+          criado_por: user?.username || null,
+        });
         void insertNotificacaoRepresentante(id, repKey);
       }
     }
+
+    // Recarregar notificações para atualizar badges
+    if (id) {
+      const updated = await listRelatorioEntregaNotificacoes(id);
+      setNotificacoes(updated);
+      // Atualiza o modal para refletir quem foi notificado
+      setSendModalItems(prev => prev.map(item => {
+        const notif = updated.find(n => n.representante_key === item.repKey);
+        return { ...item, notificacao: notif, checked: false };
+      }));
+    }
+
+    setSending(false);
+    setSendModalOpen(false);
   };
 
   const calculateTotals = () => {
@@ -1574,7 +1635,7 @@ const CreateShipment = () => {
                 />
               </div>
               <button
-                onClick={sendReportWhatsapp}
+                onClick={openSendModal}
                 className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors font-display text-xs font-bold uppercase tracking-tight"
                 title="Enviar para o motorista"
               >
@@ -2065,6 +2126,101 @@ const CreateShipment = () => {
           value={conditions}
           onApply={setConditions}
         />
+
+        {/* Modal de envio WhatsApp por representante */}
+        {sendModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-lg mx-4 flex flex-col max-h-[90vh]">
+              {/* Header */}
+              <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                <div>
+                  <h2 className="text-base font-bold font-display text-foreground">Enviar Relatório de Entrega</h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">Selecione quais representantes devem receber a notificação.</p>
+                </div>
+                <button onClick={() => setSendModalOpen(false)} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">
+                  ✕
+                </button>
+              </div>
+
+              {/* Lista de representantes */}
+              <div className="overflow-y-auto flex-1 px-6 py-4 space-y-3">
+                {sendModalItems.length === 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-6">Nenhum representante encontrado nos pedidos selecionados.</p>
+                )}
+                {sendModalItems.map((item, idx) => {
+                  const jaNotificado = !!item.notificacao;
+                  const notifDate = item.notificacao?.notificado_em
+                    ? new Date(item.notificacao.notificado_em).toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+                    : null;
+                  const displayName = item.repName.replace(/^\d+\s*[-–]\s*/, '').trim() || item.repName;
+                  return (
+                    <div key={item.repKey} className={cn('rounded-xl border p-4 transition-colors', item.checked ? 'border-primary/40 bg-primary/5' : 'border-border bg-card')}>
+                      <div className="flex items-start gap-3">
+                        <input
+                          type="checkbox"
+                          checked={item.checked}
+                          onChange={e => setSendModalItems(prev => prev.map((it, i) => i === idx ? { ...it, checked: e.target.checked } : it))}
+                          className="mt-1 h-4 w-4 accent-primary cursor-pointer"
+                        />
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-bold text-sm text-foreground">{displayName}</span>
+                            {jaNotificado && (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-green-100 text-green-700 border border-green-200">
+                                ✓ Notificado {notifDate}
+                              </span>
+                            )}
+                            {!item.repPhone && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
+                                Sem telefone
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-foreground mt-0.5">
+                            {item.orders.length} pedido(s): {item.orders.map(o => o.id).join(' · ')}
+                          </div>
+                          <div className="flex items-center gap-2 mt-2">
+                            <label className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">Prev. Entrega:</label>
+                            <input
+                              type="date"
+                              value={item.previsao}
+                              onChange={e => setSendModalItems(prev => prev.map((it, i) => i === idx ? { ...it, previsao: e.target.value } : it))}
+                              className="px-2 py-0.5 rounded-lg border border-input bg-background text-foreground font-mono-data text-xs focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              {/* Footer */}
+              <div className="flex items-center justify-between px-6 py-4 border-t border-border gap-3">
+                <span className="text-xs text-muted-foreground">
+                  {sendModalItems.filter(i => i.checked).length} de {sendModalItems.length} selecionado(s)
+                </span>
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setSendModalOpen(false)}
+                    className="px-4 py-2 rounded-lg border border-border bg-card text-sm font-semibold text-muted-foreground hover:bg-muted transition-colors"
+                    disabled={sending}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={executeSendWhatsapp}
+                    disabled={sending || sendModalItems.filter(i => i.checked).length === 0}
+                    className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500 text-white text-sm font-bold hover:bg-green-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <MessageCircle className="h-4 w-4" />
+                    {sending ? 'Enviando...' : 'Enviar Marcados'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
