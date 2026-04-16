@@ -914,7 +914,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       ),
     );
 
-    await upsertProgramacaoCarregamento(nextLoad);
+    const { error: saveErr } = await upsertProgramacaoCarregamento(nextLoad);
+    if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(nextLoad.id, nextLoad.orderIds, 'pendente');
 
     if (nextLoad.shipmentStatus === 'Em Rota') {
@@ -996,7 +997,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return d;
     }));
 
-    await upsertProgramacaoCarregamento(l);
+    const { error: saveErr } = await upsertProgramacaoCarregamento(l);
+    if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(l.id, l.orderIds, l.shipmentStatus === 'Entregue' ? 'entregue' : 'pendente');
 
     const all = [...orders, ...supportOrders];

@@ -21,8 +21,8 @@ const toOpsStatus = (load: Load): OpsStatus => {
   return 'aguardando_producao';
 };
 
-export async function upsertProgramacaoCarregamento(load: Load) {
-  if (!supabaseOps) return;
+export async function upsertProgramacaoCarregamento(load: Load): Promise<{ error: { message: string } | null }> {
+  if (!supabaseOps) return { error: { message: 'Supabase OPS não configurado.' } };
   const payload = {
     id: load.id,
     pedidos: load.orderIds,
@@ -43,7 +43,9 @@ export async function upsertProgramacaoCarregamento(load: Load) {
   const { error } = await supabaseOps.from('concrem_programacoes_embarque').upsert(payload);
   if (error) {
     console.error('[Supabase OPS] upsert programacoes_embarque:', error.message);
+    return { error };
   }
+  return { error: null };
 }
 
 export async function deleteProgramacaoCarregamento(id: string) {
