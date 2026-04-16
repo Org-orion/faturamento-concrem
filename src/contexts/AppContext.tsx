@@ -923,7 +923,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       await Promise.all(
         nextLoad.orderIds.map(async (pedidoId) => {
           const currentStatus = currentStatuses.find(s => s.pedido_id === pedidoId)?.status_atual;
-          if (currentStatus !== 'faturado') return;
+          if (currentStatus === 'em_entrega' || currentStatus === 'parcialmente_entregue' || currentStatus === 'entregue' || currentStatus === 'aguardando_pagamento' || currentStatus === 'finalizado') return;
           const o: any = all.find((x: any) => x.id === pedidoId);
           const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
           const repKey = String(o?.representativeId || o?.representativeName || '').trim();
@@ -1006,7 +1006,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       await Promise.all(
         l.orderIds.map(async (pedidoId) => {
           const currentStatus = currentStatuses.find(s => s.pedido_id === pedidoId)?.status_atual;
-          if (currentStatus !== 'faturado') return;
+          if (currentStatus === 'em_entrega' || currentStatus === 'parcialmente_entregue' || currentStatus === 'entregue' || currentStatus === 'aguardando_pagamento' || currentStatus === 'finalizado') return;
           const o: any = all.find((x: any) => x.id === pedidoId);
           const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
           const repKey = String(o?.representativeId || o?.representativeName || '').trim();
