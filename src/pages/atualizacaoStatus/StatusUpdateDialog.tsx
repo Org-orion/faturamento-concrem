@@ -32,6 +32,7 @@ export function StatusUpdateDialog({
   const [notify, setNotify] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resolvedPhone, setResolvedPhone] = useState<string | null>(null);
+  const [dataAlteracao, setDataAlteracao] = useState(() => new Date().toISOString().slice(0, 10));
 
   const manualOptions = useMemo(() => {
     if (!statusAtual) return [];
@@ -43,6 +44,7 @@ export function StatusUpdateDialog({
     setNovoStatus('');
     setObs('');
     setResolvedPhone(null);
+    setDataAlteracao(new Date().toISOString().slice(0, 10));
 
     // Buscar telefone do cadastro de representantes
     const repName = pedido.representante || '';
@@ -75,11 +77,14 @@ export function StatusUpdateDialog({
       const leroy = isLeroy(pedido.cliente, pedido.representante);
       const shouldNotify = Boolean(notify) && !leroy;
 
+      const alteradoEm = dataAlteracao ? new Date(dataAlteracao + 'T12:00:00').toISOString() : undefined;
+
       const res = await setPedidoStatusWithOptionalNotify({
         pedidoId: pedido.id,
         numeroPedido: pedido.numero,
         statusNovo: novoStatus,
         alteradoPor: userName,
+        alteradoEm: alteradoEm ?? null,
         observacao: obs || null,
         notifyRepresentante: shouldNotify,
         representantePhoneRaw: resolvedPhone || pedido.repPhone || null,
@@ -125,6 +130,19 @@ export function StatusUpdateDialog({
               </Select>
             </div>
 
+            <div className="space-y-2">
+              <Label>Data da alteração</Label>
+              <input
+                type="date"
+                value={dataAlteracao}
+                onChange={(e) => setDataAlteracao(e.target.value)}
+                max={new Date().toISOString().slice(0, 10)}
+                className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="space-y-2">
               <Label>Notificar representante?</Label>
               <div className="h-10 rounded-lg border border-border bg-white px-3 flex items-center justify-between">

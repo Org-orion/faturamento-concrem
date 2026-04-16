@@ -9,6 +9,7 @@ type StatusUpdateInput = {
   numeroPedido: string;
   statusNovo: PedidoStatusValue;
   alteradoPor: string | null;
+  alteradoEm?: string | null;
   observacao?: string | null;
   notificadoRepresentante?: boolean;
   notificadoEm?: string | null;
@@ -320,6 +321,7 @@ export async function ensurePedidosStatusInitializedBatch(
 export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok: boolean; previous: PedidoStatusValue | null }>{
   if (!supabaseOps) return { ok: false, previous: null };
   const now = new Date().toISOString();
+  const alteradoEm = input.alteradoEm || now;
 
   const current = await getPedidoStatus(input.pedidoId);
   const statusAnterior = current?.status_atual ?? null;
@@ -333,7 +335,7 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
         pedido_id: input.pedidoId,
         numero_pedido: input.numeroPedido,
         status_atual: input.statusNovo,
-        atualizado_em: now,
+        atualizado_em: alteradoEm,
         atualizado_por: input.alteradoPor,
       } as any,
       { onConflict: 'pedido_id' },
@@ -353,7 +355,7 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
       numero_pedido: input.numeroPedido,
       status_anterior: statusAnterior,
       status_novo: input.statusNovo,
-      alterado_em: now,
+      alterado_em: alteradoEm,
       alterado_por: input.alteradoPor,
       observacao: input.observacao ?? null,
       notificado_representante: Boolean(input.notificadoRepresentante),
@@ -391,6 +393,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
   numeroPedido: string;
   statusNovo: PedidoStatusValue;
   alteradoPor: string | null;
+  alteradoEm?: string | null;
   observacao?: string | null;
   notifyRepresentante: boolean;
   representantePhoneRaw?: string | null;
@@ -399,6 +402,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
 }): Promise<{ ok: boolean; previous: PedidoStatusValue | null; notified: boolean; notifyError: string | null }> {
   if (!supabaseOps) return { ok: false, previous: null, notified: false, notifyError: 'Supabase OPS não configurado.' };
   const now = new Date().toISOString();
+  const alteradoEm = params.alteradoEm || now;
 
   const current = await getPedidoStatus(params.pedidoId);
   const statusAnterior = current?.status_atual ?? null;
@@ -440,7 +444,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
       pedido_id: params.pedidoId,
       numero_pedido: params.numeroPedido,
       status_atual: params.statusNovo,
-      atualizado_em: now,
+      atualizado_em: alteradoEm,
       atualizado_por: params.alteradoPor,
     } as any,
     { onConflict: 'pedido_id' },
@@ -455,7 +459,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
     numero_pedido: params.numeroPedido,
     status_anterior: statusAnterior,
     status_novo: params.statusNovo,
-    alterado_em: now,
+    alterado_em: alteradoEm,
     alterado_por: params.alteradoPor,
     observacao: params.observacao ?? null,
     notificado_representante: notified,
