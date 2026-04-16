@@ -50,3 +50,12 @@ export function fmtDateTime(iso?: string | null): string {
   if (!iso) return '-';
   return normalizeDate(iso).toLocaleString('pt-BR', { timeZone: TZ });
 }
+
+/** Formata data e hora para mensagens WhatsApp. Ex: 16/04/2026 às 14:30 */
+export function fmtDateTimeMsg(iso?: string | null): string {
+  if (!iso) return '-';
+  const d = normalizeDate(iso);
+  const date = d.toLocaleDateString('pt-BR', { timeZone: TZ });
+  const time = d.toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
+  return `${date} às ${time}`;
+}

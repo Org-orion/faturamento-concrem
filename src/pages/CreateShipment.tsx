@@ -804,15 +804,18 @@ const CreateShipment = () => {
       const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
 
       // Montar mensagem
-      let message = `${saudacao}\nCarregamento referente ao dia ${dataEmbarque}\n\n`;
+      let message = `${saudacao} 👋\n\n`;
+      message += `🚚 Carregamento do dia ${dataEmbarque}\n\n`;
+      message += `📦\n`;
       for (const order of repOrders) {
         const nf = invoiceNumbers[order.id] || 'S/N';
-        message += `· ${nf} - ${repDisplayName}\n`;
+        message += `• ${nf} - ${repDisplayName}\n`;
       }
-      message += `\nPrevisão de entrega a partir do dia ${dataPrevisaoEntrega}.\n\n`;
-      message += `Gentileza contatar o motorista para informações sobre o local de entrega.\n`;
-      message += `Lembrando a importância do representante sempre acompanhar a descarga.\n\n`;
-      message += `MOTORISTA / CONTATO\n${driverName} - ${driverPhone}`;
+      message += `\n📅 Entrega prevista a partir de ${dataPrevisaoEntrega}\n\n`;
+      message += `📞 Para mais detalhes, fale direto com o motorista:\n`;
+      message += `${driverName} — ${driverPhone}\n\n`;
+      message += `⚠️ Importante acompanhar a descarga no local\n\n`;
+      message += `📎 Nota fiscal e boleto seguem em anexo`;
 
       // Coletar anexos
       const hasBoleto = repOrders.some(o => (orderAttachments[o.id]?.boletos?.length ?? 0) > 0);

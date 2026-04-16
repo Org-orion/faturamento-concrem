@@ -1,5 +1,5 @@
 import { supabaseOps } from '@/lib/supabase';
-import { fmtDateTime } from '@/lib/dateUtils';
+import { fmtDateTimeMsg } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { canMoveToStatus, getPedidoStatusDef } from '@/lib/pedidoStatusFlow';
 import type { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
@@ -428,7 +428,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
         clienteNome: params.clienteNome,
         statusAnterior,
         statusNovo: params.statusNovo,
-        dataHoraIso: now,
+        dataHoraIso: alteradoEm,
         observacao: params.observacao,
       });
       const sent = await sendWhatsappMessage(to, message);
@@ -528,19 +528,65 @@ export function formatStatusWhatsappMessage(params: {
   dataHoraIso: string;
   observacao?: string | null;
 }): string {
-  const statusAnteriorLabel = params.statusAnterior ? getPedidoStatusDef(params.statusAnterior).label : '-';
-  const statusNovoLabel = getPedidoStatusDef(params.statusNovo).label;
-  const when = fmtDateTime(params.dataHoraIso);
+  const { numeroPedido, clienteNome, statusAnterior, statusNovo, dataHoraIso, observacao } = params;
+  const statusAnteriorLabel = statusAnterior ? getPedidoStatusDef(statusAnterior).label : '-';
+  const statusNovoLabel = getPedidoStatusDef(statusNovo).label;
+  const when = fmtDateTimeMsg(dataHoraIso);
 
-  const lines = [
-    `Olá! O pedido *${params.numeroPedido}* do cliente *${params.clienteNome}* teve seu status atualizado.`,
-    '',
-    `Status anterior: ${statusAnteriorLabel}`,
-    `Novo status: ${statusNovoLabel}`,
-    `Data: ${when}`,
-  ];
+  let lines: string[];
 
-  const note = String(params.observacao || '').trim();
+  if (statusNovo === 'liberado_producao') {
+    lines = [
+      'Olá! 👋',
+      '',
+      `Seu pedido ${numeroPedido} — ${clienteNome} foi atualizado:`,
+      '',
+      `🔄 De: ${statusAnteriorLabel}`,
+      `🏭 Para: ${statusNovoLabel}`,
+      '',
+      'A produção começa em breve e eu te aviso das próximas etapas 👍',
+      '',
+      `🕒 ${when}`,
+    ];
+  } else if (statusNovo === 'em_entrega') {
+    lines = [
+      'Olá! 👋',
+      '',
+      `Seu pedido ${numeroPedido} — ${clienteNome} já saiu para entrega 🚚`,
+      '',
+      '📍 Ele está em rota para o destino.',
+      '',
+      'Se quiser acompanhar ou alinhar a entrega, vale entrar em contato com o motorista 👍',
+      '',
+      `🕒 ${when}`,
+    ];
+  } else if (statusNovo === 'entregue') {
+    lines = [
+      'Olá! 👋',
+      '',
+      `Seu pedido ${numeroPedido} — ${clienteNome} foi entregue com sucesso ✅`,
+      '',
+      'Tudo certo com a entrega?',
+      'Se precisar de qualquer coisa, estou por aqui 👍',
+      '',
+      `🕒 ${when}`,
+    ];
+  } else {
+    lines = [
+      'Olá! 👋',
+      '',
+      `Seu pedido ${numeroPedido} foi atualizado:`,
+      '',
+      `🔄 De: ${statusAnteriorLabel}`,
+      `📍 Para: ${statusNovoLabel}`,
+      '',
+      'Seguimos com as próximas etapas e te aviso por aqui 👍',
+      '',
+      `🕒 ${when}`,
+    ];
+  }
+
+  const note = String(observacao || '').trim();
   if (note) {
     lines.push('', note);
   }

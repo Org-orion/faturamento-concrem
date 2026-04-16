@@ -404,6 +404,7 @@ const ComercialLiberacao = () => {
     for (const [, { orders, phone }] of byRep.entries()) {
       if (!phone) continue;
       const repName = orders[0].representativeName || '-';
+      const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
 
       // Filtra pedidos LEROY (cliente ou representante)
       const notifiable = orders.filter((o) => !isLeroy(o.clientName || o.clientCode, repName));
@@ -414,12 +415,14 @@ const ComercialLiberacao = () => {
 
       const hora = currentHourBR();
       const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
-      let msg = `${saudacao}, ${repName}!\n\n`;
-      msg += `Os seguintes pedidos foram *liberados para produção*:\n\n`;
+      let msg = `${saudacao}, ${repDisplayName}! 👋\n\n`;
+      msg += `Seus pedidos foram liberados para produção e já vão entrar em fabricação 🏭\n\n`;
+      msg += `📦 Pedidos:\n`;
       for (const o of notifiable) {
-        msg += `· Pedido *${o.id}* — ${o.clientName || o.clientCode || 'Cliente'}\n`;
+        msg += `• ${o.id} — ${o.clientName || o.clientCode || 'Cliente'}\n`;
       }
-      msg += `\nEm breve iniciaremos a fabricação. Qualquer dúvida, estamos à disposição.`;
+      msg += `\nAssim que avançarem, te aviso por aqui 👍\n\n`;
+      msg += `Se precisar de algo, é só me chamar.`;
 
       await sendEvolutionText(phoneE164, msg);
     }
