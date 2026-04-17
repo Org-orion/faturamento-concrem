@@ -99,10 +99,18 @@ const AtualizacaoStatus = () => {
         }
         if (missingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-          const { data: extraData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
-          const fetched: UnifiedPedido[] = ((extraData || []) as any[]).map((row: any) => {
+          const { data: byNumero } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
+          const foundByNumero = new Set(((byNumero || []) as any[]).map((r: any) => r.numero_pedido != null ? String(r.numero_pedido) : null).filter(Boolean));
+          const stillMissing = missingIds.filter((id) => !foundByNumero.has(id));
+          const { data: byId } = stillMissing.length > 0
+            ? await supabasePedidos.from(table).select(tableColumns).in('id', stillMissing)
+            : { data: [] };
+          const allExtra = [...(byNumero || []), ...(byId || [])] as any[];
+          const fetched: UnifiedPedido[] = allExtra.map((row: any) => {
             const o = rowToOrder(row, 'CLI-001');
-            return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', repPhone: o.representativePhone || null };
+            const canonicalId = row.numero_pedido != null ? String(row.numero_pedido) : (row.id != null ? String(row.id) : o.id);
+            const matchedId = missingIds.find((id) => id === canonicalId) || canonicalId;
+            return { id: matchedId, numero: matchedId, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', repPhone: o.representativePhone || null };
           });
           if (fetched.length > 0) {
             // Nunca remove extras existentes — apenas adiciona novos
@@ -183,6 +191,43 @@ const AtualizacaoStatus = () => {
       .subscribe();
     return () => { void supabaseOps.removeChannel(ch); };
   }, []);
+
+  // Busca dados de pedidos que aparecem no status table mas não no AppContext/extraPedidos
+  useEffect(() => {
+    if (!supabasePedidos || statusRows.length === 0) return;
+    const knownIds = new Set([
+      ...(orders || []).map((o) => o.id),
+      ...(supportOrders || []).map((o) => o.id),
+      ...extraPedidos.map((p) => p.id),
+    ]);
+    const missingIds = statusRows
+      .map((r) => String(r.pedido_id))
+      .filter((id) => !knownIds.has(id));
+    if (missingIds.length === 0) return;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    void (async () => {
+      const { data: byNumero } = await supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', missingIds);
+      const foundByNumero = new Set(((byNumero || []) as any[]).map((r: any) => r.numero_pedido != null ? String(r.numero_pedido) : null).filter(Boolean));
+      const stillMissing = missingIds.filter((id) => !foundByNumero.has(id));
+      const { data: byId } = stillMissing.length > 0
+        ? await supabasePedidos!.from(table).select(tableColumns).in('id', stillMissing)
+        : { data: [] };
+      const data = [...(byNumero || []), ...(byId || [])];
+      const fetched: UnifiedPedido[] = (data as any[]).map((row: any) => {
+        const o = rowToOrder(row, 'CLI-001');
+        const canonicalId = row.numero_pedido != null ? String(row.numero_pedido) : (row.id != null ? String(row.id) : o.id);
+        const matchedId = missingIds.find((id) => id === canonicalId) || canonicalId;
+        return { id: matchedId, numero: matchedId, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', repPhone: o.representativePhone || null };
+      });
+      if (fetched.length > 0) {
+        setExtraPedidos((prev) => {
+          const map = new Map(prev.map((p) => [p.id, p]));
+          for (const e of fetched) map.set(e.id, e);
+          return Array.from(map.values());
+        });
+      }
+    })();
+  }, [statusRows]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (presetId) setSelectedId(presetId);
