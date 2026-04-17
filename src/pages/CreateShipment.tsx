@@ -60,10 +60,12 @@ const CreateShipment = () => {
   const [deliveredOrderIds, setDeliveredOrderIds] = useState<string[]>([]);
 
   type PendingAttachment = { url: string; nome: string; saved: boolean };
-  type OrderAttachments = { boletos: PendingAttachment[]; nf?: PendingAttachment; comprovante?: PendingAttachment };
+  type OrderAttachments = { boletos: PendingAttachment[]; nf?: PendingAttachment; comprovantes: PendingAttachment[] };
   type AttachmentType = 'boleto' | 'nf' | 'comprovante';
   const boletoTipo = (idx: number): string => idx === 0 ? 'boleto' : `boleto_${idx + 1}`;
   const isBoletoTipo = (tipo: string): boolean => tipo === 'boleto' || /^boleto_\d+$/.test(tipo);
+  const comprovanteTipo = (idx: number): string => idx === 0 ? 'comprovante' : `comprovante_${idx + 1}`;
+  const isComprovanteTipo = (tipo: string): boolean => tipo === 'comprovante' || /^comprovante_\d+$/.test(tipo);
   const [orderAttachments, setOrderAttachments] = useState<Record<string, OrderAttachments>>({});
 
   // --- Modal de envio WhatsApp ---
@@ -238,14 +240,14 @@ const CreateShipment = () => {
     void listRelatorioEntregaAnexos(id).then((rows) => {
       const grouped: Record<string, OrderAttachments> = {};
       for (const row of rows) {
-        if (!grouped[row.pedido_id]) grouped[row.pedido_id] = { boletos: [] };
+        if (!grouped[row.pedido_id]) grouped[row.pedido_id] = { boletos: [], comprovantes: [] };
         const att: PendingAttachment = { url: row.arquivo_url, nome: row.arquivo_nome, saved: true };
         if (isBoletoTipo(row.tipo)) {
           grouped[row.pedido_id].boletos.push(att);
         } else if (row.tipo === 'nf') {
           grouped[row.pedido_id].nf = att;
-        } else if (row.tipo === 'comprovante') {
-          grouped[row.pedido_id].comprovante = att;
+        } else if (isComprovanteTipo(row.tipo)) {
+          grouped[row.pedido_id].comprovantes.push(att);
         }
       }
       setOrderAttachments(grouped);
@@ -958,7 +960,8 @@ const CreateShipment = () => {
       const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
       // For boletos, use an indexed subfolder so multiple boletos can coexist
       const boletoIdx = type === 'boleto' ? (orderAttachments[orderId]?.boletos?.length ?? 0) : 0;
-      const storageTipo = type === 'boleto' ? boletoTipo(boletoIdx) : type;
+      const compIdx = type === 'comprovante' ? (orderAttachments[orderId]?.comprovantes?.length ?? 0) : 0;
+      const storageTipo = type === 'boleto' ? boletoTipo(boletoIdx) : type === 'comprovante' ? comprovanteTipo(compIdx) : type;
       const path = `${id}/${orderId}/${storageTipo}/${sanitizedName}`;
 
       const { error: uploadErr } = await supabaseOps.storage
@@ -977,13 +980,18 @@ const CreateShipment = () => {
       const newAtt: PendingAttachment = { url: urlData.publicUrl, nome: file.name, saved: false };
       if (type === 'boleto') {
         setOrderAttachments((prev) => {
-          const cur = prev[orderId] || { boletos: [] };
+          const cur = prev[orderId] || { boletos: [], comprovantes: [] };
           return { ...prev, [orderId]: { ...cur, boletos: [...(cur.boletos || []), newAtt] } };
+        });
+      } else if (type === 'comprovante') {
+        setOrderAttachments((prev) => {
+          const cur = prev[orderId] || { boletos: [], comprovantes: [] };
+          return { ...prev, [orderId]: { ...cur, comprovantes: [...(cur.comprovantes || []), newAtt] } };
         });
       } else {
         setOrderAttachments((prev) => ({
           ...prev,
-          [orderId]: { ...(prev[orderId] || { boletos: [] }), [type]: newAtt },
+          [orderId]: { ...(prev[orderId] || { boletos: [], comprovantes: [] }), [type]: newAtt },
         }));
       }
 
@@ -1007,10 +1015,11 @@ const CreateShipment = () => {
           clienteNome: clienteNomeComp,
         });
 
-        // Verifica se todos os pedidos do carregamento têm comprovante
-        const updatedAttachments = { ...orderAttachments, [orderId]: { ...(orderAttachments[orderId] || {}), comprovante: { url: urlData.publicUrl, nome: file.name, saved: false } } };
+        // Verifica se todos os pedidos do carregamento têm ao menos um comprovante
+        const prevComps = orderAttachments[orderId]?.comprovantes || [];
+        const updatedAttachments = { ...orderAttachments, [orderId]: { ...(orderAttachments[orderId] || { boletos: [], comprovantes: [] }), comprovantes: [...prevComps, { url: urlData.publicUrl, nome: file.name, saved: false }] } };
         const allDelivered = selectedOrderIds.length > 0 && selectedOrderIds.every(
-          (sid) => updatedAttachments[sid]?.comprovante?.url,
+          (sid) => (updatedAttachments[sid]?.comprovantes?.length ?? 0) > 0,
         );
         if (allDelivered) {
           if (id) {
@@ -1136,15 +1145,17 @@ const CreateShipment = () => {
       );
 
       // Salvar anexos pendentes na tabela relatorio_entrega_anexos
-      type PendingEntry = { pedidoId: string; tipo: string; info: PendingAttachment; boletoIdx?: number };
+      type PendingEntry = { pedidoId: string; tipo: string; info: PendingAttachment; boletoIdx?: number; compIdx?: number };
       const pendingEntries: PendingEntry[] = [];
       for (const [pedidoId, attachments] of Object.entries(orderAttachments)) {
-        const atts = attachments || { boletos: [] };
+        const atts = attachments || { boletos: [], comprovantes: [] };
         (atts.boletos || []).forEach((b, idx) => {
           if (!b.saved) pendingEntries.push({ pedidoId, tipo: boletoTipo(idx), info: b, boletoIdx: idx });
         });
         if (atts.nf && !atts.nf.saved) pendingEntries.push({ pedidoId, tipo: 'nf', info: atts.nf });
-        if (atts.comprovante && !atts.comprovante.saved) pendingEntries.push({ pedidoId, tipo: 'comprovante', info: atts.comprovante });
+        (atts.comprovantes || []).forEach((c, idx) => {
+          if (!c.saved) pendingEntries.push({ pedidoId, tipo: comprovanteTipo(idx), info: c, compIdx: idx });
+        });
       }
 
       for (const { pedidoId, tipo, info, boletoIdx } of pendingEntries) {
@@ -1157,11 +1168,16 @@ const CreateShipment = () => {
           criado_por: user?.username || null,
         });
         setOrderAttachments((prev) => {
-          const cur = prev[pedidoId] || { boletos: [] };
+          const cur = prev[pedidoId] || { boletos: [], comprovantes: [] };
           if (boletoIdx !== undefined) {
             const newBoletos = [...(cur.boletos || [])];
             newBoletos[boletoIdx] = { ...info, saved: true };
             return { ...prev, [pedidoId]: { ...cur, boletos: newBoletos } };
+          }
+          if (compIdx !== undefined) {
+            const newComprovantes = [...(cur.comprovantes || [])];
+            newComprovantes[compIdx] = { ...info, saved: true };
+            return { ...prev, [pedidoId]: { ...cur, comprovantes: newComprovantes } };
           }
           return { ...prev, [pedidoId]: { ...cur, [tipo]: { ...info, saved: true } } };
         });
@@ -1881,9 +1897,18 @@ const CreateShipment = () => {
                                       </span>
                                     );
                                   })()}
-                                  {orderAttachments[id]?.comprovante && (
-                                    <span className={`text-[9px] font-bold px-1 rounded ${orderAttachments[id]?.comprovante?.saved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`} title={orderAttachments[id]?.comprovante?.saved ? 'Comprovante salvo' : 'Comprovante pendente'}>C</span>
-                                  )}
+                                  {(orderAttachments[id]?.comprovantes?.length ?? 0) > 0 && (() => {
+                                    const comps = orderAttachments[id]?.comprovantes || [];
+                                    const allSaved = comps.every(c => c.saved);
+                                    return (
+                                      <span
+                                        className={`text-[9px] font-bold px-1 rounded ${allSaved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}`}
+                                        title={`${comps.length} comprovante(s) — ${allSaved ? 'salvos' : 'pendente(s)'}`}
+                                      >
+                                        C{comps.length > 1 ? `(${comps.length})` : ''}
+                                      </span>
+                                    );
+                                  })()}
                                   <DropdownMenu>
                                     <DropdownMenuTrigger asChild>
                                       <button className="p-1 hover:bg-muted rounded-full transition-colors">
@@ -1917,14 +1942,13 @@ const CreateShipment = () => {
                                       ))}
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem className="cursor-pointer" onClick={() => handleFileUpload(id, 'comprovante')}>
-                                        <Upload className="mr-2 h-4 w-4" />
-                                        {orderAttachments[id]?.comprovante ? 'Substituir Comprovante' : 'Anexar Comprovante de Entrega'}
+                                        <Upload className="mr-2 h-4 w-4" /> Adicionar Comprovante de Entrega
                                       </DropdownMenuItem>
-                                      {orderAttachments[id]?.comprovante && (
-                                        <DropdownMenuItem className="cursor-pointer" onClick={() => window.open(orderAttachments[id]?.comprovante?.url, '_blank')}>
-                                          <Eye className="mr-2 h-4 w-4" /> Ver Comprovante
+                                      {(orderAttachments[id]?.comprovantes || []).map((c, cIdx) => (
+                                        <DropdownMenuItem key={cIdx} className="cursor-pointer" onClick={() => window.open(c.url, '_blank')}>
+                                          <Eye className="mr-2 h-4 w-4" /> Ver Comprovante{(orderAttachments[id]?.comprovantes?.length ?? 0) > 1 ? ` ${cIdx + 1}` : ''}
                                         </DropdownMenuItem>
-                                      )}
+                                      ))}
                                       <DropdownMenuSeparator />
                                       <DropdownMenuItem
                                         className="text-destructive focus:text-destructive cursor-pointer"
