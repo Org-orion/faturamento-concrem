@@ -428,7 +428,7 @@ export async function setPedidoStatusWithOptionalNotify(params: {
   let notifiedEm: string | null = null;
 
   // Notify when advancing, OR for mapeamento/ferragem which can be back-filled out of order
-  const RETROACTIVE_NOTIFY: PedidoStatusValue[] = ['mapeamento_concluido', 'ferragem_recebida'];
+  const RETROACTIVE_NOTIFY: PedidoStatusValue[] = ['aguardando_mapeamento', 'mapeamento_concluido', 'aguardando_ferragem', 'ferragem_recebida'];
   const shouldNotify = (shouldAdvance || RETROACTIVE_NOTIFY.includes(params.statusNovo)) && params.notifyRepresentante && !isLeroy(params.clienteNome, params.representanteNome);
 
   if (shouldNotify) {
