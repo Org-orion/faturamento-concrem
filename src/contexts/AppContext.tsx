@@ -342,6 +342,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [hasMoreOrders, setHasMoreOrders] = useState(false);
   const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
   const ordersPageRef = useRef(0); // tracks how many pages have been loaded
+  // Quando mutações locais (addLoad/updateLoad/deleteLoad) alteram orders/supportOrders,
+  // o batch init não precisa rodar — os pedidos já têm status. Esta flag suprime o disparo.
+  const skipBatchInitRef = useRef(false);
 
   // Ref kept in sync with memoized Map for O(1) lookups inside stale callbacks
   const allOrdersByIdRef = useRef(new Map<string, Order | SupportOrder>());
@@ -654,6 +657,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   useEffect(() => {
     if (!supabaseOps) return;
+    if (skipBatchInitRef.current) { skipBatchInitRef.current = false; return; }
     const payload = [
       ...(orders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: o.grupoCliente, clienteNome: o.clientName || o.clientCode, representanteNome: o.representativeName })),
       ...(supportOrders || []).map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: o.grupoCliente, clienteNome: o.clientName || o.clientCode, representanteNome: o.representativeName })),
@@ -951,6 +955,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const nextLoad: Load = { ...l, id: newLoadId, createdAt, createdBy };
     setLoads((prev) => [...prev, nextLoad]);
 
+    skipBatchInitRef.current = true;
     setOrders((prev) =>
       prev.map((o) =>
         l.orderIds.includes(o.id)
@@ -1007,7 +1012,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const updateLoad = useCallback(async (l: Load) => {
     const oldLoad = loads.find(x => x.id === l.id);
     setLoads(prev => prev.map(x => x.id === l.id ? l : x));
-    
+
+    skipBatchInitRef.current = true;
     setOrders((prev) =>
       prev.map((o) => {
         if (l.orderIds.includes(o.id)) {
@@ -1099,6 +1105,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const load = loads.find(x => x.id === id);
     if (!load) return;
 
+    skipBatchInitRef.current = true;
     // Resetar pedidos localmente
     setOrders(prev => prev.map(o =>
       load.orderIds.includes(o.id)
