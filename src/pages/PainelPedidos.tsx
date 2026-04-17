@@ -59,6 +59,14 @@ async function fetchExtraPedidosInParallel(missingIds: string[]): Promise<Unifie
   });
 }
 
+function getMissingStatusOrders(
+  sourceOrders: any[],
+  statusRows: Array<{ pedido_id: string | number }>,
+) {
+  const existingIds = new Set(statusRows.map((r) => String(r.pedido_id)));
+  return sourceOrders.filter((o) => !existingIds.has(String(o.id)));
+}
+
 const statusButtons: StatusButton[] = pedidoStatusFlow
   .filter((s) => ['aguardando_avaliacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
   .sort((a, b) => a.order - b.order)
@@ -146,10 +154,8 @@ const PainelPedidos = () => {
       }
 
       // 2. Descobre quais pedidos do AppContext ainda não têm status no banco
-      const statusPedidoIds = new Set(statusData.map((r) => String(r.pedido_id)));
       const allKnownOrders = [...(orders || []), ...(supportOrders || [])];
-      const missingStatusOrders = allKnownOrders
-        .filter((o) => !statusPedidoIds.has(String(o.id)))
+      const missingStatusOrders = getMissingStatusOrders(allKnownOrders, statusData)
         .map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: (o as any).grupoCliente }));
 
       // 3. Inicializa status apenas para os faltantes — não percorre a lista inteira
