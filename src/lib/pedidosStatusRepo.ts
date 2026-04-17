@@ -704,12 +704,38 @@ export async function runMigrationSuporteLiberadoProducao(
   return upgraded;
 }
 
-export async function deleteStatusHistoricoEntries(pedidoId: string, statusNovo: PedidoStatusValue): Promise<void> {
+const POST_PRODUCAO_STATUSES: PedidoStatusValue[] = [
+  'faturado', 'em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado',
+];
+
+/**
+ * Resets a pedido's status back to pre-embarque level:
+ * - Deletes all historico entries that are post-producao_finalizada
+ * - Sets status_atual to the highest remaining status in history (or liberado_producao)
+ */
+export async function resetPedidoStatusToPreEmbarque(pedidoId: string, alteradoPor: string): Promise<void> {
   if (!supabaseOps) return;
-  const { error } = await supabaseOps
+
+  const { error: delErr } = await supabaseOps
     .from('concrem_pedidos_status_historico')
     .delete()
     .eq('pedido_id', pedidoId)
-    .eq('status_novo', statusNovo);
-  if (error) console.error('[Supabase OPS] deleteStatusHistoricoEntries:', error.message);
+    .in('status_novo', POST_PRODUCAO_STATUSES);
+  if (delErr) console.error('[Supabase OPS] resetPedidoStatus delete historico:', delErr.message);
+
+  const { data } = await supabaseOps
+    .from('concrem_pedidos_status_historico')
+    .select('status_novo')
+    .eq('pedido_id', pedidoId)
+    .order('alterado_em', { ascending: false })
+    .limit(1);
+
+  const highestStatus: PedidoStatusValue =
+    (data?.[0]?.status_novo as PedidoStatusValue) || 'liberado_producao';
+
+  const { error: updErr } = await supabaseOps
+    .from('concrem_pedidos_status')
+    .update({ status_atual: highestStatus, atualizado_em: new Date().toISOString(), atualizado_por: alteradoPor })
+    .eq('pedido_id', pedidoId);
+  if (updErr) console.error('[Supabase OPS] resetPedidoStatus update status:', updErr.message);
 }

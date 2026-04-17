@@ -28,10 +28,11 @@ import {
   upsertLancamentoFinanceiro,
   deleteLancamentoFinanceiro,
   findRepresentanteContato,
+  deleteCarregamentoRelatedData,
 } from '@/lib/opsRepo';
 import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
-import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, deleteStatusHistoricoEntries } from '@/lib/pedidosStatusRepo';
+import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque } from '@/lib/pedidosStatusRepo';
 import { fetchAllPages } from '@/lib/supabaseUtils';
 
 interface AppState {
@@ -1069,26 +1070,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       ),
     );
 
-    // Sempre reverter status dos pedidos no banco para liberado_producao ao excluir embarque
+    // Reset status dos pedidos: apaga histórico pós-produção e reverte status atual
     await Promise.all(
       load.orderIds.map((pedidoId) =>
-        updatePedidoStatus({
-          pedidoId,
-          numeroPedido: pedidoId,
-          statusNovo: 'liberado_producao',
-          alteradoPor: 'sistema',
-          observacao: `Embarque ${id} excluído — status revertido para liberado p/ produção`,
-        }).catch((e) => console.error('[deleteLoad] revert status error', pedidoId, e)),
+        resetPedidoStatusToPreEmbarque(pedidoId, 'sistema')
+          .catch((e) => console.error('[deleteLoad] reset status error', pedidoId, e)),
       ),
     );
 
-    // Remove em_entrega history entries so they don't linger after the load is deleted
-    await Promise.all(
-      load.orderIds.map((pedidoId) =>
-        deleteStatusHistoricoEntries(pedidoId, 'em_entrega')
-          .catch((e) => console.error('[deleteLoad] delete em_entrega historico error', pedidoId, e)),
-      ),
-    );
+    // Limpa anexos, notificações, lançamentos financeiros e produção concluída
+    await deleteCarregamentoRelatedData(id)
+      .catch((e) => console.error('[deleteLoad] deleteCarregamentoRelatedData error', e));
+
     setPedidoStatusVersion((v) => v + 1);
 
     // Liberar motorista se não tiver outras cargas ativas

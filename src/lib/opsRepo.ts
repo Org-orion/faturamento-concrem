@@ -575,3 +575,16 @@ export async function listRelatorioEntregaNotificacoes(
   }
   return (data || []) as RelatorioEntregaNotificacao[];
 }
+
+export async function deleteCarregamentoRelatedData(carregamentoId: string): Promise<void> {
+  if (!supabaseOps) return;
+  const results = await Promise.all([
+    supabaseOps.from('concrem_relatorio_entrega_anexos').delete().eq('carregamento_id', carregamentoId),
+    supabaseOps.from('concrem_relatorio_entrega_notificacoes').delete().eq('carregamento_id', carregamentoId),
+    supabaseOps.from('concrem_lancamentos_financeiros').delete().eq('carregamento_id', carregamentoId),
+    desfazerProducaoConcluido(carregamentoId),
+  ]);
+  results.slice(0, 3).forEach(({ error }, i) => {
+    if (error) console.error(`[Supabase OPS] deleteCarregamentoRelatedData[${i}]:`, error.message);
+  });
+}
