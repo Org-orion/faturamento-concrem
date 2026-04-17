@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { RefreshCw, ClipboardList } from 'lucide-react';
 import { useApp, tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
@@ -21,6 +21,33 @@ import type { UnifiedPedido } from '@/pages/painelPedidos/types';
 const STATUS_PAINEL_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em';
 const STATUS_PAINEL_PAGE_SIZE = 500;
 
+// Helpers de módulo — fora do componente para não recriar a cada render
+
+async function fetchPainelStatusRows(): Promise<PedidoStatusRow[]> {
+  if (!supabaseOps) return [];
+  const { data, error } = await supabaseOps
+    .from('concrem_pedidos_status')
+    .select(STATUS_PAINEL_COLS)
+    .order('atualizado_em', { ascending: false })
+    .limit(STATUS_PAINEL_PAGE_SIZE);
+  if (error) throw new Error(`[PainelPedidos] fetchPainelStatusRows: ${error.message}`);
+  return (data || []) as PedidoStatusRow[];
+}
+
+async function fetchExtraPedidosInParallel(missingIds: string[]): Promise<UnifiedPedido[]> {
+  if (!supabasePedidos || !missingIds.length) return [];
+  const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+  const chunks: string[][] = [];
+  for (let i = 0; i < missingIds.length; i += 200) chunks.push(missingIds.slice(i, i + 200));
+  const batchResults = await Promise.all(
+    chunks.map((batch) => supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch).then((r) => r.data || [])),
+  );
+  return batchResults.flat().map((row: any) => {
+    const o = rowToOrder(row, 'CLI-001');
+    return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
+  });
+}
+
 const statusButtons: StatusButton[] = pedidoStatusFlow
   .filter((s) => ['aguardando_avaliacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
   .sort((a, b) => a.order - b.order)
@@ -41,7 +68,12 @@ const PainelPedidos = () => {
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
   const [extraPedidos, setExtraPedidos] = useState<UnifiedPedido[]>([]);
   const [loading, setLoading] = useState(false);
-  const initialRefreshDone = React.useRef(false);
+  const initialRefreshDone = useRef(false);
+  // Map ref para O(1) lookup no realtime handler — espelha statusRows
+  const statusRowsMapRef = useRef(new Map<string, PedidoStatusRow>());
+  // Debounce refs para coalescer eventos realtime
+  const pendingRowsRef = useRef<PedidoStatusRow[]>([]);
+  const realtimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -93,58 +125,51 @@ const PainelPedidos = () => {
   const refresh = async () => {
     setLoading(true);
     try {
-      const payload = pedidos.map((p) => ({ pedidoId: p.id, numeroPedido: p.numero, grupoCliente: p.grupoCliente }));
-      await ensurePedidosStatusInitializedBatch(payload, user?.username || null);
-
-      // Buscar os status mais recentes (limite = STATUS_PAINEL_PAGE_SIZE, ordenado por atualização).
-      // Pedidos finalizados são incluídos pois o painel exibe o histórico completo.
-      let allRows: PedidoStatusRow[] = [];
+      // 1. Busca rápida dos status já existentes — query única limitada
+      let statusData: PedidoStatusRow[];
       if (supabaseOps) {
-        try {
-          const { data, error } = await supabaseOps
-            .from('concrem_pedidos_status')
-            .select(STATUS_PAINEL_COLS)
-            .order('atualizado_em', { ascending: false })
-            .limit(STATUS_PAINEL_PAGE_SIZE);
-          if (error) { console.error('[PainelPedidos] refresh query error:', error.message); return; }
-          allRows = (data || []) as PedidoStatusRow[];
-        } catch (e: any) {
-          console.error('[PainelPedidos] refresh query error:', e?.message);
-          return;
-        }
+        statusData = await fetchPainelStatusRows();
       } else {
-        allRows = await listPedidosStatusByPedidoIds(payload.map((p) => p.pedidoId));
+        const knownIds = [...(orders || []), ...(supportOrders || [])].map((o) => o.id);
+        statusData = await listPedidosStatusByPedidoIds(knownIds);
       }
 
-      // Pedidos extras: estão no banco mas não no AppContext
-      if (supabasePedidos && allRows.length > 0) {
-        const knownIds = new Set(payload.map((p) => p.pedidoId));
-        const missingIds = [...new Set(allRows.map((r) => String(r.pedido_id)).filter((id) => !knownIds.has(id)))];
-        const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
-        if (missingIds.length > 0) {
-          const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-          // Buscar em lotes paralelos de 200 para não exceder limite de URL do Supabase
-          const chunks: string[][] = [];
-          for (let i = 0; i < missingIds.length; i += 200) chunks.push(missingIds.slice(i, i + 200));
-          const batchResults = await Promise.all(
-            chunks.map((batch) => supabasePedidos.from(table).select(tableColumns).in('numero_pedido', batch).then((r) => r.data || [])),
-          );
-          const allExtraRows: any[] = batchResults.flat();
-          const fetched: UnifiedPedido[] = allExtraRows.map((row: any) => {
-            const o = rowToOrder(row, 'CLI-001');
-            return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
-          });
-          setExtraPedidos((prev) => {
-            const map = new Map(prev.filter((p) => activeIds.has(p.id)).map((p) => [p.id, p]));
-            for (const e of fetched) map.set(e.id, e);
-            return Array.from(map.values());
-          });
-        } else {
-          setExtraPedidos((prev) => prev.filter((p) => activeIds.has(p.id)));
-        }
+      // 2. Descobre quais pedidos do AppContext ainda não têm status no banco
+      const statusPedidoIds = new Set(statusData.map((r) => String(r.pedido_id)));
+      const allKnownOrders = [...(orders || []), ...(supportOrders || [])];
+      const missingStatusOrders = allKnownOrders
+        .filter((o) => !statusPedidoIds.has(String(o.id)))
+        .map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: (o as any).grupoCliente }));
+
+      // 3. Inicializa status apenas para os faltantes — não percorre a lista inteira
+      if (missingStatusOrders.length > 0) {
+        await ensurePedidosStatusInitializedBatch(missingStatusOrders, user?.username || null);
+        // Recarrega para incluir as linhas recém-criadas
+        if (supabaseOps) statusData = await fetchPainelStatusRows();
       }
 
-      setStatusRows(allRows);
+      // 4. Sincroniza Map ref para O(1) no realtime handler
+      const newMap = new Map<string, PedidoStatusRow>();
+      for (const r of statusData) newMap.set(String(r.pedido_id), r);
+      statusRowsMapRef.current = newMap;
+
+      // 5. Pedidos que estão no banco de status mas não no AppContext (ERP filtrado)
+      const appOrderIds = new Set(allKnownOrders.map((o) => String(o.id)));
+      const missingIds = [...new Set(
+        statusData.map((r) => String(r.pedido_id)).filter((id) => !appOrderIds.has(id)),
+      )];
+
+      // 6. Busca pedidos extras do ERP em paralelo
+      const fetchedExtras = await fetchExtraPedidosInParallel(missingIds);
+
+      // 7. Atualiza estado — extras filtrados pelos IDs ativos para limpar stale entries
+      const activeIds = new Set(statusData.map((r) => String(r.pedido_id)));
+      setStatusRows(statusData);
+      setExtraPedidos((prev) => {
+        const map = new Map(prev.filter((p) => activeIds.has(p.id)).map((p) => [p.id, p]));
+        for (const e of fetchedExtras) map.set(e.id, e);
+        return Array.from(map.values());
+      });
     } catch (e: any) {
       console.error('[PainelPedidos] refresh error:', e);
       showToast('Erro ao carregar status dos pedidos.', 'error');
@@ -209,19 +234,30 @@ const PainelPedidos = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'concrem_pedidos_status' },
         (payload) => {
-          const row = (payload as any)?.new as any;
+          const row = (payload as any)?.new as PedidoStatusRow;
           if (!row?.pedido_id) return;
-          setStatusRows((prev) => {
-            const idx = prev.findIndex((r) => r.pedido_id === row.pedido_id);
-            if (idx === -1) return [...prev, row as PedidoStatusRow];
-            const next = prev.slice();
-            next[idx] = row as PedidoStatusRow;
-            return next;
-          });
+          pendingRowsRef.current.push(row);
+          if (realtimeTimerRef.current) return;
+          realtimeTimerRef.current = setTimeout(() => {
+            const updates = [...pendingRowsRef.current];
+            pendingRowsRef.current = [];
+            realtimeTimerRef.current = null;
+            setStatusRows((prev) => {
+              const map = new Map(prev.map((item) => [String(item.pedido_id), item]));
+              for (const r of updates) {
+                map.set(String(r.pedido_id), r);
+                statusRowsMapRef.current.set(String(r.pedido_id), r);
+              }
+              return Array.from(map.values());
+            });
+          }, 300);
         },
       )
       .subscribe();
-    return () => { void supabaseOps.removeChannel(ch); };
+    return () => {
+      if (realtimeTimerRef.current) { clearTimeout(realtimeTimerRef.current); realtimeTimerRef.current = null; }
+      void supabaseOps.removeChannel(ch);
+    };
   }, []);
 
   const pedidosComStatus = useMemo(() => {
