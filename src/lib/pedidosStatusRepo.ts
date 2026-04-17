@@ -553,7 +553,7 @@ export function formatStatusWhatsappMessage(params: {
     lines = [
       'Olá! 👋',
       '',
-      `Seu pedido ${numeroPedido} — ${clienteNome} foi atualizado:`,
+      `Passando para te avisar que o pedido ${numeroPedido}, do cliente ${clienteNome}, teve uma atualização. 📋`,
       '',
       `🔄 De: ${statusAnteriorLabel}`,
       `🏭 Para: ${statusNovoLabel}`,
@@ -589,7 +589,7 @@ export function formatStatusWhatsappMessage(params: {
     lines = [
       'Olá! 👋',
       '',
-      `Seu pedido ${numeroPedido} foi atualizado:`,
+      `Passando para te avisar que o pedido ${numeroPedido}, do cliente ${clienteNome}, teve uma atualização. 📋`,
       '',
       `🔄 De: ${statusAnteriorLabel}`,
       `📍 Para: ${statusNovoLabel}`,
