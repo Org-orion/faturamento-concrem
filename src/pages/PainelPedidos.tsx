@@ -7,7 +7,7 @@ import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, list
 import { listComercialPedidosMeta } from '@/lib/opsRepo';
 import { pedidoStatusFlow, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
-import { fetchAllPages } from '@/lib/supabaseUtils';
+import { fetchAllPages } from '@/lib/supabaseUtils'; // mantido para fallback listPedidosStatusByPedidoIds
 import { rowToOrder } from '@/lib/pedidoMapper';
 import { cn } from '@/lib/utils';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
@@ -17,6 +17,9 @@ import { QuickFilterBar, StatusButton } from '@/components/table/QuickFilterBar'
 import { PainelPedidosList } from '@/pages/painelPedidos/PainelPedidosList';
 import { PainelPedidosDetails } from '@/pages/painelPedidos/PainelPedidosDetails';
 import type { UnifiedPedido } from '@/pages/painelPedidos/types';
+
+const STATUS_PAINEL_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em';
+const STATUS_PAINEL_PAGE_SIZE = 500;
 
 const statusButtons: StatusButton[] = pedidoStatusFlow
   .filter((s) => ['aguardando_avaliacao', 'liberado_producao', 'em_producao', 'faturado', 'em_entrega', 'entregue', 'finalizado'].includes(s.value))
@@ -93,23 +96,18 @@ const PainelPedidos = () => {
       const payload = pedidos.map((p) => ({ pedidoId: p.id, numeroPedido: p.numero, grupoCliente: p.grupoCliente }));
       await ensurePedidosStatusInitializedBatch(payload, user?.username || null);
 
-      // Buscar todos os status do banco (inclui pedidos que não estão no AppContext)
+      // Buscar os status mais recentes (limite = STATUS_PAINEL_PAGE_SIZE, ordenado por atualização).
+      // Pedidos finalizados são incluídos pois o painel exibe o histórico completo.
       let allRows: PedidoStatusRow[] = [];
       if (supabaseOps) {
         try {
-          const rawRows = await fetchAllPages<PedidoStatusRow>((from, to) =>
-            supabaseOps.from('concrem_pedidos_status').select('*').order('atualizado_em', { ascending: false }).range(from, to)
-          ) as PedidoStatusRow[];
-          // Deduplicar por pedido_id (paginação pode retornar duplicatas se rows são inseridas durante o fetch)
-          const deduped = new Map<string, PedidoStatusRow>();
-          for (const r of rawRows) {
-            const id = String(r.pedido_id);
-            const existing = deduped.get(id);
-            if (!existing || (r.atualizado_em || '') >= (existing.atualizado_em || '')) {
-              deduped.set(id, r);
-            }
-          }
-          allRows = Array.from(deduped.values());
+          const { data, error } = await supabaseOps
+            .from('concrem_pedidos_status')
+            .select(STATUS_PAINEL_COLS)
+            .order('atualizado_em', { ascending: false })
+            .limit(STATUS_PAINEL_PAGE_SIZE);
+          if (error) { console.error('[PainelPedidos] refresh query error:', error.message); return; }
+          allRows = (data || []) as PedidoStatusRow[];
         } catch (e: any) {
           console.error('[PainelPedidos] refresh query error:', e?.message);
           return;
@@ -125,13 +123,13 @@ const PainelPedidos = () => {
         const activeIds = new Set(allRows.map((r) => String(r.pedido_id)));
         if (missingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-          // Buscar em lotes de 200 para não exceder limite de URL do Supabase
-          const allExtraRows: any[] = [];
-          for (let i = 0; i < missingIds.length; i += 200) {
-            const batch = missingIds.slice(i, i + 200);
-            const { data: batchData } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', batch);
-            if (batchData) allExtraRows.push(...batchData);
-          }
+          // Buscar em lotes paralelos de 200 para não exceder limite de URL do Supabase
+          const chunks: string[][] = [];
+          for (let i = 0; i < missingIds.length; i += 200) chunks.push(missingIds.slice(i, i + 200));
+          const batchResults = await Promise.all(
+            chunks.map((batch) => supabasePedidos.from(table).select(tableColumns).in('numero_pedido', batch).then((r) => r.data || [])),
+          );
+          const allExtraRows: any[] = batchResults.flat();
           const fetched: UnifiedPedido[] = allExtraRows.map((row: any) => {
             const o = rowToOrder(row, 'CLI-001');
             return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
@@ -169,7 +167,7 @@ const PainelPedidos = () => {
     let statusRow: PedidoStatusRow | null = null;
     if (supabaseOps) {
       await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero, grupoCliente: found.grupoCliente }], user?.username || null);
-      const { data: statusData } = await supabaseOps.from('concrem_pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
+      const { data: statusData } = await supabaseOps.from('concrem_pedidos_status').select(STATUS_PAINEL_COLS).eq('pedido_id', found.id).limit(1);
       if (statusData?.length) statusRow = (statusData as any[])[0] as PedidoStatusRow;
     }
 
