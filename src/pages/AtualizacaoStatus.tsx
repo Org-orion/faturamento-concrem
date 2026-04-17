@@ -441,7 +441,7 @@ const AtualizacaoStatus = () => {
         onNotifyResult={(res) => {
           if (!res.attempted) return;
           if (res.ok) showToast('Notificação enviada ao representante via WhatsApp.');
-          else showToast(res.error || 'Falha ao enviar notificação via WhatsApp.', 'error');
+          else if (res.error) showToast(res.error, 'error');
         }}
       />
     </div>
