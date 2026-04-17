@@ -1074,21 +1074,25 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       await batchSetEmEntregaForLoad(ordersForBatch, user?.username || null);
     }
 
-    await Promise.all(
-      l.orderIds.map(async (pedidoId) => {
-        const o: any = allOrdersByIdRef.current.get(pedidoId);
-        const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
-        const repKey = String(o?.representativeId || o?.representativeName || '').trim();
-        const repPhone = await resolveRepPhoneRaw(repKey, o?.representativePhone || null);
-        await syncEntregaStatusFromOps({
-          pedidoId,
-          numeroPedido: pedidoId,
-          alteradoPor: user?.username || null,
-          clienteNome,
-          representantePhoneRaw: repPhone,
-        });
-      }),
-    );
+    // Só sincroniza status de entrega quando o carregamento transiciona para "Entregue"
+    const virouEntregue = l.shipmentStatus === 'Entregue' && oldLoad?.shipmentStatus !== 'Entregue';
+    if (virouEntregue) {
+      await Promise.all(
+        l.orderIds.map(async (pedidoId) => {
+          const o: any = allOrdersByIdRef.current.get(pedidoId);
+          const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
+          const repKey = String(o?.representativeId || o?.representativeName || '').trim();
+          const repPhone = await resolveRepPhoneRaw(repKey, o?.representativePhone || null);
+          await syncEntregaStatusFromOps({
+            pedidoId,
+            numeroPedido: pedidoId,
+            alteradoPor: user?.username || null,
+            clienteNome,
+            representantePhoneRaw: repPhone,
+          });
+        }),
+      );
+    }
   }, [loads, mapLoadToOrderStatus, orders, resolveRepPhoneRaw, supportOrders, user?.username]);
 
   const deleteLoad = useCallback(async (id: string) => {
