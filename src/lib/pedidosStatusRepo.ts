@@ -427,8 +427,9 @@ export async function setPedidoStatusWithOptionalNotify(params: {
   let providerMessageId: string | null = null;
   let notifiedEm: string | null = null;
 
-  // Only notify when advancing (back-filling skipped statuses shouldn't trigger WhatsApp)
-  const shouldNotify = shouldAdvance && params.notifyRepresentante && !isLeroy(params.clienteNome, params.representanteNome);
+  // Notify when advancing, OR for mapeamento/ferragem which can be back-filled out of order
+  const RETROACTIVE_NOTIFY: PedidoStatusValue[] = ['mapeamento_concluido', 'ferragem_recebida'];
+  const shouldNotify = (shouldAdvance || RETROACTIVE_NOTIFY.includes(params.statusNovo)) && params.notifyRepresentante && !isLeroy(params.clienteNome, params.representanteNome);
 
   if (shouldNotify) {
     const to = normalizePhoneToE164(params.representantePhoneRaw);
