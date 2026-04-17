@@ -1,5 +1,5 @@
 import { supabaseOps } from '@/lib/supabase';
-import { fmtDateTimeMsg } from '@/lib/dateUtils';
+import { fmtDate } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { canMoveToStatus, getPedidoStatusDef } from '@/lib/pedidoStatusFlow';
 import type { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
@@ -546,7 +546,7 @@ export function formatStatusWhatsappMessage(params: {
   const { numeroPedido, clienteNome, statusAnterior, statusNovo, dataHoraIso, observacao } = params;
   const statusAnteriorLabel = statusAnterior ? getPedidoStatusDef(statusAnterior).label : '-';
   const statusNovoLabel = getPedidoStatusDef(statusNovo).label;
-  const when = fmtDateTimeMsg(dataHoraIso);
+  const when = fmtDate(dataHoraIso);
 
   let lines: string[];
 
