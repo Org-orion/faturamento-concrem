@@ -1000,7 +1000,7 @@ const CreateShipment = () => {
           numeroPedido: orderId,
           statusNovo: 'entregue',
           alteradoPor: user?.username || null,
-          observacao: 'Comprovante de entrega anexado',
+          observacao: null,
           notifyRepresentante: true,
           representantePhoneRaw: repPhoneComp,
           representanteNome: repContactComp?.nome || repNameComp || null,
