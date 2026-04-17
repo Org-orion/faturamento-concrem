@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardCheck } from 'lucide-react';
 import { useApp, tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
@@ -37,6 +37,7 @@ const AtualizacaoStatus = () => {
   const presetId = useQueryParam('pedido');
 
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const statusRowsMapRef = useRef(new Map<string, PedidoStatusRow>());
   const [extraPedidos, setExtraPedidos] = useState<UnifiedPedido[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
@@ -136,7 +137,11 @@ const AtualizacaoStatus = () => {
           const id = String(r.pedido_id);
           return !freshIds.has(id) && (extraIds.has(id) || id === preserveId);
         });
-        return toPreserve.length > 0 ? [...allRows, ...toPreserve] : allRows;
+        const result = toPreserve.length > 0 ? [...allRows, ...toPreserve] : allRows;
+        const m = new Map<string, PedidoStatusRow>();
+        for (const r of result) m.set(String(r.pedido_id), r);
+        statusRowsMapRef.current = m;
+        return result;
       });
     } catch (e) {
       console.error('[AtualizacaoStatus] refresh error:', e);
@@ -161,8 +166,11 @@ const AtualizacaoStatus = () => {
       const { data: statusData } = await supabaseOps.from('concrem_pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
       if (statusData?.length) {
         setStatusRows((prev) => {
-          const exists = prev.some((r) => r.pedido_id === found.id);
-          return exists ? prev : [...prev, (statusData as any[])[0] as PedidoStatusRow];
+          const key = String(found.id);
+          if (statusRowsMapRef.current.has(key)) return prev;
+          const row = (statusData as any[])[0] as PedidoStatusRow;
+          statusRowsMapRef.current.set(key, row);
+          return [...prev, row];
         });
       }
     }
@@ -181,14 +189,14 @@ const AtualizacaoStatus = () => {
         'postgres_changes',
         { event: '*', schema: 'public', table: 'concrem_pedidos_status' },
         (payload) => {
-          const row = (payload as any)?.new as any;
+          const row = (payload as any)?.new as PedidoStatusRow;
           if (!row?.pedido_id) return;
+          const key = String(row.pedido_id);
           setStatusRows((prev) => {
-            const idx = prev.findIndex((r) => r.pedido_id === row.pedido_id);
-            if (idx === -1) return [...prev, row as PedidoStatusRow];
-            const next = prev.slice();
-            next[idx] = row as PedidoStatusRow;
-            return next;
+            const isNew = !statusRowsMapRef.current.has(key);
+            statusRowsMapRef.current.set(key, row);
+            if (isNew) return [...prev, row];
+            return prev.map((r) => String(r.pedido_id) === key ? row : r);
           });
         },
       )

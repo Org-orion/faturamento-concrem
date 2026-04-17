@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect } from 'react';
+import React, { createContext, useContext, useState, useCallback, ReactNode, useEffect, useMemo, useRef } from 'react';
 import {
   Client,
   Driver,
@@ -86,6 +86,7 @@ interface AppState {
   decideOrderCommercial: (id: string, decision: 'Liberado p/ Produção', note?: string) => void;
   updateSupportOrderCommercialNotes: (id: string, notes: string) => void;
   decideSupportOrderCommercial: (id: string, decision: 'Liberado p/ Produção', note?: string) => void;
+  allOrdersById: Map<string, Order | SupportOrder>;
 }
 
 export type AppUser = { id: string; username: string; password: string; name: string; role: UserRole };
@@ -331,6 +332,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [productionSchedules, setProductionSchedules] = useState<ProductionSchedule[]>(sampleProductionSchedules);
   const [expenseTypes, setExpenseTypes] = useState<ExpenseType[]>([]);
   const [freightEntries, setFreightEntries] = useState<FreightEntry[]>([]);
+
+  // Ref kept in sync with memoized Map for O(1) lookups inside stale callbacks
+  const allOrdersByIdRef = useRef(new Map<string, Order | SupportOrder>());
+  const allOrdersById = useMemo(() => {
+    const m = new Map<string, Order | SupportOrder>();
+    for (const o of orders) m.set(o.id, o);
+    for (const o of supportOrders) m.set(o.id, o);
+    allOrdersByIdRef.current = m;
+    return m;
+  }, [orders, supportOrders]);
 
   useEffect(() => {
     if (!supabasePedidos) return;
@@ -947,13 +958,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await upsertEntregas(nextLoad.id, nextLoad.orderIds, 'pendente');
 
     if (nextLoad.shipmentStatus === 'Em Rota') {
-      const all = [...orders, ...supportOrders];
       const currentStatuses = await listPedidosStatusByPedidoIds(nextLoad.orderIds);
       await Promise.all(
         nextLoad.orderIds.map(async (pedidoId) => {
           const currentStatus = currentStatuses.find(s => s.pedido_id === pedidoId)?.status_atual;
           if (currentStatus === 'em_entrega' || currentStatus === 'parcialmente_entregue' || currentStatus === 'entregue' || currentStatus === 'aguardando_pagamento' || currentStatus === 'finalizado') return;
-          const o: any = all.find((x: any) => x.id === pedidoId);
+          const o: any = allOrdersByIdRef.current.get(pedidoId);
           const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
           const repKey = String(o?.representativeId || o?.representativeName || '').trim();
           const repPhone = await resolveRepPhoneRaw(repKey, o?.representativePhone || null);
@@ -1029,15 +1039,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(l.id, l.orderIds, l.shipmentStatus === 'Entregue' ? 'entregue' : 'pendente');
 
-    const all = [...orders, ...supportOrders];
-
     if (l.shipmentStatus === 'Em Rota') {
       const currentStatuses = await listPedidosStatusByPedidoIds(l.orderIds);
       await Promise.all(
         l.orderIds.map(async (pedidoId) => {
           const currentStatus = currentStatuses.find(s => s.pedido_id === pedidoId)?.status_atual;
           if (currentStatus === 'em_entrega' || currentStatus === 'parcialmente_entregue' || currentStatus === 'entregue' || currentStatus === 'aguardando_pagamento' || currentStatus === 'finalizado') return;
-          const o: any = all.find((x: any) => x.id === pedidoId);
+          const o: any = allOrdersByIdRef.current.get(pedidoId);
           const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
           const repKey = String(o?.representativeId || o?.representativeName || '').trim();
           const repPhone = await resolveRepPhoneRaw(repKey, o?.representativePhone || null);
@@ -1057,7 +1065,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     await Promise.all(
       l.orderIds.map(async (pedidoId) => {
-        const o: any = all.find((x: any) => x.id === pedidoId);
+        const o: any = allOrdersByIdRef.current.get(pedidoId);
         const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
         const repKey = String(o?.representativeId || o?.representativeName || '').trim();
         const repPhone = await resolveRepPhoneRaw(repKey, o?.representativePhone || null);
@@ -1188,7 +1196,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const orderIds = schedule.orderIds || [];
     void Promise.all(
       orderIds.map(async (pedidoId) => {
-        const o = orders.find((x) => x.id === pedidoId) || supportOrders.find((x) => x.id === pedidoId);
+        const o = allOrdersByIdRef.current.get(pedidoId);
         const clienteNome = (o as any)?.clientName || (o as any)?.clientCode || 'Cliente';
         await setPedidoStatusWithOptionalNotify({
           pedidoId,
@@ -1222,7 +1230,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const orderIds = schedule.orderIds || [];
     void Promise.all(
       orderIds.map(async (pedidoId) => {
-        const o = orders.find((x) => x.id === pedidoId) || supportOrders.find((x) => x.id === pedidoId);
+        const o = allOrdersByIdRef.current.get(pedidoId);
         const clienteNome = (o as any)?.clientName || (o as any)?.clientCode || 'Cliente';
         await setPedidoStatusWithOptionalNotify({
           pedidoId,
@@ -1340,7 +1348,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       isAuthenticated, user, login, logout,
       addUser, updateUser, deleteUser,
       updateOrderCommercialNotes, decideOrderCommercial,
-      updateSupportOrderCommercialNotes, decideSupportOrderCommercial
+      updateSupportOrderCommercialNotes, decideSupportOrderCommercial,
+      allOrdersById,
     }}>
       {children}
     </AppContext.Provider>

@@ -1,4 +1,5 @@
-import React from 'react';
+import React, { useRef } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { PedidoStatusValue } from '@/types';
 import { cn } from '@/lib/utils';
@@ -19,17 +20,53 @@ export function AtualizacaoStatusList({
   onSelect: (id: string) => void;
 }) {
   const { map: prioMap } = usePrioridades();
+  const parentRef = useRef<HTMLDivElement>(null);
+
+  const rowVirtualizer = useVirtualizer({
+    count: pedidos.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 88, // card height ~76px + gap 12px
+    overscan: 5,
+    gap: 12,
+  });
+
+  if (pedidos.length === 0) {
+    return (
+      <div className="bg-card rounded-xl border border-border p-10 text-center text-muted-foreground">
+        Nenhum pedido confirmado encontrado.
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-3">
-        {pedidos.length === 0 ? (
-          <div className="bg-card rounded-xl border border-border p-10 text-center text-muted-foreground">Nenhum pedido confirmado encontrado.</div>
-        ) : (
-          pedidos.map((p) => {
-            const st: PedidoStatusValue = statusByPedidoId.get(p.id)?.status_atual || 'aguardando_avaliacao';
-            const sel = selectedId === p.id;
-            return (
+    <div
+      ref={parentRef}
+      className="overflow-auto"
+      style={{ height: 'calc(100vh - 310px)', minHeight: '400px' }}
+    >
+      <div
+        style={{
+          height: `${rowVirtualizer.getTotalSize()}px`,
+          position: 'relative',
+          width: '100%',
+        }}
+      >
+        {rowVirtualizer.getVirtualItems().map((virtualRow) => {
+          const p = pedidos[virtualRow.index];
+          const st: PedidoStatusValue = statusByPedidoId.get(p.id)?.status_atual || 'aguardando_avaliacao';
+          const sel = selectedId === p.id;
+          return (
+            <div
+              key={p.id}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
               <button
-                key={p.id}
                 type="button"
                 onClick={() => onSelect(p.id)}
                 className={cn(
@@ -41,7 +78,9 @@ export function AtualizacaoStatusList({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold">{p.cliente}</span>
-                      {prioMap.has(p.id) && <PrioridadeIcon nivel={prioMap.get(p.id)!.nivel} motivo={prioMap.get(p.id)!.motivo} />}
+                      {prioMap.has(p.id) && (
+                        <PrioridadeIcon nivel={prioMap.get(p.id)!.nivel} motivo={prioMap.get(p.id)!.motivo} />
+                      )}
                     </div>
                     <div className="mt-1 text-sm text-muted-foreground">
                       <span className="font-mono-data font-bold text-primary">{p.numero}</span>
@@ -51,14 +90,16 @@ export function AtualizacaoStatusList({
                   </div>
                   <div className="shrink-0">
                     <PedidoStatusBadge value={st} />
-                    <div className="mt-1 text-[11px] text-muted-foreground font-mono-data text-right">{fmtDateTime(statusByPedidoId.get(p.id)?.atualizado_em)}</div>
+                    <div className="mt-1 text-[11px] text-muted-foreground font-mono-data text-right">
+                      {fmtDateTime(statusByPedidoId.get(p.id)?.atualizado_em)}
+                    </div>
                   </div>
                 </div>
               </button>
-            );
-          })
-        )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
-
