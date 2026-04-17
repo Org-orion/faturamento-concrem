@@ -329,6 +329,12 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
     return { ok: false, previous: statusAnterior };
   }
 
+  // Only advance status_atual — never let it go backwards
+  const newOrder = getPedidoStatusDef(input.statusNovo).order;
+  const currentOrder = statusAnterior ? getPedidoStatusDef(statusAnterior).order : 0;
+  const shouldAdvance = newOrder >= currentOrder;
+
+  if (shouldAdvance) {
   try {
     const { error: upsertErr } = await supabaseOps.from('concrem_pedidos_status').upsert(
       {
@@ -348,6 +354,7 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
     console.error('[Supabase OPS] updatePedidoStatus upsert pedidos_status (fetch):', err);
     return { ok: false, previous: statusAnterior };
   }
+  } // end shouldAdvance
 
   try {
     const { error: histErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert({
@@ -410,13 +417,18 @@ export async function setPedidoStatusWithOptionalNotify(params: {
     return { ok: false, previous: statusAnterior, notified: false, notifyError: null };
   }
 
+  // Only advance status_atual — never let it go backwards
+  const newOrder = getPedidoStatusDef(params.statusNovo).order;
+  const currentOrder = statusAnterior ? getPedidoStatusDef(statusAnterior).order : 0;
+  const shouldAdvance = newOrder >= currentOrder;
+
   let notified = false;
   let notifyError: string | null = null;
   let providerMessageId: string | null = null;
   let notifiedEm: string | null = null;
 
-  // LEROY: skip WhatsApp notification
-  const shouldNotify = params.notifyRepresentante && !isLeroy(params.clienteNome, params.representanteNome);
+  // Only notify when advancing (back-filling skipped statuses shouldn't trigger WhatsApp)
+  const shouldNotify = shouldAdvance && params.notifyRepresentante && !isLeroy(params.clienteNome, params.representanteNome);
 
   if (shouldNotify) {
     const to = normalizePhoneToE164(params.representantePhoneRaw);
@@ -439,19 +451,21 @@ export async function setPedidoStatusWithOptionalNotify(params: {
     }
   }
 
-  const { error: upsertErr } = await supabaseOps.from('concrem_pedidos_status').upsert(
-    {
-      pedido_id: params.pedidoId,
-      numero_pedido: params.numeroPedido,
-      status_atual: params.statusNovo,
-      atualizado_em: alteradoEm,
-      atualizado_por: params.alteradoPor,
-    } as any,
-    { onConflict: 'pedido_id' },
-  );
-  if (upsertErr) {
-    console.error('[Supabase OPS] setPedidoStatusWithOptionalNotify upsert pedidos_status:', upsertErr.message);
-    return { ok: false, previous: statusAnterior, notified: false, notifyError: upsertErr.message };
+  if (shouldAdvance) {
+    const { error: upsertErr } = await supabaseOps.from('concrem_pedidos_status').upsert(
+      {
+        pedido_id: params.pedidoId,
+        numero_pedido: params.numeroPedido,
+        status_atual: params.statusNovo,
+        atualizado_em: alteradoEm,
+        atualizado_por: params.alteradoPor,
+      } as any,
+      { onConflict: 'pedido_id' },
+    );
+    if (upsertErr) {
+      console.error('[Supabase OPS] setPedidoStatusWithOptionalNotify upsert pedidos_status:', upsertErr.message);
+      return { ok: false, previous: statusAnterior, notified: false, notifyError: upsertErr.message };
+    }
   }
 
   const { error: histErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert({

@@ -18,7 +18,7 @@ export function PedidoTimelineStages({
   return (
     <div className="flex items-center gap-3">
       {panelTimelineStages.map((st, idx) => {
-        const state = getStageState(effectiveStatus, st.id);
+        const state = getStageState(effectiveStatus, st.id, history);
         const circle =
           state === 'done'
             ? 'bg-emerald-500 text-white border-emerald-500'
