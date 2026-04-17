@@ -23,6 +23,12 @@ const STATUS_PAINEL_PAGE_SIZE = 500;
 
 // Helpers de módulo — fora do componente para não recriar a cada render
 
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let i = 0; i < items.length; i += size) chunks.push(items.slice(i, i + size));
+  return chunks;
+}
+
 async function fetchPainelStatusRows(): Promise<PedidoStatusRow[]> {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
@@ -37,12 +43,17 @@ async function fetchPainelStatusRows(): Promise<PedidoStatusRow[]> {
 async function fetchExtraPedidosInParallel(missingIds: string[]): Promise<UnifiedPedido[]> {
   if (!supabasePedidos || !missingIds.length) return [];
   const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-  const chunks: string[][] = [];
-  for (let i = 0; i < missingIds.length; i += 200) chunks.push(missingIds.slice(i, i + 200));
-  const batchResults = await Promise.all(
-    chunks.map((batch) => supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch).then((r) => r.data || [])),
+  const uniqueIds = Array.from(new Set(missingIds));
+  const responses = await Promise.all(
+    chunkArray(uniqueIds, 200).map((batch) =>
+      supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch),
+    ),
   );
-  return batchResults.flat().map((row: any) => {
+  const rows = responses.flatMap((res) => {
+    if (res.error) { console.error('[PainelPedidos] fetchExtraPedidosInParallel batch error:', res.error.message); return []; }
+    return (res.data || []) as any[];
+  });
+  return rows.map((row: any) => {
     const o = rowToOrder(row, 'CLI-001');
     return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
   });
