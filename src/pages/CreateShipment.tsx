@@ -316,7 +316,10 @@ const CreateShipment = () => {
       const results = await Promise.all(
         chunks.map((batch) =>
           supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch)
-            .then(({ data }) => (data || []) as any[])
+            .then(({ data, error }) => {
+              if (error) console.error('[CreateShipment] ERP batch fetch error:', error.message);
+              return (data || []) as any[];
+            })
         )
       );
       const mapped = results.flat().map((row: any) => rowToOrder(row, 'CLI-001'));
