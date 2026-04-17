@@ -1255,7 +1255,7 @@ const CreateShipment = () => {
       navigate('/carregamento');
     } catch (e: any) {
       console.error(e);
-      showToast('Erro ao salvar programação.', 'error');
+      showToast(e?.message || 'Erro ao salvar programação.', 'error');
     }
   };
 
