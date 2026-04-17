@@ -203,8 +203,13 @@ const PainelPedidos = () => {
     let statusRow: PedidoStatusRow | null = null;
     if (supabaseOps) {
       await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero, grupoCliente: found.grupoCliente }], user?.username || null);
-      const { data: statusData } = await supabaseOps.from('concrem_pedidos_status').select(STATUS_PAINEL_COLS).eq('pedido_id', found.id).limit(1);
-      if (statusData?.length) statusRow = (statusData as any[])[0] as PedidoStatusRow;
+      const { data, error: statusError } = await supabaseOps
+        .from('concrem_pedidos_status')
+        .select(STATUS_PAINEL_COLS)
+        .eq('pedido_id', found.id)
+        .maybeSingle();
+      if (statusError) console.error('[PainelPedidos] searchErpByNumero status error:', statusError.message);
+      else statusRow = data as PedidoStatusRow | null;
     }
 
     // Atualizar statusRows e extraPedidos juntos para evitar estado intermediário
