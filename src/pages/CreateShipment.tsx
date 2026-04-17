@@ -861,15 +861,36 @@ const CreateShipment = () => {
         showToast(`Representante ${repDisplayName} sem telefone cadastrado.`, 'error');
       }
 
-      // Atualizar status dos pedidos para em_entrega
+      // Avançar status: faturado → em_entrega (em_entrega dispara mensagem 3 ao representante)
+      const currentStatusesForSend = await listPedidosStatusByPedidoIds(repOrders.map(o => o.id));
       for (const order of repOrders) {
-        await updatePedidoStatus({
-          pedidoId: order.id,
-          numeroPedido: order.id,
-          statusNovo: 'em_entrega',
-          alteradoPor: user?.username || null,
-          observacao: `Relatório enviado via WhatsApp${hasBoleto ? ' com boleto' : ''}`,
-        });
+        const statusAtual = currentStatusesForSend.find(s => s.pedido_id === order.id)?.status_atual as string | undefined;
+        const jaFaturado = ['faturado', 'em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado'].includes(statusAtual || '');
+        const jaEmEntrega = ['em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado'].includes(statusAtual || '');
+
+        if (!jaFaturado) {
+          await updatePedidoStatus({
+            pedidoId: order.id,
+            numeroPedido: order.id,
+            statusNovo: 'faturado',
+            alteradoPor: user?.username || null,
+            observacao: 'Relatório de entrega enviado ao representante',
+          });
+        }
+
+        if (!jaEmEntrega) {
+          await setPedidoStatusWithOptionalNotify({
+            pedidoId: order.id,
+            numeroPedido: order.id,
+            statusNovo: 'em_entrega',
+            alteradoPor: user?.username || null,
+            observacao: `Relatório enviado via WhatsApp${hasBoleto ? ' com boleto' : ''}`,
+            notifyRepresentante: true,
+            representantePhoneRaw: repPhoneRaw || null,
+            representanteNome: repName || null,
+            clienteNome: order.clientName || order.clientCode || 'Cliente',
+          });
+        }
       }
 
       // Salvar notificação no banco
