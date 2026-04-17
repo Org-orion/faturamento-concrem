@@ -17,11 +17,14 @@ type StatusUpdateInput = {
   notificacaoErro?: string | null;
 };
 
+const STATUS_ROW_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em';
+const STATUS_HIST_COLS = 'id, pedido_id, numero_pedido, status_anterior, status_novo, alterado_em, alterado_por, observacao, notificado_representante, notificado_em';
+
 export async function getPedidoStatus(pedidoId: string): Promise<PedidoStatusRow | null> {
   if (!supabaseOps) return null;
   const { data, error } = await supabaseOps
     .from('concrem_pedidos_status')
-    .select('*')
+    .select(STATUS_ROW_COLS)
     .eq('pedido_id', pedidoId)
     .maybeSingle();
   if (error) {
@@ -31,34 +34,37 @@ export async function getPedidoStatus(pedidoId: string): Promise<PedidoStatusRow
   return (data as any) as PedidoStatusRow;
 }
 
+const chunkArray = <T,>(arr: T[], size: number): T[][] => {
+  const out: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+  return out;
+};
+
 export async function listPedidosStatusByPedidoIds(pedidoIds: string[]): Promise<PedidoStatusRow[]> {
   if (!supabaseOps) return [];
   if (pedidoIds.length === 0) return [];
 
-  // Chunk into batches of 200 to avoid URL length limits on .in() queries
-  const chunk = <T,>(arr: T[], size: number): T[][] => {
-    const out: T[][] = [];
-    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-    return out;
-  };
-  const batches = chunk(pedidoIds, 200);
-  const results: PedidoStatusRow[] = [];
-  for (const batch of batches) {
-    const { data, error } = await supabaseOps.from('concrem_pedidos_status').select('*').in('pedido_id', batch);
-    if (error) {
-      console.error('[Supabase OPS] listPedidosStatusByPedidoIds:', error.message);
-      continue;
-    }
-    results.push(...((data || []) as any) as PedidoStatusRow[]);
-  }
-  return results;
+  const batches = chunkArray(pedidoIds, 200);
+  const batchResults = await Promise.all(
+    batches.map((batch) =>
+      supabaseOps!
+        .from('concrem_pedidos_status')
+        .select(STATUS_ROW_COLS)
+        .in('pedido_id', batch)
+        .then(({ data, error }) => {
+          if (error) console.error('[Supabase OPS] listPedidosStatusByPedidoIds:', error.message);
+          return ((data || []) as any) as PedidoStatusRow[];
+        })
+    )
+  );
+  return batchResults.flat();
 }
 
 export async function listPedidosStatusHistorico(pedidoId: string): Promise<PedidoStatusHistoricoRow[]> {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
     .from('concrem_pedidos_status_historico')
-    .select('*')
+    .select(STATUS_HIST_COLS)
     .eq('pedido_id', pedidoId)
     .order('alterado_em', { ascending: false });
   if (error) {

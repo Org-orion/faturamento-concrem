@@ -304,8 +304,21 @@ export const suporteOr = [
   'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gt.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),or(total_produtos.is.null,total_produtos.lt.20000))),or(ped_compra_cliente.is.null,and(ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*)))',
 ].join(',');
 
+// Colunas usadas na listagem e em lógica de negócio (filtragem, cálculos, exibição).
+// Colunas de detalhe puro (endereço completo) são buscadas sob demanda.
 export const tableColumns =
-  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_cep, cliente_endereco, cliente_bairro, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete';
+  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete';
+
+// Colunas de endereço — buscadas separadamente no detalhe do pedido
+export const tableColumnsDetail =
+  'numero_pedido, cliente_cep, cliente_endereco, cliente_bairro';
+
+// Retorna a data de corte para o carregamento inicial (janela recente de pedidos)
+export function getDataCorte(months = 4): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - months);
+  return d.toISOString().slice(0, 10);
+}
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [clients, setClients] = useState<Client[]>(sampleClients);
@@ -334,10 +347,16 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         | { data: null; error: { message: string } };
       
       const columns = tableColumns;
+      // Carrega apenas pedidos dentro da janela recente para reduzir volume inicial.
+      // Pedidos mais antigos ficam acessíveis via busca manual (searchErpByNumero).
+      const isoCorte = getDataCorte(4);
 
       try {
         const rows = await fetchAllPages((from, to) =>
-          supabasePedidos.from(table).select(columns).or(vendasOr).range(from, to)
+          supabasePedidos.from(table).select(columns).or(vendasOr)
+            .gte('data_emissao', isoCorte)
+            .order('data_emissao', { ascending: false })
+            .range(from, to)
         );
         vendasRes = { data: rows, error: null };
       } catch (e: any) {
@@ -345,7 +364,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       }
       try {
         const rows = await fetchAllPages((from, to) =>
-          supabasePedidos.from(table).select(columns).or(suporteOr).range(from, to)
+          supabasePedidos.from(table).select(columns).or(suporteOr)
+            .gte('data_emissao', isoCorte)
+            .order('data_emissao', { ascending: false })
+            .range(from, to)
         );
         suporteRes = { data: rows, error: null };
       } catch (e: any) {
@@ -365,7 +387,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       if (venda.length === 0 && suporte.length === 0) {
         const fallbackRows = await fetchAllPages((from, to) =>
-          supabasePedidos.from(table).select(columns).order('data_emissao', { ascending: false }).range(from, to)
+          supabasePedidos.from(table).select(columns)
+            .gte('data_emissao', isoCorte)
+            .order('data_emissao', { ascending: false })
+            .range(from, to)
         );
         const fallbackRes = { data: fallbackRows, error: null };
         if (cancelled) return;
@@ -408,7 +433,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     let cancelled = false;
 
     const loadOps = async () => {
-      const { data, error } = await supabaseOps.from('concrem_programacoes_embarque').select('*');
+      const { data, error } = await supabaseOps
+        .from('concrem_programacoes_embarque')
+        .select('id, driver_id, pedidos, planned_date, previsao_entrega, obs, criado_por, criado_em, production_status, shipment_status, estimated_weight, freight_value');
       if (cancelled) return;
       if (error || !data) {
         if (error) console.error('[Supabase OPS] Falha ao carregar programacoes_embarque:', error.message);

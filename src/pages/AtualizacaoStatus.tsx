@@ -80,7 +80,11 @@ const AtualizacaoStatus = () => {
       if (supabaseOps) {
         try {
           allRows = await fetchAllPages<PedidoStatusRow>((from, to) =>
-            supabaseOps!.from('concrem_pedidos_status').select('*').order('atualizado_em', { ascending: false }).range(from, to)
+            supabaseOps!.from('concrem_pedidos_status')
+              .select('id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em')
+              .neq('status_atual', 'finalizado')
+              .order('atualizado_em', { ascending: false })
+              .range(from, to)
           );
         } catch (err) {
           console.error('[AtualizacaoStatus] refresh query error:', err);
