@@ -18,7 +18,7 @@ import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, Fil
 import { cn } from '@/lib/utils';
 import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas, upsertRelatorioEntregaNotificacao, listRelatorioEntregaNotificacoes, type RelatorioEntregaNotificacao } from '@/lib/opsRepo';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
-import { fetchAllPages } from '@/lib/supabaseUtils';
+
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeIcon, PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
 import { todayBR, fmtDate, currentHourBR } from '@/lib/dateUtils';
@@ -293,28 +293,33 @@ const CreateShipment = () => {
     if (!supabasePedidos || !supabaseOps) return;
     const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
+    const STATUS_CS_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em';
+
     const load = async () => {
-      const statusRows = await fetchAllPages((from, to) =>
-        supabaseOps!.from('concrem_pedidos_status').select('*').in('status_atual', CARREGAMENTO_ALLOWED_STATUSES).range(from, to)
-      );
+      const { data: statusData, error: statusErr } = await supabaseOps!
+        .from('concrem_pedidos_status')
+        .select(STATUS_CS_COLS)
+        .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES)
+        .order('atualizado_em', { ascending: false })
+        .limit(2000);
+
+      if (statusErr) { console.error('[CreateShipment] status load error:', statusErr.message); return; }
+      const statusRows = statusData || [];
       if (!statusRows.length) return;
 
       setPedidoStatusRows(statusRows as any);
 
       const ids = statusRows.map((r: any) => r.pedido_id);
-      // Chunk to avoid URL length limits on large .in() queries
-      const chunkArr = <T,>(arr: T[], size: number): T[][] => {
-        const out: T[][] = [];
-        for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-        return out;
-      };
-      const allPedidos: any[] = [];
-      for (const batch of chunkArr(ids, 200)) {
-        const { data: batchData } = await supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch);
-        allPedidos.push(...(batchData || []));
-      }
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
 
-      const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001'));
+      const results = await Promise.all(
+        chunks.map((batch) =>
+          supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch)
+            .then(({ data }) => (data || []) as any[])
+        )
+      );
+      const mapped = results.flat().map((row: any) => rowToOrder(row, 'CLI-001'));
       setDirectPedidos(mapped);
     };
     void load();
