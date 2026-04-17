@@ -703,3 +703,13 @@ export async function runMigrationSuporteLiberadoProducao(
 
   return upgraded;
 }
+
+export async function deleteStatusHistoricoEntries(pedidoId: string, statusNovo: PedidoStatusValue): Promise<void> {
+  if (!supabaseOps) return;
+  const { error } = await supabaseOps
+    .from('concrem_pedidos_status_historico')
+    .delete()
+    .eq('pedido_id', pedidoId)
+    .eq('status_novo', statusNovo);
+  if (error) console.error('[Supabase OPS] deleteStatusHistoricoEntries:', error.message);
+}

@@ -31,7 +31,7 @@ import {
 } from '@/lib/opsRepo';
 import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
-import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao } from '@/lib/pedidosStatusRepo';
+import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, deleteStatusHistoricoEntries } from '@/lib/pedidosStatusRepo';
 import { fetchAllPages } from '@/lib/supabaseUtils';
 
 interface AppState {
@@ -1079,6 +1079,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           alteradoPor: 'sistema',
           observacao: `Embarque ${id} excluído — status revertido para liberado p/ produção`,
         }).catch((e) => console.error('[deleteLoad] revert status error', pedidoId, e)),
+      ),
+    );
+
+    // Remove em_entrega history entries so they don't linger after the load is deleted
+    await Promise.all(
+      load.orderIds.map((pedidoId) =>
+        deleteStatusHistoricoEntries(pedidoId, 'em_entrega')
+          .catch((e) => console.error('[deleteLoad] delete em_entrega historico error', pedidoId, e)),
       ),
     );
     setPedidoStatusVersion((v) => v + 1);
