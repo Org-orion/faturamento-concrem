@@ -9,6 +9,7 @@ import { PedidoStatusValue } from '@/types';
 import { formatStatusWhatsappMessage, setPedidoStatusWithOptionalNotify, isLeroy } from '@/lib/pedidosStatusRepo';
 import { getNextManualStatuses } from '@/lib/pedidoStatusFlow';
 import { findRepresentanteContato } from '@/lib/opsRepo';
+import { todayBR } from '@/lib/dateUtils';
 
 export function StatusUpdateDialog({
   open,
@@ -32,7 +33,7 @@ export function StatusUpdateDialog({
   const [notify, setNotify] = useState(true);
   const [saving, setSaving] = useState(false);
   const [resolvedPhone, setResolvedPhone] = useState<string | null>(null);
-  const [dataAlteracao, setDataAlteracao] = useState(() => new Date().toISOString().slice(0, 10));
+  const [dataAlteracao, setDataAlteracao] = useState(() => todayBR());
 
   const manualOptions = useMemo(() => {
     if (!statusAtual) return [];
@@ -44,7 +45,7 @@ export function StatusUpdateDialog({
     setNovoStatus('');
     setObs('');
     setResolvedPhone(null);
-    setDataAlteracao(new Date().toISOString().slice(0, 10));
+    setDataAlteracao(todayBR());
 
     // Buscar telefone do cadastro de representantes
     const repName = pedido.representante || '';
@@ -77,7 +78,7 @@ export function StatusUpdateDialog({
       const leroy = isLeroy(pedido.cliente, pedido.representante);
       const shouldNotify = Boolean(notify) && !leroy;
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayBR();
       const alteradoEm = dataAlteracao
         ? dataAlteracao === today
           ? new Date().toISOString()
@@ -141,7 +142,7 @@ export function StatusUpdateDialog({
                 type="date"
                 value={dataAlteracao}
                 onChange={(e) => setDataAlteracao(e.target.value)}
-                max={new Date().toISOString().slice(0, 10)}
+                max={todayBR()}
                 className="h-10 w-full rounded-lg border border-border bg-white px-3 text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
             </div>
