@@ -81,7 +81,7 @@ const sortOptions = [
 ] as const;
 
 const PainelPedidos = () => {
-  const { orders, supportOrders, user, pedidoStatusVersion } = useApp();
+  const { orders, supportOrders, user, pedidoStatusVersion, hasMoreOrders, loadingMoreOrders, loadMoreOrders } = useApp();
   const { showToast } = useToast();
 
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
@@ -454,6 +454,18 @@ const PainelPedidos = () => {
             </div>
           </div>
           <PainelPedidosList pedidos={sortedForPanel} statusByPedidoId={statusByPedidoId} selectedId={selectedId} selectedHistory={history} onSelect={setSelectedId} />
+          {hasMoreOrders && (
+            <div className="mt-3 flex justify-center">
+              <button
+                type="button"
+                onClick={loadMoreOrders}
+                disabled={loadingMoreOrders}
+                className="px-4 py-2 text-sm font-medium rounded-lg border border-border bg-card hover:bg-muted/20 disabled:opacity-50 transition-colors"
+              >
+                {loadingMoreOrders ? 'Carregando...' : 'Carregar mais pedidos'}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-4 space-y-4">
