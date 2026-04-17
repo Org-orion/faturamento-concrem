@@ -32,7 +32,7 @@ import {
 } from '@/lib/opsRepo';
 import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
-import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque } from '@/lib/pedidosStatusRepo';
+import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque, batchSetEmEntregaForLoad } from '@/lib/pedidosStatusRepo';
 import { fetchAllPages } from '@/lib/supabaseUtils';
 
 interface AppState {
@@ -87,6 +87,9 @@ interface AppState {
   updateSupportOrderCommercialNotes: (id: string, notes: string) => void;
   decideSupportOrderCommercial: (id: string, decision: 'Liberado p/ Produção', note?: string) => void;
   allOrdersById: Map<string, Order | SupportOrder>;
+  hasMoreOrders: boolean;
+  loadingMoreOrders: boolean;
+  loadMoreOrders: () => Promise<void>;
 }
 
 export type AppUser = { id: string; username: string; password: string; name: string; role: UserRole };
@@ -321,6 +324,9 @@ export function getDataCorte(months = 4): string {
   return d.toISOString().slice(0, 10);
 }
 
+// Quantidade de pedidos por query na carga inicial — carrega rápido, restante via loadMoreOrders
+const ORDERS_PAGE_SIZE = 200;
+
 export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [clients, setClients] = useState<Client[]>(sampleClients);
   const [drivers, setDrivers] = useState<Driver[]>([]);
@@ -332,6 +338,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [productionSchedules, setProductionSchedules] = useState<ProductionSchedule[]>(sampleProductionSchedules);
   const [expenseTypes, setExpenseTypes] = useState<ExpenseType[]>([]);
   const [freightEntries, setFreightEntries] = useState<FreightEntry[]>([]);
+
+  const [hasMoreOrders, setHasMoreOrders] = useState(false);
+  const [loadingMoreOrders, setLoadingMoreOrders] = useState(false);
+  const ordersPageRef = useRef(0); // tracks how many pages have been loaded
 
   // Ref kept in sync with memoized Map for O(1) lookups inside stale callbacks
   const allOrdersByIdRef = useRef(new Map<string, Order | SupportOrder>());
@@ -350,74 +360,54 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const load = async () => {
       const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
-      let vendasRes:
-        | { data: any[] | null; error: { message: string } | null }
-        | { data: null; error: { message: string } };
-      let suporteRes:
-        | { data: any[] | null; error: { message: string } | null }
-        | { data: null; error: { message: string } };
-      
       const columns = tableColumns;
-      // Carrega apenas pedidos dentro da janela recente para reduzir volume inicial.
-      // Pedidos mais antigos ficam acessíveis via busca manual (searchErpByNumero).
+      // Carrega apenas a primeira página (ORDERS_PAGE_SIZE) em paralelo — exibe rápido.
+      // loadMoreOrders() busca as páginas seguintes sob demanda.
       const isoCorte = getDataCorte(4);
 
-      try {
-        const rows = await fetchAllPages((from, to) =>
-          supabasePedidos.from(table).select(columns).or(vendasOr)
-            .gte('data_emissao', isoCorte)
-            .order('data_emissao', { ascending: false })
-            .range(from, to)
-        );
-        vendasRes = { data: rows, error: null };
-      } catch (e: any) {
-        vendasRes = { data: null, error: { message: e?.message || String(e) } };
-      }
-      try {
-        const rows = await fetchAllPages((from, to) =>
-          supabasePedidos.from(table).select(columns).or(suporteOr)
-            .gte('data_emissao', isoCorte)
-            .order('data_emissao', { ascending: false })
-            .range(from, to)
-        );
-        suporteRes = { data: rows, error: null };
-      } catch (e: any) {
-        suporteRes = { data: null, error: { message: e?.message || String(e) } };
-      }
+      const [vendasRes, suporteRes] = await Promise.all([
+        supabasePedidos.from(table).select(columns).or(vendasOr)
+          .gte('data_emissao', isoCorte)
+          .order('data_emissao', { ascending: false })
+          .range(0, ORDERS_PAGE_SIZE - 1)
+          .then(({ data, error }) => ({ data: (data || []) as any[], error })),
+        supabasePedidos.from(table).select(columns).or(suporteOr)
+          .gte('data_emissao', isoCorte)
+          .order('data_emissao', { ascending: false })
+          .range(0, ORDERS_PAGE_SIZE - 1)
+          .then(({ data, error }) => ({ data: (data || []) as any[], error })),
+      ]);
+
       if (cancelled) return;
-      if (vendasRes.error) {
-        console.error(`[Supabase] Falha ao carregar pedidos de venda de ${table}:`, vendasRes.error.message);
-      }
-      if (suporteRes.error) {
-        console.error(`[Supabase] Falha ao carregar pedidos suporte de ${table}:`, suporteRes.error.message);
-      }
+      if (vendasRes.error) console.error(`[Supabase] Falha ao carregar pedidos de venda de ${table}:`, vendasRes.error.message);
+      if (suporteRes.error) console.error(`[Supabase] Falha ao carregar pedidos suporte de ${table}:`, suporteRes.error.message);
 
       const defaultClientId = sampleClients[0]?.id || 'CLI-001';
-      const venda: Order[] = vendasRes.error ? [] : (vendasRes.data || []).map((row: any) => rowToOrder(row, defaultClientId));
-      const suporte: SupportOrder[] = suporteRes.error ? [] : (suporteRes.data || []).map((row: any) => rowToSupportOrder(row));
+      const venda: Order[] = vendasRes.error ? [] : vendasRes.data.map((row: any) => rowToOrder(row, defaultClientId));
+      const suporte: SupportOrder[] = suporteRes.error ? [] : suporteRes.data.map((row: any) => rowToSupportOrder(row));
 
       if (venda.length === 0 && suporte.length === 0) {
-        const fallbackRows = await fetchAllPages((from, to) =>
-          supabasePedidos.from(table).select(columns)
-            .gte('data_emissao', isoCorte)
-            .order('data_emissao', { ascending: false })
-            .range(from, to)
-        );
-        const fallbackRes = { data: fallbackRows, error: null };
+        const { data: fallbackData, error: fallbackErr } = await supabasePedidos.from(table).select(columns)
+          .gte('data_emissao', isoCorte)
+          .order('data_emissao', { ascending: false })
+          .range(0, ORDERS_PAGE_SIZE - 1);
         if (cancelled) return;
-        if (fallbackRes.error) {
-          console.error(`[Supabase] Falha ao carregar fallback de ${table}:`, fallbackRes.error.message);
-          return;
-        }
-        const fallbackVenda: Order[] = (fallbackRes.data || []).map((row: any) => rowToOrder(row, defaultClientId));
+        if (fallbackErr) { console.error(`[Supabase] Falha ao carregar fallback de ${table}:`, fallbackErr.message); return; }
+        const fallbackVenda: Order[] = ((fallbackData || []) as any[]).map((row: any) => rowToOrder(row, defaultClientId));
         setOrders(fallbackVenda);
         setSupportOrders([]);
+        ordersPageRef.current = 0;
+        setHasMoreOrders((fallbackData?.length ?? 0) >= ORDERS_PAGE_SIZE);
         return;
       }
 
       if (venda.length) setOrders(venda);
       else setOrders([]);
       if (!suporteRes.error) setSupportOrders(suporte);
+      ordersPageRef.current = 0;
+      setHasMoreOrders(
+        (vendasRes.data.length >= ORDERS_PAGE_SIZE) || (suporteRes.data.length >= ORDERS_PAGE_SIZE),
+      );
     };
 
     load();
@@ -874,6 +864,45 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     [appendSupportHistory, resolveRepPhoneRaw, supportOrders, user?.username],
   );
 
+  const loadMoreOrders = useCallback(async () => {
+    if (!supabasePedidos || loadingMoreOrders || !hasMoreOrders) return;
+    setLoadingMoreOrders(true);
+    const nextPage = ordersPageRef.current + 1;
+    const from = nextPage * ORDERS_PAGE_SIZE;
+    const to = from + ORDERS_PAGE_SIZE - 1;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const isoCorte = getDataCorte(4);
+    const defaultClientId = sampleClients[0]?.id || 'CLI-001';
+    try {
+      const [vendasRes, suporteRes] = await Promise.all([
+        supabasePedidos.from(table).select(tableColumns).or(vendasOr)
+          .gte('data_emissao', isoCorte).order('data_emissao', { ascending: false }).range(from, to)
+          .then(({ data, error }) => ({ data: (data || []) as any[], error })),
+        supabasePedidos.from(table).select(tableColumns).or(suporteOr)
+          .gte('data_emissao', isoCorte).order('data_emissao', { ascending: false }).range(from, to)
+          .then(({ data, error }) => ({ data: (data || []) as any[], error })),
+      ]);
+      const newVenda = vendasRes.error ? [] : vendasRes.data.map((r: any) => rowToOrder(r, defaultClientId));
+      const newSuporteRows = suporteRes.error ? [] : suporteRes.data.map((r: any) => rowToSupportOrder(r));
+      setOrders((prev) => {
+        const ids = new Set(prev.map((o) => o.id));
+        return [...prev, ...newVenda.filter((o) => !ids.has(o.id))];
+      });
+      setSupportOrders((prev) => {
+        const ids = new Set(prev.map((o) => o.id));
+        return [...prev, ...newSuporteRows.filter((o) => !ids.has(o.id))];
+      });
+      ordersPageRef.current = nextPage;
+      setHasMoreOrders(
+        (vendasRes.data.length >= ORDERS_PAGE_SIZE) || (suporteRes.data.length >= ORDERS_PAGE_SIZE),
+      );
+    } catch (e) {
+      console.error('[AppContext] loadMoreOrders error:', e);
+    } finally {
+      setLoadingMoreOrders(false);
+    }
+  }, [loadingMoreOrders, hasMoreOrders]);
+
   const addClient = useCallback((c: Omit<Client, 'id'>) => {
     setClients(prev => [...prev, { ...c, id: nextId('CLI', 'client') }]);
   }, []);
@@ -959,26 +988,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     if (nextLoad.shipmentStatus === 'Em Rota') {
       const currentStatuses = await listPedidosStatusByPedidoIds(nextLoad.orderIds);
-      await Promise.all(
+      const statusMap = new Map(currentStatuses.map((s) => [String(s.pedido_id), s.status_atual as PedidoStatusValue]));
+      const ordersForBatch = await Promise.all(
         nextLoad.orderIds.map(async (pedidoId) => {
-          const currentStatus = currentStatuses.find(s => s.pedido_id === pedidoId)?.status_atual;
-          if (currentStatus === 'em_entrega' || currentStatus === 'parcialmente_entregue' || currentStatus === 'entregue' || currentStatus === 'aguardando_pagamento' || currentStatus === 'finalizado') return;
           const o: any = allOrdersByIdRef.current.get(pedidoId);
           const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
           const repKey = String(o?.representativeId || o?.representativeName || '').trim();
           const repPhone = await resolveRepPhoneRaw(repKey, o?.representativePhone || null);
-          await setPedidoStatusWithOptionalNotify({
-            pedidoId,
-            numeroPedido: pedidoId,
-            statusNovo: 'em_entrega',
-            alteradoPor: user?.username || null,
-            observacao: null,
-            notifyRepresentante: true,
-            representantePhoneRaw: repPhone,
-            clienteNome,
-          });
+          return { pedidoId, numeroPedido: pedidoId, statusAtual: statusMap.get(pedidoId) || null, clienteNome, representantePhoneRaw: repPhone };
         }),
       );
+      await batchSetEmEntregaForLoad(ordersForBatch, user?.username || null);
     }
 
     return newLoadId;
@@ -1041,26 +1061,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
     if (l.shipmentStatus === 'Em Rota') {
       const currentStatuses = await listPedidosStatusByPedidoIds(l.orderIds);
-      await Promise.all(
+      const statusMap = new Map(currentStatuses.map((s) => [String(s.pedido_id), s.status_atual as PedidoStatusValue]));
+      const ordersForBatch = await Promise.all(
         l.orderIds.map(async (pedidoId) => {
-          const currentStatus = currentStatuses.find(s => s.pedido_id === pedidoId)?.status_atual;
-          if (currentStatus === 'em_entrega' || currentStatus === 'parcialmente_entregue' || currentStatus === 'entregue' || currentStatus === 'aguardando_pagamento' || currentStatus === 'finalizado') return;
           const o: any = allOrdersByIdRef.current.get(pedidoId);
           const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
           const repKey = String(o?.representativeId || o?.representativeName || '').trim();
           const repPhone = await resolveRepPhoneRaw(repKey, o?.representativePhone || null);
-          await setPedidoStatusWithOptionalNotify({
-            pedidoId,
-            numeroPedido: pedidoId,
-            statusNovo: 'em_entrega',
-            alteradoPor: user?.username || null,
-            observacao: null,
-            notifyRepresentante: true,
-            representantePhoneRaw: repPhone,
-            clienteNome,
-          });
+          return { pedidoId, numeroPedido: pedidoId, statusAtual: statusMap.get(pedidoId) || null, clienteNome, representantePhoneRaw: repPhone };
         }),
       );
+      await batchSetEmEntregaForLoad(ordersForBatch, user?.username || null);
     }
 
     await Promise.all(
@@ -1350,6 +1361,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       updateOrderCommercialNotes, decideOrderCommercial,
       updateSupportOrderCommercialNotes, decideSupportOrderCommercial,
       allOrdersById,
+      hasMoreOrders,
+      loadingMoreOrders,
+      loadMoreOrders,
     }}>
       {children}
     </AppContext.Provider>

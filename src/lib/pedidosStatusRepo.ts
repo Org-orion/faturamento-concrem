@@ -156,22 +156,22 @@ export async function ensurePedidosStatusInitializedBatch(
   };
 
   let existing: any[] = [];
-  for (const idBatch of chunkArr(ids, 200)) {
-    let batchData: any[] | null = null;
-    let batchErr: { message: string } | null = null;
-    try {
-      const res = await supabaseOps.from('concrem_pedidos_status').select('pedido_id, status_atual').in('pedido_id', idBatch);
-      batchData = res.data as any;
-      batchErr = res.error as any;
-    } catch (err) {
-      console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing (fetch):', err);
-      return { upgradedCount: 0 };
-    }
-    if (batchErr) {
-      console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing:', batchErr.message);
-      return { upgradedCount: 0 };
-    }
-    existing.push(...(batchData || []));
+  try {
+    const batchResults = await Promise.all(
+      chunkArr(ids, 200).map((batch) =>
+        supabaseOps!.from('concrem_pedidos_status')
+          .select('pedido_id, status_atual')
+          .in('pedido_id', batch)
+          .then(({ data, error }) => {
+            if (error) throw new Error(error.message);
+            return (data || []) as any[];
+          }),
+      ),
+    );
+    existing = batchResults.flat();
+  } catch (err) {
+    console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch existing:', err);
+    return { upgradedCount: 0 };
   }
 
   const existingMap = new Map((existing || []).map((r: any) => [String(r.pedido_id), r.status_atual as string]));
@@ -723,6 +723,89 @@ export async function runMigrationSuporteLiberadoProducao(
   }
 
   return upgraded;
+}
+
+/**
+ * Batch-updates all qualifying orders to 'em_entrega' in 2 DB round-trips
+ * (one upsert + one insert) instead of N×3. WhatsApp sends are still per-order
+ * but run in parallel.
+ */
+export async function batchSetEmEntregaForLoad(
+  orders: Array<{
+    pedidoId: string;
+    numeroPedido: string;
+    statusAtual: PedidoStatusValue | null;
+    clienteNome: string;
+    representantePhoneRaw: string | null;
+  }>,
+  userName: string | null,
+): Promise<void> {
+  if (!supabaseOps || !orders.length) return;
+
+  const SKIP: Set<PedidoStatusValue> = new Set([
+    'em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado',
+  ]);
+  const TARGET: PedidoStatusValue = 'em_entrega';
+  const now = new Date().toISOString();
+
+  const qualifying = orders.filter((o) => {
+    if (o.statusAtual && SKIP.has(o.statusAtual)) return false;
+    if (o.statusAtual && !canMoveToStatus(o.statusAtual, TARGET)) return false;
+    return true;
+  });
+  if (!qualifying.length) return;
+
+  // Batch upsert + WhatsApp sends run in parallel
+  const [upsertOk, notifyResults] = await Promise.all([
+    supabaseOps!.from('concrem_pedidos_status').upsert(
+      qualifying.map((o) => ({
+        pedido_id: o.pedidoId,
+        numero_pedido: o.numeroPedido,
+        status_atual: TARGET,
+        atualizado_em: now,
+        atualizado_por: userName,
+      })) as any,
+      { onConflict: 'pedido_id' },
+    ).then(({ error }) => {
+      if (error) console.error('[Supabase OPS] batchSetEmEntregaForLoad upsert:', error.message);
+      return !error;
+    }),
+    Promise.all(
+      qualifying.map(async (o) => {
+        if (isLeroy(o.clienteNome)) return { notified: false, providerId: null as string | null, error: null as string | null };
+        const to = normalizePhoneToE164(o.representantePhoneRaw);
+        if (!to) return { notified: false, providerId: null, error: 'Telefone inválido.' };
+        const msg = formatStatusWhatsappMessage({
+          numeroPedido: o.numeroPedido,
+          clienteNome: o.clienteNome,
+          statusAnterior: o.statusAtual,
+          statusNovo: TARGET,
+          dataHoraIso: now,
+        });
+        const sent = await sendWhatsappMessage(to, msg);
+        return { notified: sent.ok, providerId: sent.providerMessageId, error: sent.ok ? null : sent.error };
+      }),
+    ),
+  ]);
+
+  if (!upsertOk) return;
+
+  const { error: histErr } = await supabaseOps!.from('concrem_pedidos_status_historico').insert(
+    qualifying.map((o, i) => ({
+      pedido_id: o.pedidoId,
+      numero_pedido: o.numeroPedido,
+      status_anterior: o.statusAtual,
+      status_novo: TARGET,
+      alterado_em: now,
+      alterado_por: userName,
+      observacao: null,
+      notificado_representante: notifyResults[i].notified,
+      notificado_em: notifyResults[i].notified ? now : null,
+      notificacao_provider_id: notifyResults[i].providerId,
+      notificacao_erro: notifyResults[i].error,
+    })) as any,
+  );
+  if (histErr) console.error('[Supabase OPS] batchSetEmEntregaForLoad insert history:', histErr.message);
 }
 
 const POST_PRODUCAO_STATUSES: PedidoStatusValue[] = [

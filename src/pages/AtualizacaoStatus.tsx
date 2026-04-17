@@ -1,8 +1,7 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardCheck } from 'lucide-react';
 import { useApp, tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
-import { fetchAllPages } from '@/lib/supabaseUtils';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import { PedidoStatusHistoricoRow, PedidoStatusRow, PedidoStatusValue } from '@/types';
@@ -37,7 +36,13 @@ const AtualizacaoStatus = () => {
   const presetId = useQueryParam('pedido');
 
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
+  const [hasMoreStatus, setHasMoreStatus] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const statusCursorRef = useRef<string | null>(null);
   const statusRowsMapRef = useRef(new Map<string, PedidoStatusRow>());
+  // Debounce refs for realtime batch updates
+  const pendingRowsRef = useRef<PedidoStatusRow[]>([]);
+  const realtimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [extraPedidos, setExtraPedidos] = useState<UnifiedPedido[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
@@ -78,18 +83,25 @@ const AtualizacaoStatus = () => {
         ...(orders || []).map((o) => o.id),
         ...(supportOrders || []).map((o) => o.id),
       ];
+      const STATUS_PAGE = 200;
       if (supabaseOps) {
         try {
-          allRows = await fetchAllPages<PedidoStatusRow>((from, to) =>
-            supabaseOps!.from('concrem_pedidos_status')
-              .select('id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em')
-              .neq('status_atual', 'finalizado')
-              .order('atualizado_em', { ascending: false })
-              .range(from, to)
-          );
+          const { data, error } = await supabaseOps!
+            .from('concrem_pedidos_status')
+            .select('id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em')
+            .neq('status_atual', 'finalizado')
+            .order('atualizado_em', { ascending: false })
+            .limit(STATUS_PAGE);
+          if (error) { console.error('[AtualizacaoStatus] refresh query error:', error); return; }
+          allRows = (data || []) as PedidoStatusRow[];
+          const newHasMore = allRows.length >= STATUS_PAGE;
+          setHasMoreStatus(newHasMore);
+          statusCursorRef.current = newHasMore && allRows.length > 0
+            ? (allRows[allRows.length - 1]?.atualizado_em || null)
+            : null;
         } catch (err) {
           console.error('[AtualizacaoStatus] refresh query error:', err);
-          return; // não sobrescreve o estado com dados vazios em caso de erro
+          return;
         }
       } else {
         allRows = await listPedidosStatusByPedidoIds(knownIdList);
@@ -148,6 +160,34 @@ const AtualizacaoStatus = () => {
     }
   };
 
+  const loadMoreStatus = useCallback(async () => {
+    if (!supabaseOps || loadingMore || !hasMoreStatus || !statusCursorRef.current) return;
+    setLoadingMore(true);
+    try {
+      const { data, error } = await supabaseOps!
+        .from('concrem_pedidos_status')
+        .select('id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em')
+        .neq('status_atual', 'finalizado')
+        .order('atualizado_em', { ascending: false })
+        .lt('atualizado_em', statusCursorRef.current!)
+        .limit(200);
+      if (error) { console.error('[AtualizacaoStatus] loadMoreStatus error:', error); return; }
+      const rows = (data || []) as PedidoStatusRow[];
+      const newHasMore = rows.length >= 200;
+      setHasMoreStatus(newHasMore);
+      statusCursorRef.current = newHasMore && rows.length > 0 ? (rows[rows.length - 1]?.atualizado_em || null) : null;
+      if (rows.length > 0) {
+        setStatusRows((prev) => {
+          const map = new Map(prev.map((r) => [String(r.pedido_id), r]));
+          for (const r of rows) { map.set(String(r.pedido_id), r); statusRowsMapRef.current.set(String(r.pedido_id), r); }
+          return Array.from(map.values());
+        });
+      }
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [loadingMore, hasMoreStatus]);
+
   // Busca pontual no ERP quando o pedido não está na lista
   const searchErpByNumero = async (numero: string) => {
     if (!supabasePedidos || !numero.trim()) return;
@@ -191,17 +231,28 @@ const AtualizacaoStatus = () => {
         (payload) => {
           const row = (payload as any)?.new as PedidoStatusRow;
           if (!row?.pedido_id) return;
-          const key = String(row.pedido_id);
-          setStatusRows((prev) => {
-            const isNew = !statusRowsMapRef.current.has(key);
-            statusRowsMapRef.current.set(key, row);
-            if (isNew) return [...prev, row];
-            return prev.map((r) => String(r.pedido_id) === key ? row : r);
-          });
+          pendingRowsRef.current.push(row);
+          if (realtimeTimerRef.current) return;
+          realtimeTimerRef.current = setTimeout(() => {
+            const updates = [...pendingRowsRef.current];
+            pendingRowsRef.current = [];
+            realtimeTimerRef.current = null;
+            setStatusRows((prev) => {
+              const map = new Map(prev.map((item) => [String(item.pedido_id), item]));
+              for (const r of updates) {
+                map.set(String(r.pedido_id), r);
+                statusRowsMapRef.current.set(String(r.pedido_id), r);
+              }
+              return Array.from(map.values());
+            });
+          }, 300);
         },
       )
       .subscribe();
-    return () => { void supabaseOps.removeChannel(ch); };
+    return () => {
+      if (realtimeTimerRef.current) { clearTimeout(realtimeTimerRef.current); realtimeTimerRef.current = null; }
+      void supabaseOps.removeChannel(ch);
+    };
   }, []);
 
   // Busca dados de pedidos que aparecem no status table mas não no AppContext/extraPedidos
@@ -474,6 +525,18 @@ const AtualizacaoStatus = () => {
             selectedId={selectedId}
             onSelect={setSelectedId}
           />
+          {hasMoreStatus && (
+            <div className="mt-3 text-center">
+              <button
+                type="button"
+                onClick={loadMoreStatus}
+                disabled={loadingMore}
+                className="text-xs font-semibold text-primary hover:underline disabled:opacity-50"
+              >
+                {loadingMore ? 'Carregando...' : 'Carregar mais pedidos'}
+              </button>
+            </div>
+          )}
         </div>
 
         <div className="lg:col-span-6">
