@@ -69,17 +69,23 @@ const Commercial = () => {
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
   const statusByPedidoId = useMemo(() => new Map(statusRows.map(r => [r.pedido_id, r] as const)), [statusRows]);
 
+  // Stable ID array — efeito de status só dispara quando os IDs realmente mudam
+  const allOrderIds = useMemo(() => allOrders.map(o => o.id), [allOrders]);
+  // Serialized para uso como dep primitiva
+  const allOrderIdsKey = useMemo(() => allOrderIds.join(','), [allOrderIds]);
+
   const refreshStatusRows = async (ids: string[]) => {
-    if (!ids.length) return;
-    const rows = await listPedidosStatusByPedidoIds(ids);
+    const safe = ids.slice(0, 500); // cap defensivo
+    if (!safe.length) return;
+    const rows = await listPedidosStatusByPedidoIds(safe);
     setStatusRows(rows);
   };
 
   // Load status rows when allOrders change or when batch upgrades run
   useEffect(() => {
-    const ids = allOrders.map(o => o.id);
-    if (ids.length) void refreshStatusRows(ids);
-  }, [allOrders, pedidoStatusVersion]);
+    if (allOrderIds.length) void refreshStatusRows(allOrderIds);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allOrderIdsKey, pedidoStatusVersion]);
 
   // Self-healing: auto-upgrade any LEROY orders still stuck before liberado_producao
   useEffect(() => {
@@ -252,7 +258,7 @@ const Commercial = () => {
   // Trigger status refresh when extra orders are fetched
   useEffect(() => {
     const ids = extraSearchOrders.map(o => o.id);
-    if (ids.length) void refreshStatusRows([...allOrders.map(o => o.id), ...ids]);
+    if (ids.length) void refreshStatusRows([...allOrderIds, ...ids]);
   }, [extraSearchOrders]);
 
   // Client-side filtering: status, move overrides, text filters, sort
