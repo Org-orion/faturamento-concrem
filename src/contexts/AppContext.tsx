@@ -347,8 +347,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const allOrdersByIdRef = useRef(new Map<string, Order | SupportOrder>());
   const allOrdersById = useMemo(() => {
     const m = new Map<string, Order | SupportOrder>();
-    for (const o of orders) m.set(o.id, o);
-    for (const o of supportOrders) m.set(o.id, o);
+    for (const o of orders) m.set(String(o.id), o);
+    for (const o of supportOrders) m.set(String(o.id), o);
     allOrdersByIdRef.current = m;
     return m;
   }, [orders, supportOrders]);
@@ -789,7 +789,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }),
       );
 
-      const o = orders.find((x) => x.id === id);
+      const o = allOrdersByIdRef.current.get(String(id)) as Order | undefined;
       const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
       const repKey = String(o?.representativeId || o?.representativeName || '').trim();
       void (async () => {
@@ -806,7 +806,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         });
       })();
     },
-    [appendHistory, orders, resolveRepPhoneRaw, user?.username],
+    [appendHistory, resolveRepPhoneRaw, user?.username],
   );
 
   const appendSupportHistory = useCallback((order: SupportOrder, by: string, action: string, note?: string): SupportOrder => {
@@ -844,7 +844,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         }),
       );
 
-      const o = supportOrders.find((x) => x.id === id);
+      const o = allOrdersByIdRef.current.get(String(id)) as SupportOrder | undefined;
       const clienteNome = o?.clientName || o?.clientCode || 'Cliente';
       const repKey = String(o?.representativeId || o?.representativeName || '').trim();
       void (async () => {
@@ -861,7 +861,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         });
       })();
     },
-    [appendSupportHistory, resolveRepPhoneRaw, supportOrders, user?.username],
+    [appendSupportHistory, resolveRepPhoneRaw, user?.username],
   );
 
   const loadMoreOrders = useCallback(async () => {
