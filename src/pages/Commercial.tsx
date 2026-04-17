@@ -9,7 +9,7 @@ import { CheckCircle2, Eye, Plus } from 'lucide-react';
 import { StatusBadge } from '@/components/shared';
 import { useDebounce } from '@/hooks/useDebounce';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
-import { tableColumns, vendasOr } from '@/contexts/AppContext';
+import { tableColumns, vendasOr, getDataCorte } from '@/contexts/AppContext';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import { Order, SupportOrder, PedidoStatusRow } from '@/types';
 import type { FilterCondition, FilterField } from '@/lib/filters';
@@ -18,7 +18,7 @@ import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus, isLeroy } from '@/lib/pedidosStatusRepo';
 import { getPedidoStatusDef, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
-import { fetchAllPages } from '@/lib/supabaseUtils';
+
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -364,7 +364,7 @@ const Commercial = () => {
     setPage(1);
   }, [conditions]);
 
-  // Fetch ALL venda orders — filtering/sorting/pagination are done client-side
+  // Fetch venda orders — últimos 4 meses, máximo 500 linhas, 1 request
   useEffect(() => {
     if (!supabasePedidos) return;
     let cancelled = false;
@@ -373,6 +373,7 @@ const Commercial = () => {
       setLoadingList(true);
       try {
         const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+        const isoCorte = getDataCorte(4);
 
         const movedToVenda = Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0]);
         let finalOr = vendasOr;
@@ -380,15 +381,18 @@ const Commercial = () => {
           finalOr += `,numero_pedido.in.(${movedToVenda.map((x) => `"${x}"`).join(',')})`;
         }
 
-        const rows = await fetchAllPages((from, to) =>
-          supabasePedidos!.from(table).select(tableColumns)
-            .or(finalOr)
-            .in('id_nota_conf', [307, 309, 613, 665])
-            .range(from, to) as any
-        );
+        const { data, error } = await supabasePedidos
+          .from(table)
+          .select(tableColumns)
+          .or(finalOr)
+          .in('id_nota_conf', [307, 309, 613, 665])
+          .gte('data_emissao', isoCorte)
+          .order('data_emissao', { ascending: false })
+          .limit(500);
 
         if (cancelled) return;
-        setAllOrders(rows.map((row: any) => rowToOrder(row, 'CLI-001')));
+        if (error) throw error;
+        setAllOrders((data || []).map((row: any) => rowToOrder(row, 'CLI-001')));
       } catch (e: any) {
         if (cancelled) return;
         console.error('[Commercial] fetchAll error:', e?.message || e);
