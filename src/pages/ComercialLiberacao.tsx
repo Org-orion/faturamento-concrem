@@ -154,16 +154,18 @@ const ComercialLiberacao = () => {
   const [loadIds, setLoadIds] = useState<string[]>([]);
   const [liberatedToProducaoIds, setLiberatedToProducaoIds] = useState<Set<string>>(new Set());
 
+  const loadIdsSet = useMemo(() => new Set(loadIds), [loadIds]);
+
   const s3Candidates = useMemo(() =>
     directOrders
       .filter(o => {
         if (liberatedToProducaoIds.has(o.id)) return false;
-        if (loadIds.includes(o.id)) return false;
+        if (loadIdsSet.has(o.id)) return false;
         return statusRowsDirect.get(o.id)?.status_atual === 'confirmado_gerencia';
       })
       .map(toUnified)
       .sort((a, b) => (a.expiryDate || '').localeCompare(b.expiryDate || '') || a.id.localeCompare(b.id)),
-  [directOrders, statusRowsDirect, loadIds, liberatedToProducaoIds]);
+  [directOrders, statusRowsDirect, loadIdsSet, liberatedToProducaoIds]);
 
   const s3LoadOrders = useMemo(() => {
     const map = new Map(directOrders.map(o => [o.id, toUnified(o)] as const));
