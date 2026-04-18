@@ -17,7 +17,7 @@ import { applyFilters } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 
 
-import { updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
+import { normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 import { fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { findRepresentanteContato, listComercialPedidosMeta, upsertComercialPedidoMeta } from '@/lib/opsRepo';
@@ -328,18 +328,29 @@ const ComercialLiberacao = () => {
   // --- Actions ---
 
   const enviarParaGerencia = async () => {
-    if (!s1Selected.length) { showToast('Selecione pedidos para enviar', 'error'); return; }
+    if (!s1Selected.length || !supabaseOps) { showToast('Selecione pedidos para enviar', 'error'); return; }
     const username = user?.username || null;
+    const now = new Date().toISOString();
 
-    for (const id of s1Selected) {
-      await updatePedidoStatus({
-        pedidoId: id,
-        numeroPedido: id,
-        statusNovo: 'aguardando_gerencia',
-        alteradoPor: username,
-        observacao: 'Enviado para aprovação da gerência',
-      });
-    }
+    await Promise.all([
+      supabaseOps.from('concrem_pedidos_status').upsert(
+        s1Selected.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_atual: 'aguardando_gerencia', atualizado_em: now, atualizado_por: username,
+        })),
+        { onConflict: 'pedido_id' },
+      ),
+      supabaseOps.from('concrem_pedidos_status_historico').insert(
+        s1Selected.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_anterior: statusRowsDirect.get(id)?.status_atual ?? null,
+          status_novo: 'aguardando_gerencia', alterado_em: now, alterado_por: username,
+          observacao: 'Enviado para aprovação da gerência',
+          notificado_representante: false, notificado_em: null,
+          notificacao_provider_id: null, notificacao_erro: null,
+        })),
+      ),
+    ]);
 
     await refreshOrders();
     setS1Selected([]);
@@ -347,18 +358,29 @@ const ComercialLiberacao = () => {
   };
 
   const confirmarGerencia = async () => {
-    if (!s2Selected.length) { showToast('Selecione pedidos para confirmar', 'error'); return; }
+    if (!s2Selected.length || !supabaseOps) { showToast('Selecione pedidos para confirmar', 'error'); return; }
     const username = user?.username || null;
+    const now = new Date().toISOString();
 
-    for (const id of s2Selected) {
-      await updatePedidoStatus({
-        pedidoId: id,
-        numeroPedido: id,
-        statusNovo: 'confirmado_gerencia',
-        alteradoPor: username,
-        observacao: 'Confirmado pela gerência',
-      });
-    }
+    await Promise.all([
+      supabaseOps.from('concrem_pedidos_status').upsert(
+        s2Selected.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_atual: 'confirmado_gerencia', atualizado_em: now, atualizado_por: username,
+        })),
+        { onConflict: 'pedido_id' },
+      ),
+      supabaseOps.from('concrem_pedidos_status_historico').insert(
+        s2Selected.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_anterior: statusRowsDirect.get(id)?.status_atual ?? null,
+          status_novo: 'confirmado_gerencia', alterado_em: now, alterado_por: username,
+          observacao: 'Confirmado pela gerência',
+          notificado_representante: false, notificado_em: null,
+          notificacao_provider_id: null, notificacao_erro: null,
+        })),
+      ),
+    ]);
 
     await refreshOrders();
     setS2Selected([]);
@@ -374,56 +396,80 @@ const ComercialLiberacao = () => {
   };
 
   const liberarParaProducao = async () => {
-    if (!loadIds.length) { showToast('Nenhum pedido na carga', 'error'); return; }
+    if (!loadIds.length || !supabaseOps) { showToast('Nenhum pedido na carga', 'error'); return; }
     const username = user?.username || null;
+    const now = new Date().toISOString();
 
-    // Agrupar por representante para enviar uma mensagem por rep
+    // Phase 1: pre-fetch unique rep contacts in parallel
+    const directOrdersById = new Map(directOrders.map(o => [o.id, o]));
+    const uniqueRepKeys = [...new Set(
+      loadIds
+        .map(id => directOrdersById.get(id))
+        .filter(Boolean)
+        .map(o => String(o!.representativeName || o!.representativeId || '').trim())
+        .filter(Boolean),
+    )];
+    const repPhoneMap = new Map(
+      await Promise.all(
+        uniqueRepKeys.map(async k => {
+          const c = await findRepresentanteContato(k);
+          return [k, c?.telefone ?? null] as const;
+        }),
+      ),
+    );
+
+    // Phase 2: batch status upsert + bulk history insert (parallel)
+    await Promise.all([
+      supabaseOps.from('concrem_pedidos_status').upsert(
+        loadIds.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: username,
+        })),
+        { onConflict: 'pedido_id' },
+      ),
+      supabaseOps.from('concrem_pedidos_status_historico').insert(
+        loadIds.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_anterior: statusRowsDirect.get(id)?.status_atual ?? null,
+          status_novo: 'liberado_producao', alterado_em: now, alterado_por: username,
+          observacao: 'Liberado para produção pelo comercial',
+          notificado_representante: false, notificado_em: null,
+          notificacao_provider_id: null, notificacao_erro: null,
+        })),
+      ),
+    ]);
+
+    // Phase 3: build byRep map (synchronous, no awaits)
     const byRep = new Map<string, { orders: Order[]; phone: string | null }>();
     for (const id of loadIds) {
-      const order = directOrders.find(o => o.id === id);
+      const order = directOrdersById.get(id);
       if (!order) continue;
-      await updatePedidoStatus({
-        pedidoId: id,
-        numeroPedido: id,
-        statusNovo: 'liberado_producao',
-        alteradoPor: username,
-        observacao: 'Liberado para produção pelo comercial',
-      });
       const repKey = String(order.representativeName || order.representativeId || '').trim();
       if (!byRep.has(repKey)) {
-        const contact = await findRepresentanteContato(repKey);
-        const phone = contact?.telefone || order.representativePhone || null;
-        byRep.set(repKey, { orders: [], phone });
+        byRep.set(repKey, { orders: [], phone: repPhoneMap.get(repKey) ?? order.representativePhone ?? null });
       }
       byRep.get(repKey)!.orders.push(order);
     }
 
-    // Enviar notificação por representante (skip LEROY)
-    for (const [, { orders, phone }] of byRep.entries()) {
-      if (!phone) continue;
+    // Phase 4: parallel WhatsApp sends
+    await Promise.all([...byRep.values()].map(async ({ orders, phone }) => {
+      if (!phone) return;
       const repName = orders[0].representativeName || '-';
       const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
-
-      // Filtra pedidos LEROY (cliente ou representante)
-      const notifiable = orders.filter((o) => !isLeroy(o.clientName || o.clientCode, repName));
-      if (!notifiable.length) continue;
-
+      const notifiable = orders.filter(o => !isLeroy(o.clientName || o.clientCode, repName));
+      if (!notifiable.length) return;
       const phoneE164 = normalizePhoneToE164(phone);
-      if (!phoneE164) continue;
-
+      if (!phoneE164) return;
       const hora = currentHourBR();
       const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
       let msg = `${saudacao}, ${repDisplayName}! 👋\n\n`;
       msg += `Seus pedidos foram liberados para produção e já vão entrar em fabricação 🏭\n\n`;
       msg += `📦 Pedidos:\n`;
-      for (const o of notifiable) {
-        msg += `• ${o.id} — ${o.clientName || o.clientCode || 'Cliente'}\n`;
-      }
+      for (const o of notifiable) msg += `• ${o.id} — ${o.clientName || o.clientCode || 'Cliente'}\n`;
       msg += `\nAssim que avançarem, te aviso por aqui 👍\n\n`;
       msg += `Se precisar de algo, é só me chamar.`;
-
       await sendEvolutionText(phoneE164, msg);
-    }
+    }));
 
     await refreshOrders();
     setLoadIds([]);
