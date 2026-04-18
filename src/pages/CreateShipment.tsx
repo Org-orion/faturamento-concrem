@@ -271,6 +271,7 @@ const CreateShipment = () => {
   ];
 
   const [directPedidos, setDirectPedidos] = useState<Order[]>([]);
+  const [editExtraOrders, setEditExtraOrders] = useState<Order[]>([]);
 
   useEffect(() => {
     if (freightManual) return;
@@ -296,12 +297,10 @@ const CreateShipment = () => {
     const STATUS_CS_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em';
 
     const load = async () => {
-      const isoCorte = getDataCorte(4);
       const { data: statusData, error: statusErr } = await supabaseOps!
         .from('concrem_pedidos_status')
         .select(STATUS_CS_COLS)
         .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES)
-        .gte('atualizado_em', isoCorte)
         .order('atualizado_em', { ascending: false })
         .limit(500);
 
@@ -343,14 +342,35 @@ const CreateShipment = () => {
     );
   }, [orders.length, supportOrders.length]);
 
-  // Merge: directPedidos (sem filtro) + context orders (para edição), sem duplicatas
+  // Em modo de edição, busca do ERP os pedidos do carregamento que não estão em nenhuma fonte local.
+  // Sem filtro de data — o carregamento salvo é a fonte de verdade.
+  useEffect(() => {
+    if (!isEditing || !supabasePedidos || !selectedOrderIds.length) return;
+    const knownIds = new Set([
+      ...directPedidos.map(o => o.id),
+      ...orders.map(o => o.id),
+      ...(supportOrders as unknown as Order[]).map(o => o.id),
+    ]);
+    const missingIds = selectedOrderIds.filter(id => !knownIds.has(id));
+    if (!missingIds.length) return;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    void supabasePedidos.from(table).select(tableColumns)
+      .in('numero_pedido', missingIds)
+      .then(({ data, error }) => {
+        if (error) console.error('[CreateShipment] editExtraOrders fetch error:', error.message);
+        if (data?.length) setEditExtraOrders(data.map((row: any) => rowToOrder(row, 'CLI-001')));
+      });
+  }, [isEditing, selectedOrderIds, directPedidos, orders, supportOrders]);
+
+  // Merge: editExtraOrders (fallback edição) + directPedidos + context orders, sem duplicatas
   const allCandidates = useMemo(() => {
     const map = new Map<string, Order>();
+    for (const o of editExtraOrders) map.set(o.id, o);
     for (const o of directPedidos) map.set(o.id, o);
     for (const o of orders) if (!map.has(o.id)) map.set(o.id, o);
     for (const o of supportOrders as unknown as Order[]) if (!map.has(o.id)) map.set(o.id, o);
     return Array.from(map.values());
-  }, [directPedidos, orders, supportOrders]);
+  }, [editExtraOrders, directPedidos, orders, supportOrders]);
 
   // Pré-preencher qtdKits com valores do pedido quando não há valor salvo
   useEffect(() => {
