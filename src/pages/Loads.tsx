@@ -169,6 +169,14 @@ const LoadsPage = () => {
     return sorted;
   }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs]);
 
+  const allOrdersMap = useMemo(() => {
+    const m = new Map<string, Order>();
+    for (const o of orders) m.set(o.id, o);
+    for (const o of supportOrders as unknown as Order[]) m.set(o.id, o);
+    for (const o of extraOrders) m.set(o.id, o);
+    return m;
+  }, [orders, supportOrders, extraOrders]);
+
   const reportGroups = useMemo((): ReportGroup[] => {
     const selected = loads.filter((l) => selectedIds.includes(l.id));
     const groups: ReportGroup[] = [];
@@ -180,10 +188,7 @@ const LoadsPage = () => {
       const orderRows: ReportGroup['rows'] = [];
 
       for (const orderId of load.orderIds) {
-        const order = orders.find((o) => o.id === orderId);
-        const supOrder = order ? undefined : supportOrders.find((o) => o.id === orderId);
-        const extra = (order || supOrder) ? undefined : extraOrders.find((o) => o.id === orderId);
-        const src = order || supOrder || extra;
+        const src = allOrdersMap.get(orderId);
         if (!src) continue;
 
         orderRows.push({
@@ -201,7 +206,7 @@ const LoadsPage = () => {
 
     groups.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.loadId.localeCompare(b.loadId));
     return groups;
-  }, [selectedIds, loads, drivers, orders, supportOrders, extraOrders]);
+  }, [selectedIds, loads, drivers, allOrdersMap]);
 
   // Flat rows for Excel export
   const reportRows = useMemo((): ReportRow[] => {
