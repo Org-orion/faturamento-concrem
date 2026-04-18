@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, getDataCorte } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { btnPrimary, btnSecondary, inputClass } from '@/components/shared';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
@@ -18,7 +18,6 @@ import { FilterConfiguratorDialog } from '@/components/filters/FilterConfigurato
 
 
 import { updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
-import { fetchAllPages } from '@/lib/supabaseUtils';
 import { fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { findRepresentanteContato, listComercialPedidosMeta, upsertComercialPedidoMeta } from '@/lib/opsRepo';
@@ -85,30 +84,29 @@ const ComercialLiberacao = () => {
     if (!supabaseOps || !supabasePedidos) return;
     setLoading(true);
     try {
-      const statusData = await fetchAllPages((from, to) =>
-        supabaseOps!.from('concrem_pedidos_status')
-          .select('*')
-          .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia'])
-          .range(from, to) as any
-      );
-      if (!statusData.length) { setDirectOrders([]); return; }
+      const isoCorte = getDataCorte(4);
+      const { data: statusData, error: statusErr } = await supabaseOps!
+        .from('concrem_pedidos_status')
+        .select('pedido_id, status_atual, numero_pedido, atualizado_em')
+        .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia'])
+        .gte('atualizado_em', isoCorte)
+        .order('atualizado_em', { ascending: false })
+        .limit(500);
+      if (statusErr) { console.error('[ComercialLiberacao] status query error:', statusErr.message); return; }
+      if (!statusData?.length) { setDirectOrders([]); return; }
 
       const ids = statusData.map((r: any) => r.pedido_id);
 
-      // Chunk .in() to avoid URL length limits
-      const allPedidos: any[] = [];
-      for (const batch of chunkArr(ids, 200)) {
-        const { data: batchData, error: batchErr } = await supabasePedidos
-          .from(table)
-          .select(tableColumns)
-          .in('numero_pedido', batch);
-        if (batchErr) {
-          console.error('[ComercialLiberacao] pedidos query error:', batchErr.message);
-          showToast(`Erro ao carregar pedidos: ${batchErr.message}`, 'error');
-          return;
-        }
-        allPedidos.push(...(batchData || []));
-      }
+      const batchResults = await Promise.all(
+        chunkArr(ids, 200).map((batch) =>
+          supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch)
+            .then(({ data, error }) => {
+              if (error) console.error('[ComercialLiberacao] ERP batch fetch error:', error.message);
+              return (data || []) as any[];
+            })
+        )
+      );
+      const allPedidos = batchResults.flat();
 
       // Mirror of suporteOr logic — totalPedidoVenda has fallback from pedidoMapper
       const isSuporteRow = (o: Order) => {
