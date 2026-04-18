@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, getDataCorte } from '@/contexts/AppContext';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/ToastProvider';
 import { btnDanger, btnPrimary, btnSecondary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
@@ -50,9 +50,14 @@ const Financial = () => {
   const [pedidoStatusRows, setPedidoStatusRows] = useState<PedidoStatusRow[]>([]);
   useEffect(() => {
     if (!supabaseOps) return;
-    void supabaseOps.from('concrem_pedidos_status').select('pedido_id,status_atual').then(({ data }) => {
-      if (data) setPedidoStatusRows(data as PedidoStatusRow[]);
-    });
+    const isoCorte = getDataCorte(3);
+    void supabaseOps.from('concrem_pedidos_status')
+      .select('pedido_id, status_atual')
+      .gte('atualizado_em', isoCorte)
+      .limit(500)
+      .then(({ data }) => {
+        if (data) setPedidoStatusRows(data as PedidoStatusRow[]);
+      });
   }, []);
   const pedidoStatusMap = useMemo(() => new Map(pedidoStatusRows.map(r => [r.pedido_id, r.status_atual])), [pedidoStatusRows]);
 
