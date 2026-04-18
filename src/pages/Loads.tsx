@@ -164,7 +164,7 @@ const LoadsPage = () => {
     );
     const sorted = sortItems(filtered, sortGetters);
     if (!sortState.key) {
-      return [...sorted].sort((a, b) => (b.plannedDate || '').localeCompare(a.plannedDate || ''));
+      return [...sorted].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }));
     }
     return sorted;
   }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs]);
