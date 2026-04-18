@@ -66,7 +66,8 @@ export async function listPedidosStatusHistorico(pedidoId: string): Promise<Pedi
     .from('concrem_pedidos_status_historico')
     .select(STATUS_HIST_COLS)
     .eq('pedido_id', pedidoId)
-    .order('alterado_em', { ascending: false });
+    .order('alterado_em', { ascending: false })
+    .limit(50);
   if (error) {
     console.error('[Supabase OPS] listPedidosStatusHistorico:', error.message);
     return [];
