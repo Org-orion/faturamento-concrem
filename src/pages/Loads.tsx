@@ -171,9 +171,10 @@ const LoadsPage = () => {
 
   const allOrdersMap = useMemo(() => {
     const m = new Map<string, Order>();
-    for (const o of orders) m.set(o.id, o);
-    for (const o of supportOrders as unknown as Order[]) m.set(o.id, o);
+    // Insert in ascending priority: extraOrders < supportOrders < orders
     for (const o of extraOrders) m.set(o.id, o);
+    for (const o of supportOrders as unknown as Order[]) m.set(o.id, o);
+    for (const o of orders) m.set(o.id, o);
     return m;
   }, [orders, supportOrders, extraOrders]);
 

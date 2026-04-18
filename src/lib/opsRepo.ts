@@ -184,6 +184,7 @@ export async function listEntregas(programacaoId: string) {
   return (data || []) as Array<{
     pedido_id: string;
     status: string;
+    entregue_em: string | null;
     numero_nota: string | null;
     ordem_entrega: number | null;
     qtd_kits: number | null;

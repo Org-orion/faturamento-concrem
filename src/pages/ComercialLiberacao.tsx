@@ -334,7 +334,7 @@ const ComercialLiberacao = () => {
     const username = user?.username || null;
     const now = new Date().toISOString();
 
-    await Promise.all([
+    const [upsertRes, histRes] = await Promise.all([
       supabaseOps.from('concrem_pedidos_status').upsert(
         s1Selected.map(id => ({
           pedido_id: id, numero_pedido: id,
@@ -353,6 +353,12 @@ const ComercialLiberacao = () => {
         })),
       ),
     ]);
+    if (upsertRes.error) {
+      console.error('[ComercialLiberacao] enviarParaGerencia upsert error:', upsertRes.error.message);
+      showToast('Erro ao atualizar status', 'error');
+      return;
+    }
+    if (histRes.error) console.error('[ComercialLiberacao] enviarParaGerencia historico error:', histRes.error.message);
 
     await refreshOrders();
     setS1Selected([]);
@@ -364,7 +370,7 @@ const ComercialLiberacao = () => {
     const username = user?.username || null;
     const now = new Date().toISOString();
 
-    await Promise.all([
+    const [upsertRes, histRes] = await Promise.all([
       supabaseOps.from('concrem_pedidos_status').upsert(
         s2Selected.map(id => ({
           pedido_id: id, numero_pedido: id,
@@ -383,6 +389,12 @@ const ComercialLiberacao = () => {
         })),
       ),
     ]);
+    if (upsertRes.error) {
+      console.error('[ComercialLiberacao] confirmarGerencia upsert error:', upsertRes.error.message);
+      showToast('Erro ao atualizar status', 'error');
+      return;
+    }
+    if (histRes.error) console.error('[ComercialLiberacao] confirmarGerencia historico error:', histRes.error.message);
 
     await refreshOrders();
     setS2Selected([]);
@@ -421,7 +433,7 @@ const ComercialLiberacao = () => {
     );
 
     // Phase 2: batch status upsert + bulk history insert (parallel)
-    await Promise.all([
+    const [upsertRes, histRes] = await Promise.all([
       supabaseOps.from('concrem_pedidos_status').upsert(
         loadIds.map(id => ({
           pedido_id: id, numero_pedido: id,
@@ -440,6 +452,12 @@ const ComercialLiberacao = () => {
         })),
       ),
     ]);
+    if (upsertRes.error) {
+      console.error('[ComercialLiberacao] liberarParaProducao upsert error:', upsertRes.error.message);
+      showToast('Erro ao atualizar status', 'error');
+      return;
+    }
+    if (histRes.error) console.error('[ComercialLiberacao] liberarParaProducao historico error:', histRes.error.message);
 
     // Phase 3: build byRep map (synchronous, no awaits)
     const byRep = new Map<string, { orders: Order[]; phone: string | null }>();
