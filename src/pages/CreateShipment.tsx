@@ -1067,25 +1067,27 @@ const CreateShipment = () => {
   const [qtdVolumes, setQtdVolumes] = useState<Record<string, string>>({});
   const [repContacts, setRepContacts] = useState<Record<string, { nome: string | null; telefone: string | null; endereco: string | null }>>({});
 
+  const repKeysKey = useMemo(() => {
+    return Array.from(
+      new Set(
+        selectedOrderIds
+          .map(oid => allCandidatesById.get(oid))
+          .filter(Boolean)
+          .flatMap(o =>
+            [String((o as any).representativeId || ''), String((o as any).representativeName || '')]
+              .map(s => s.trim())
+              .filter(Boolean)
+          )
+      )
+    ).sort().join(',');
+  }, [selectedOrderIds, allCandidatesById]);
+
   useEffect(() => {
+    if (!repKeysKey) return;
     let cancelled = false;
+    const repKeys = repKeysKey.split(',');
+
     const loadReps = async () => {
-      const repKeys = Array.from(
-        new Set(
-          selectedOrderIds
-            .map((oid) => allCandidates.find((o) => o.id === oid))
-            .filter(Boolean)
-            .flatMap((o) => {
-              const id = String((o as any).representativeId || '').trim();
-              const name = String((o as any).representativeName || '').trim();
-              return [id, name].filter(Boolean);
-            })
-            .filter(Boolean),
-        ),
-      );
-
-      if (repKeys.length === 0) return;
-
       const pairs = await Promise.all(
         repKeys.map(async (k) => {
           const info = await findRepresentanteContato(k);
@@ -1105,7 +1107,7 @@ const CreateShipment = () => {
     return () => {
       cancelled = true;
     };
-  }, [allCandidates, selectedOrderIds]);
+  }, [repKeysKey]);
 
   const saveReport = async () => {
     if (!id) {
