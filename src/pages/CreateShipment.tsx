@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { useApp } from '@/contexts/AppContext';
+import { useApp, getDataCorte } from '@/contexts/AppContext';
 import { tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { Order } from '@/types';
@@ -296,12 +296,14 @@ const CreateShipment = () => {
     const STATUS_CS_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em';
 
     const load = async () => {
+      const isoCorte = getDataCorte(4);
       const { data: statusData, error: statusErr } = await supabaseOps!
         .from('concrem_pedidos_status')
         .select(STATUS_CS_COLS)
         .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES)
+        .gte('atualizado_em', isoCorte)
         .order('atualizado_em', { ascending: false })
-        .limit(2000);
+        .limit(500);
 
       if (statusErr) { console.error('[CreateShipment] status load error:', statusErr.message); return; }
       const statusRows = statusData || [];
@@ -374,7 +376,9 @@ const CreateShipment = () => {
     return set;
   }, [loads, isEditing, id]);
 
-  const availableOrders = allCandidates.filter(o => {
+  const clientsById = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
+
+  const availableOrders = useMemo(() => allCandidates.filter(o => {
     const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
     const isAllowedStatus = pedidoStatus
       ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id)
@@ -383,7 +387,7 @@ const CreateShipment = () => {
 
     if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
-    const client = clients.find(c => c.id === o.clientId);
+    const client = clientsById.get(o.clientId);
     const cityState = `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
 
     const matchesId = o.id.toLowerCase().includes(filters.id.toLowerCase());
@@ -393,7 +397,7 @@ const CreateShipment = () => {
     const matchesExpiry = (o.previsaoCarregamento || o.expiryDate || '').toLowerCase().includes(filters.expiry.toLowerCase());
 
     return matchesId && matchesClient && matchesRep && matchesCity && matchesExpiry;
-  });
+  }), [allCandidates, pedidoStatusMap, idsInOtherLoads, isEditing, selectedOrderIds, filters, clientsById]);
 
   const displayedOrders = useMemo(() => {
     const afterQuick = quickFilterItems(availableOrders, quickTextGetters);
