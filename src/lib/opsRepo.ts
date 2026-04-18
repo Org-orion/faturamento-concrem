@@ -73,9 +73,10 @@ export async function listProducaoConcluidos() {
   if (!supabaseOps) return [] as ProducaoConcluidoRow[];
   const { data, error } = await supabaseOps
     .from('concrem_producao_concluidos')
-    .select('*')
+    .select('id, embarque_id, pedido_id, motorista_id, data_conclusao, desfeito, criado_por, criado_em')
     .eq('desfeito', false)
-    .order('data_conclusao', { ascending: false });
+    .order('data_conclusao', { ascending: false })
+    .limit(200);
   if (error) {
     console.error('[Supabase OPS] list producao_concluidos:', error.message);
     return [] as ProducaoConcluidoRow[];
@@ -174,7 +175,7 @@ export async function listEntregas(programacaoId: string) {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
     .from('concrem_entregas')
-    .select('*')
+    .select('pedido_id, status, entregue_em, numero_nota, ordem_entrega, qtd_kits, qtd_pallets, qtd_volumes')
     .eq('programacao_id', programacaoId);
   if (error) {
     console.error('[Supabase OPS] list entregas:', error.message);
@@ -367,7 +368,7 @@ export async function insertNotificacaoRepresentantePedido(pedidoId: string, rep
 
 export async function listTiposDespesa() {
   if (!supabaseOps) return [];
-  const { data, error } = await supabaseOps.from('concrem_tipos_despesa').select('*').order('nome', { ascending: true });
+  const { data, error } = await supabaseOps.from('concrem_tipos_despesa').select('id, nome, descricao, ativo').order('nome', { ascending: true });
   if (error) {
     console.error('[Supabase OPS] list tipos_despesa:', error.message);
     return [];
@@ -401,7 +402,8 @@ export async function listLancamentosFinanceiros() {
   const { data: lancamentos, error: lancError } = await supabaseOps
     .from('concrem_lancamentos_financeiros')
     .select(`
-      *,
+      id, pedido_id, carregamento_id, motorista_id,
+      data_entrega, valor_frete, valor_motorista, status, criado_em,
       concrem_lancamentos_despesas (
         id,
         tipo_despesa_id,
@@ -409,7 +411,8 @@ export async function listLancamentosFinanceiros() {
         observacao
       )
     `)
-    .order('criado_em', { ascending: false });
+    .order('criado_em', { ascending: false })
+    .limit(200);
 
   if (lancError) {
     console.error('[Supabase OPS] list lancamentos_financeiros:', lancError.message);
@@ -519,7 +522,7 @@ export async function listRelatorioEntregaAnexos(carregamentoId: string): Promis
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
     .from('concrem_relatorio_entrega_anexos')
-    .select('*')
+    .select('id, carregamento_id, pedido_id, tipo, arquivo_nome, arquivo_url, criado_em, criado_por')
     .eq('carregamento_id', carregamentoId);
   if (error) {
     console.error('[Supabase OPS] list relatorio_entrega_anexos:', error.message);
@@ -567,7 +570,7 @@ export async function listRelatorioEntregaNotificacoes(
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps
     .from('concrem_relatorio_entrega_notificacoes')
-    .select('*')
+    .select('id, carregamento_id, representante_key, representante_nome, notificado_em, previsao_entrega, criado_por')
     .eq('carregamento_id', carregamentoId);
   if (error) {
     console.error('[Supabase OPS] list relatorio_entrega_notificacoes:', error.message);
