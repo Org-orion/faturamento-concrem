@@ -192,10 +192,18 @@ export async function listEntregas(programacaoId: string) {
   }>;
 }
 
-export async function findRepresentanteContato(representanteIdOrName: string) {
+type RepContatoResult = { codigo: string | null; nome: string | null; telefone: string | null; endereco: string | null } | null;
+const REP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const repContatoCache = new Map<string, { value: RepContatoResult; ts: number }>();
+
+export async function findRepresentanteContato(representanteIdOrName: string): Promise<RepContatoResult> {
   if (!supabaseOps) return null;
   const key = String(representanteIdOrName || '').trim();
   if (!key) return null;
+
+  const cached = repContatoCache.get(key);
+  if (cached && Date.now() - cached.ts < REP_CACHE_TTL_MS) return cached.value;
+  const cache = (v: RepContatoResult): RepContatoResult => { repContatoCache.set(key, { value: v, ts: Date.now() }); return v; };
 
   // Parse "CODE - NAME" format, e.g. "40054798 - DISTRIBUIDORA / DANILO 12"
   // Use only the leading numeric code for digit search to avoid picking up digits from the name part
@@ -248,12 +256,12 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
 
       const best = ranked[0]?.r;
       if (best) {
-        return {
+        return cache({
           codigo: (best.codigo_representante as string | null) ?? null,
           nome: (best.nome as string | null) ?? null,
           telefone: (best.telefone_whatsapp as string | null) ?? null,
           endereco: (best.endereco as string | null) ?? null,
-        };
+        });
       }
     }
   }
@@ -266,15 +274,15 @@ export async function findRepresentanteContato(representanteIdOrName: string) {
 
   if (!nameError && byName && byName.length) {
     const best = byName[0] as any;
-    return {
+    return cache({
       codigo: (best.codigo_representante as string | null) ?? null,
       nome: (best.nome as string | null) ?? null,
       telefone: (best.telefone_whatsapp as string | null) ?? null,
       endereco: (best.endereco as string | null) ?? null,
-    };
+    });
   }
 
-  return null;
+  return cache(null);
 }
 
 export async function insertNotificacaoRepresentante(programacaoId: string, representante: string) {
