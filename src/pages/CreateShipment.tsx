@@ -378,6 +378,18 @@ const CreateShipment = () => {
 
   const clientsById = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
 
+  const allCandidatesById = useMemo(
+    () => new Map(allCandidates.map(o => [o.id, o])),
+    [allCandidates]
+  );
+
+  const orderIdToInvoice = useMemo(() => {
+    const map = new Map<string, typeof invoices[0]>();
+    for (const inv of invoices)
+      for (const oid of inv.orderIds) map.set(oid, inv);
+    return map;
+  }, [invoices]);
+
   const availableOrders = useMemo(() => allCandidates.filter(o => {
     const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
     const isAllowedStatus = pedidoStatus
@@ -1744,11 +1756,10 @@ const CreateShipment = () => {
                   </tr>
                 ) : (
                   selectedOrderIds.map((id, index) => {
-                    const order = allCandidates.find(o => o.id === id);
+                    const order = allCandidatesById.get(id);
                     if (!order) return null;
-                    const client = clients.find(c => c.id === order.clientId);
-                    // Find invoice that contains this order
-                    const invoice = invoices.find(inv => inv.orderIds.includes(id));
+                    const client = clientsById.get(order.clientId);
+                    const invoice = orderIdToInvoice.get(id);
                     
                     return (
                       <tr key={id} className="hover:bg-muted/30 transition-colors group">
