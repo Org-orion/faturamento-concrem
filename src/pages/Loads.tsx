@@ -60,6 +60,7 @@ const shipmentStatuses = [
   { value: 'Aguardando Despacho', label: 'Aguardando Despacho' },
   { value: 'Despachado', label: 'Despachado' },
   { value: 'Em Rota', label: 'Em Rota' },
+  { value: 'Entregue', label: 'Entregue' },
   { value: 'Cancelado', label: 'Cancelado' },
 ];
 
@@ -100,7 +101,7 @@ const LoadsPage = () => {
   }, [loads, orders.length, supportOrders.length]);
 
   const { sortState, toggleSort, sortItems } = useTableSort();
-  const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<Load>();
+  const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<Load>('Aguardando Despacho');
   const colFilter = useColumnFilters();
 
   const toggleSelect = (id: string) => {

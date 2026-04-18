@@ -3,9 +3,9 @@ import { useDebounce } from './useDebounce';
 
 const norm = (v: unknown): string => String(v ?? '').trim().toLowerCase();
 
-export function useQuickFilter<T>() {
+export function useQuickFilter<T>(initialStatus: string | null = null) {
   const [query, setQuery] = useState('');
-  const [activeStatus, setActiveStatus] = useState<string | null>(null);
+  const [activeStatus, setActiveStatus] = useState<string | null>(initialStatus);
   const debouncedQuery = useDebounce(query, 400);
 
   const filterItems = useCallback(
