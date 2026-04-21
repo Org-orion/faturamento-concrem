@@ -432,6 +432,12 @@ const CreateShipment = () => {
 
       if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
+      // Pedidos da Leroy Merlin anteriores a 2026 são ignorados (massa de dados históricos estale).
+      if (
+        (o.clientName || '').toUpperCase().includes('LEROY MERLIN') &&
+        o.date < '2026-01-01'
+      ) return false;
+
       const client = clientsById.get(o.clientId);
       const cityState = `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
 
