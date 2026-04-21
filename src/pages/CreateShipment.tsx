@@ -304,15 +304,25 @@ const CreateShipment = () => {
     const normId = (v: unknown) => String(v ?? '').trim();
 
     const load = async () => {
-      // Sem limit: liberado_producao tem 12k+ linhas, qualquer limit corta pedidos válidos.
-      const { data: statusData, error: statusErr } = await supabaseOps!
-        .from('concrem_pedidos_status')
-        .select(STATUS_CS_COLS)
-        .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES)
-        .order('atualizado_em', { ascending: false });
-
-      if (statusErr) { console.error('[CreateShipment] status load error:', statusErr.message); return; }
-      const statusRows = statusData || [];
+      // PostgREST tem max_rows=1000 por padrão no projeto — sem paginação explícita,
+      // qualquer query retorna no máximo 1000 linhas independente de ter .limit() ou não.
+      // Com 12.554 rows elegíveis, precisamos paginar para buscar tudo.
+      const PAGE = 1000;
+      let from = 0;
+      const statusRows: any[] = [];
+      while (true) {
+        const { data, error } = await supabaseOps!
+          .from('concrem_pedidos_status')
+          .select(STATUS_CS_COLS)
+          .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES)
+          .order('atualizado_em', { ascending: false })
+          .range(from, from + PAGE - 1);
+        if (error) { console.error('[CreateShipment] status load error:', error.message); return; }
+        const page = data || [];
+        statusRows.push(...page);
+        if (page.length < PAGE) break;
+        from += PAGE;
+      }
 
       if (!statusRows.length) return;
 
