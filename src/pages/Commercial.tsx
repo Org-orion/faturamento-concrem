@@ -267,6 +267,9 @@ const Commercial = () => {
     const movedToSupportSet = new Set(
       Object.entries(moveOverride).filter((x) => x[1] === 'SUPORTE').map((x) => x[0])
     );
+    const movedToVendaSet = new Set(
+      Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0])
+    );
 
     // When searching by specific number, show regardless of status (to allow finding any order)
     const isNumericSearch = debouncedFilterPedido && /^\d/.test(debouncedFilterPedido.trim());
@@ -275,6 +278,8 @@ const Commercial = () => {
       if (movedToSupportSet.has(o.id)) return false;
       // Ao pesquisar por número específico, mostrar o pedido independente do status
       if (isNumericSearch) return true;
+      // Pedidos movidos manualmente para Venda sempre aparecem com seu status real
+      if (movedToVendaSet.has(o.id)) return true;
       const st = statusByPedidoId.get(o.id)?.status_atual;
       // If status not yet loaded, show optimistically; if loaded, must be in ALLOWED
       if (st && !ALLOWED.has(st)) return false;
