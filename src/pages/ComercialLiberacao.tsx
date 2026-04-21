@@ -90,8 +90,7 @@ const ComercialLiberacao = () => {
         .select('pedido_id, status_atual, numero_pedido, atualizado_em')
         .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia'])
         .gte('atualizado_em', isoCorte)
-        .order('atualizado_em', { ascending: false })
-        .limit(500);
+        .order('atualizado_em', { ascending: false });
       if (statusErr) { console.error('[ComercialLiberacao] status query error:', statusErr.message); return; }
       if (!statusData?.length) { setDirectOrders([]); return; }
 
