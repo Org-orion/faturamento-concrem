@@ -373,7 +373,18 @@ const CreateShipment = () => {
       .in('numero_pedido', missingIds)
       .then(({ data, error }) => {
         if (error) console.error('[CreateShipment] editExtraOrders fetch error:', error.message);
-        if (data?.length) setEditExtraOrders(data.map((row: any) => rowToOrder(row, 'CLI-001')));
+        if (data?.length) {
+          const mapped = data.map((row: any) => rowToOrder(row, 'CLI-001'));
+          setEditExtraOrders(mapped);
+          // Alimenta pedidoStatusMap para esses pedidos — mesmo padrão dos context orders.
+          void listPedidosStatusByPedidoIds(mapped.map(o => o.id)).then(rows =>
+            setPedidoStatusRows(prev => {
+              const map = new Map(prev.map(r => [r.pedido_id, r] as const));
+              for (const r of rows) map.set(r.pedido_id, r);
+              return Array.from(map.values());
+            })
+          );
+        }
       });
   }, [isEditing, selectedOrderIds, directPedidos, orders, supportOrders]);
 
