@@ -431,7 +431,7 @@ const Commercial = () => {
 
 
   const openDetails = async (id: string) => {
-    const o = allOrders.find((x) => x.id === id);
+    const o = allOrdersMerged.find((x) => x.id === id);
     if (!o) return;
     
     setSelectedId(id);
