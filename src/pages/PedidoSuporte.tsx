@@ -215,7 +215,14 @@ const PedidoSuporte = () => {
         if (cancelled) return;
         setLoadingList(false);
         if (!error && data) {
-          setServerOrders(data.map((row: any) => rowToOrder(row, 'CLI-001') as unknown as SupportOrder));
+          const movedToVendaSet = new Set(
+            Object.entries(moveOverride).filter(x => x[1] === 'VENDA').map(x => x[0])
+          );
+          setServerOrders(
+            data
+              .map((row: any) => rowToOrder(row, 'CLI-001') as unknown as SupportOrder)
+              .filter(o => !movedToVendaSet.has(o.id))
+          );
           setTotalCount(count ?? 0);
         }
         return;
