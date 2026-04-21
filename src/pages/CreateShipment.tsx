@@ -305,12 +305,12 @@ const CreateShipment = () => {
     const debugIds = new Set(['129945', '30687', '128039']);
 
     const load = async () => {
+      // Sem limit: liberado_producao tem 12k+ linhas, qualquer limit corta pedidos válidos.
       const { data: statusData, error: statusErr } = await supabaseOps!
         .from('concrem_pedidos_status')
         .select(STATUS_CS_COLS)
         .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES)
-        .order('atualizado_em', { ascending: false })
-        .limit(2000);
+        .order('atualizado_em', { ascending: false });
 
       if (statusErr) { console.error('[CreateShipment] status load error:', statusErr.message); return; }
       const statusRows = statusData || [];
