@@ -218,11 +218,14 @@ const PedidoSuporte = () => {
           const movedToVendaSet = new Set(
             Object.entries(moveOverride).filter(x => x[1] === 'VENDA').map(x => x[0])
           );
-          setServerOrders(
-            data
-              .map((row: any) => rowToOrder(row, 'CLI-001') as unknown as SupportOrder)
-              .filter(o => !movedToVendaSet.has(o.id))
-          );
+          const mapped = data.map((row: any) => rowToOrder(row, 'CLI-001') as unknown as SupportOrder);
+          setServerOrders(mapped.filter(o => {
+            if (movedToVendaSet.has(o.id)) return false;
+            // Apply same classification as suporteOr: 613/665 without PO number = VENDA
+            const conf = (o as any).idNotaConf;
+            if ((conf === 613 || conf === 665) && (o as any).pedCompraCliente == null) return false;
+            return true;
+          }));
           setTotalCount(count ?? 0);
         }
         return;
