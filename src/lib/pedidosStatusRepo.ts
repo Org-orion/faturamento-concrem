@@ -559,7 +559,9 @@ export function formatStatusWhatsappMessage(params: {
 
   if (statusNovo === 'liberado_producao') {
     lines = [
-      `Pedido ${numeroPedido} — ${clienteNome}`,
+      'Olá! 👋',
+      '',
+      `Passando para te avisar que o pedido ${numeroPedido}, do cliente ${clienteNome}, teve uma atualização. 📋`,
       '',
       `🔄 De: ${statusAnteriorLabel}`,
       `🏭 Para: ${statusNovoLabel}`,
@@ -568,21 +570,27 @@ export function formatStatusWhatsappMessage(params: {
     ];
   } else if (statusNovo === 'em_entrega') {
     lines = [
-      `Pedido ${numeroPedido} — ${clienteNome} saiu para entrega 🚚`,
+      'Olá! 👋',
       '',
-      '📍 Em rota para o destino.',
+      `Seu pedido ${numeroPedido} — ${clienteNome} já saiu para entrega 🚚`,
+      '',
+      '📍 Ele está em rota para o destino.',
       '',
       `🕒 ${when}`,
     ];
   } else if (statusNovo === 'entregue') {
     lines = [
-      `Pedido ${numeroPedido} — ${clienteNome} entregue com sucesso ✅`,
+      'Olá! 👋',
+      '',
+      `Seu pedido ${numeroPedido} — ${clienteNome} foi entregue com sucesso ✅`,
       '',
       `🕒 ${when}`,
     ];
   } else {
     lines = [
-      `Pedido ${numeroPedido} — ${clienteNome}`,
+      'Olá! 👋',
+      '',
+      `Passando para te avisar que o pedido ${numeroPedido}, do cliente ${clienteNome}, teve uma atualização. 📋`,
       '',
       `🔄 De: ${statusAnteriorLabel}`,
       `📍 Para: ${statusNovoLabel}`,

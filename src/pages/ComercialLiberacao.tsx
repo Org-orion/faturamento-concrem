@@ -483,8 +483,8 @@ const ComercialLiberacao = () => {
       if (!phoneE164) return;
       const hora = currentHourBR();
       const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
-      let msg = `${saudacao}, ${repDisplayName}!\n\n`;
-      msg += `Pedidos liberados para produção 🏭\n\n`;
+      let msg = `${saudacao}, ${repDisplayName}! 👋\n\n`;
+      msg += `Seus pedidos foram liberados para produção e já vão entrar em fabricação 🏭\n\n`;
       msg += `📦 Pedidos:\n`;
       for (const o of notifiable) msg += `• ${o.id} — ${o.clientName || o.clientCode || 'Cliente'}\n`;
       await sendEvolutionText(phoneE164, msg);

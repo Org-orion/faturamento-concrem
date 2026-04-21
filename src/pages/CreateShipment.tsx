@@ -916,7 +916,7 @@ const CreateShipment = () => {
       const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
 
       // Montar mensagem
-      let message = `${saudacao}\n\n`;
+      let message = `${saudacao} 👋\n\n`;
       message += `🚚 Carregamento do dia ${dataEmbarque}\n\n`;
       message += `📦\n`;
       for (const order of repOrders) {
@@ -924,7 +924,9 @@ const CreateShipment = () => {
         message += `• ${nf} - ${repDisplayName}\n`;
       }
       message += `\n📅 Entrega prevista a partir de ${dataPrevisaoEntrega}\n\n`;
-      message += `📞 Motorista: ${driverName} — ${driverPhone}\n\n`;
+      message += `📞 Para mais detalhes, fale direto com o motorista:\n`;
+      message += `${driverName} — ${driverPhone}\n\n`;
+      message += `⚠️ Importante acompanhar a descarga no local\n\n`;
       message += `📎 Nota fiscal e boleto seguem em anexo`;
 
       // Coletar anexos
