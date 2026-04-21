@@ -288,8 +288,10 @@ const CreateShipment = () => {
 
   const selectedDriver = drivers.find(d => d.id === driverId);
   const [pedidoStatusRows, setPedidoStatusRows] = useState<import('@/types').PedidoStatusRow[]>([]);
+  // Chave = numero_pedido (identificador ERP) para casar com o.id vindo do mapper.
+  // Fallback para pedido_id caso numero_pedido esteja vazio.
   const pedidoStatusMap = useMemo(
-    () => new Map(pedidoStatusRows.map(r => [String(r.pedido_id ?? '').trim(), r] as const)),
+    () => new Map(pedidoStatusRows.map(r => [String(r.numero_pedido || r.pedido_id || '').trim(), r] as const)),
     [pedidoStatusRows],
   );
 
@@ -300,6 +302,7 @@ const CreateShipment = () => {
     const STATUS_CS_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em';
 
     const normId = (v: unknown) => String(v ?? '').trim();
+    const debugIds = new Set(['129945', '30687', '128039']);
 
     const load = async () => {
       const { data: statusData, error: statusErr } = await supabaseOps!
@@ -312,12 +315,19 @@ const CreateShipment = () => {
       if (statusErr) { console.error('[CreateShipment] status load error:', statusErr.message); return; }
       const statusRows = statusData || [];
       console.log('[LOAD] status rows:', statusRows.length);
+
+      const inStatus = statusRows.filter((r: any) => debugIds.has(normId(r.pedido_id)) || debugIds.has(normId(r.numero_pedido)));
+      if (inStatus.length) console.log('[DEBUG] em statusData:', inStatus.map((r: any) => ({ pedido_id: r.pedido_id, numero_pedido: r.numero_pedido, status: r.status_atual })));
+      else console.warn('[DEBUG] NÃO encontrados em statusData — ausentes no OPS ou status diferente de liberado_producao');
+
       if (!statusRows.length) return;
 
       setPedidoStatusRows(statusRows as any);
 
-      const ids = statusRows.map((r: any) => normId(r.pedido_id)).filter(Boolean);
-      console.log('[LOAD] ids do OPS (primeiros 20):', ids.slice(0, 20));
+      // Usa numero_pedido (identificador ERP) para o batch; fallback para pedido_id.
+      const ids = statusRows.map((r: any) => normId(r.numero_pedido || r.pedido_id)).filter(Boolean);
+      const inIds = ids.filter((id: string) => debugIds.has(id));
+      console.log('[DEBUG] em ids (para batch ERP):', inIds.length ? inIds : 'AUSENTES — mismatch numero_pedido/pedido_id');
 
       const chunks: string[][] = [];
       for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
@@ -333,6 +343,9 @@ const CreateShipment = () => {
       );
       const allPedidos = results.flat();
       console.log('[LOAD] ERP rows:', allPedidos.length);
+      const inErp = allPedidos.filter((r: any) => debugIds.has(normId(r.numero_pedido)));
+      console.log('[DEBUG] em allPedidos (ERP):', inErp.length ? inErp.map((r: any) => r.numero_pedido) : 'AUSENTES — numero_pedido não encontrado no ERP');
+
       const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001'));
       setDirectPedidos(mapped);
     };
@@ -374,12 +387,16 @@ const CreateShipment = () => {
 
   // Merge: editExtraOrders (fallback edição) + directPedidos + context orders, sem duplicatas
   const allCandidates = useMemo(() => {
+    const _debugIds = new Set(['129945', '30687', '128039']);
     const map = new Map<string, Order>();
     for (const o of editExtraOrders) map.set(o.id, o);
     for (const o of directPedidos) map.set(o.id, o);
     for (const o of orders) if (!map.has(o.id)) map.set(o.id, o);
     for (const o of supportOrders as unknown as Order[]) if (!map.has(o.id)) map.set(o.id, o);
-    return Array.from(map.values());
+    const result = Array.from(map.values());
+    const inCandidates = result.filter(o => _debugIds.has(o.id));
+    console.log('[DEBUG] em allCandidates:', inCandidates.length ? inCandidates.map(o => o.id) : 'AUSENTES — não chegaram via directPedidos nem context');
+    return result;
   }, [editExtraOrders, directPedidos, orders, supportOrders]);
 
   // Pré-preencher qtdKits com valores do pedido quando não há valor salvo
@@ -421,12 +438,24 @@ const CreateShipment = () => {
   }, [invoices]);
 
   const availableOrders = useMemo(() => {
+    const _debugIds = new Set(['129945', '30687', '128039']);
     const result = allCandidates.filter(o => {
       const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
       const isAllowedStatus = pedidoStatus
         ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id)
         : false;
       const isCurrentInEdit = isEditing && selectedOrderIds.includes(o.id);
+
+      if (_debugIds.has(o.id)) {
+        console.log(`[DEBUG] availableOrders check ${o.id}:`, {
+          pedidoStatus,
+          isAllowedStatus,
+          inOtherLoads: idsInOtherLoads.has(o.id),
+          isCurrentInEdit,
+          inSelected: selectedOrderIds.includes(o.id),
+          mapKey: pedidoStatusMap.get(o.id) ? 'HIT' : 'MISS',
+        });
+      }
 
       if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
