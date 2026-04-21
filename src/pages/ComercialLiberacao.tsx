@@ -112,7 +112,9 @@ const ComercialLiberacao = () => {
         const conf = o.idNotaConf;
         if (conf === 613 || conf === 665) return true;
         if (conf === 307 || conf === 309) {
-          const pc = (o.pedCompraCliente ?? '').toUpperCase().trim();
+          // NULL ped_compra_cliente = pedido de venda (sem PO)
+          if (o.pedCompraCliente == null) return false;
+          const pc = o.pedCompraCliente.toUpperCase().trim();
           // APTO MODELO and COMPLEMENTO always go to Venda regardless of value
           if (pc.includes('APTO MODELO') || pc.includes('COMPLEMENTO')) return false;
           const tv = o.totalPedidoVenda ?? 0;

@@ -292,20 +292,22 @@ const nextId = (prefix: string, key: keyof typeof counters) => {
 //  1. id_nota_conf 307/309 E valor efetivo >= 20000 (qualquer ped_compra_cliente)
 //  2. OU ped_compra_cliente contém 'APTO MODELO' (independente de valor/nota)
 //  3. OU ped_compra_cliente contém 'COMPLEMENTO' (independente de valor/nota)
+//  4. OU id_nota_conf 307/309 E ped_compra_cliente IS NULL (sem PO = pedido de venda)
 // valor efetivo = total_pedido_venda se > 0, senão total_produtos
-// Prioridade: APTO MODELO / COMPLEMENTO sempre vão para Venda
+// Prioridade: APTO MODELO / COMPLEMENTO / NULL sempre vão para Venda
 export const vendasOr = [
   'and(id_nota_conf.in.(307,309),or(total_pedido_venda.gte.20000,and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),total_produtos.gte.20000)))',
   'ped_compra_cliente.ilike.*APTO MODELO*',
   'ped_compra_cliente.ilike.*COMPLEMENTO*',
+  'and(id_nota_conf.in.(307,309),ped_compra_cliente.is.null)',
 ].join(',');
 
 // Suporte:
 //  1. id_nota_conf 613 ou 665 (sempre)
-//  2. id_nota_conf 307/309 E valor < 20000 E ped_compra_cliente NÃO é APTO MODELO nem COMPLEMENTO
+//  2. id_nota_conf 307/309 E valor < 20000 E ped_compra_cliente NÃO é APTO MODELO, COMPLEMENTO, nem NULL
 export const suporteOr = [
   'id_nota_conf.in.(613,665)',
-  'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gt.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),or(total_produtos.is.null,total_produtos.lt.20000))),or(ped_compra_cliente.is.null,and(ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*)))',
+  'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gt.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),or(total_produtos.is.null,total_produtos.lt.20000))),and(ped_compra_cliente.is.not.null,ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*))',
 ].join(',');
 
 // Colunas usadas na listagem e em lógica de negócio (filtragem, cálculos, exibição).
