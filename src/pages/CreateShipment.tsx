@@ -425,9 +425,14 @@ const CreateShipment = () => {
   const availableOrders = useMemo(() => {
     const result = allCandidates.filter(o => {
       const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
-      const isAllowedStatus = pedidoStatus
-        ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id)
-        : false;
+      // Se status não está no map (race condition ou bug de sync), não oculta silenciosamente.
+      let isAllowedStatus: boolean;
+      if (pedidoStatus === undefined) {
+        console.warn('[CreateShipment] pedido sem entrada no statusMap — exibindo por precaução:', o.id);
+        isAllowedStatus = !idsInOtherLoads.has(o.id);
+      } else {
+        isAllowedStatus = CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id);
+      }
       const isCurrentInEdit = isEditing && selectedOrderIds.includes(o.id);
 
       if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
