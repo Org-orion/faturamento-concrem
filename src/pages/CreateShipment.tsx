@@ -319,7 +319,10 @@ const CreateShipment = () => {
       setPedidoStatusRows(statusRows as any);
 
       // Usa numero_pedido (identificador ERP) para o batch; fallback para pedido_id.
-      const ids = statusRows.map((r: any) => normId(r.numero_pedido || r.pedido_id)).filter(Boolean);
+      // Dedup para evitar batches com IDs repetidos (ex: mesmo pedido em múltiplas rows OPS).
+      const ids = Array.from(new Set(
+        statusRows.map((r: any) => normId(r.numero_pedido || r.pedido_id)).filter(Boolean)
+      ));
 
       const chunks: string[][] = [];
       for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
