@@ -304,10 +304,12 @@ export const vendasOr = [
 
 // Suporte:
 //  1. id_nota_conf 613 ou 665 (sempre)
-//  2. id_nota_conf 307/309 E valor < 20000 E ped_compra_cliente NÃO é APTO MODELO, COMPLEMENTO, nem NULL
+//  2. id_nota_conf 307/309 E valor < 20000 E ped_compra_cliente NÃO é APTO MODELO nem COMPLEMENTO
+//     Nota: ped_compra_cliente NULL não casa com NOT ILIKE em PostgreSQL (NULL comparison = NULL/falsy),
+//     portanto pedidos com NULL vão automaticamente para VENDA sem precisar de condição explícita.
 export const suporteOr = [
   'id_nota_conf.in.(613,665)',
-  'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gt.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),or(total_produtos.is.null,total_produtos.lt.20000))),and(ped_compra_cliente.is.not.null,ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*))',
+  'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gt.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),or(total_produtos.is.null,total_produtos.lt.20000))),and(ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*))',
 ].join(',');
 
 // Colunas usadas na listagem e em lógica de negócio (filtragem, cálculos, exibição).
