@@ -559,50 +559,33 @@ export function formatStatusWhatsappMessage(params: {
 
   if (statusNovo === 'liberado_producao') {
     lines = [
-      'Olá! 👋',
-      '',
-      `Passando para te avisar que o pedido ${numeroPedido}, do cliente ${clienteNome}, teve uma atualização. 📋`,
+      `Pedido ${numeroPedido} — ${clienteNome}`,
       '',
       `🔄 De: ${statusAnteriorLabel}`,
       `🏭 Para: ${statusNovoLabel}`,
-      '',
-      'A produção começa em breve e eu te aviso das próximas etapas 👍',
       '',
       `🕒 ${when}`,
     ];
   } else if (statusNovo === 'em_entrega') {
     lines = [
-      'Olá! 👋',
+      `Pedido ${numeroPedido} — ${clienteNome} saiu para entrega 🚚`,
       '',
-      `Seu pedido ${numeroPedido} — ${clienteNome} já saiu para entrega 🚚`,
-      '',
-      '📍 Ele está em rota para o destino.',
-      '',
-      'Se quiser acompanhar ou alinhar a entrega, vale entrar em contato com o motorista 👍',
+      '📍 Em rota para o destino.',
       '',
       `🕒 ${when}`,
     ];
   } else if (statusNovo === 'entregue') {
     lines = [
-      'Olá! 👋',
-      '',
-      `Seu pedido ${numeroPedido} — ${clienteNome} foi entregue com sucesso ✅`,
-      '',
-      'Tudo certo com a entrega?',
-      'Se precisar de qualquer coisa, estou por aqui 👍',
+      `Pedido ${numeroPedido} — ${clienteNome} entregue com sucesso ✅`,
       '',
       `🕒 ${when}`,
     ];
   } else {
     lines = [
-      'Olá! 👋',
-      '',
-      `Passando para te avisar que o pedido ${numeroPedido}, do cliente ${clienteNome}, teve uma atualização. 📋`,
+      `Pedido ${numeroPedido} — ${clienteNome}`,
       '',
       `🔄 De: ${statusAnteriorLabel}`,
       `📍 Para: ${statusNovoLabel}`,
-      '',
-      'Seguimos com as próximas etapas e te aviso por aqui 👍',
       '',
       `🕒 ${when}`,
     ];
