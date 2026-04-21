@@ -442,8 +442,15 @@ const CreateShipment = () => {
       // Se status não está no map (race condition ou bug de sync), não oculta silenciosamente.
       let isAllowedStatus: boolean;
       if (pedidoStatus === undefined) {
-        console.warn('[CreateShipment] pedido sem entrada no statusMap — exibindo por precaução:', o.id);
-        isAllowedStatus = !idsInOtherLoads.has(o.id);
+        // Fallback só para pedidos que vieram via OPS→ERP (directPedidos): miss aqui é inesperado.
+        // Para pedidos do AppContext sem status, ausência no map é o estado normal — não exibir.
+        const fromDirect = directPedidos.some((d) => d.id === o.id);
+        if (fromDirect) {
+          console.warn('[CreateShipment] pedido sem entrada no statusMap — exibindo por precaução:', o.id);
+          isAllowedStatus = !idsInOtherLoads.has(o.id);
+        } else {
+          isAllowedStatus = false;
+        }
       } else {
         isAllowedStatus = CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id);
       }
