@@ -110,7 +110,11 @@ const ComercialLiberacao = () => {
       // Mirror of suporteOr logic — totalPedidoVenda has fallback from pedidoMapper
       const isSuporteRow = (o: Order) => {
         const conf = o.idNotaConf;
-        if (conf === 613 || conf === 665) return true;
+        if (conf === 613 || conf === 665) {
+          // NULL ped_compra_cliente = pedido de venda (sem PO)
+          if (o.pedCompraCliente == null) return false;
+          return true;
+        }
         if (conf === 307 || conf === 309) {
           // NULL ped_compra_cliente = pedido de venda (sem PO)
           if (o.pedCompraCliente == null) return false;
