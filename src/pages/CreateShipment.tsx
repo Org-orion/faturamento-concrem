@@ -331,18 +331,20 @@ const CreateShipment = () => {
 
       const chunks: string[][] = [];
       for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
+      console.log('[LOAD] ERP batches:', chunks.length, '— amostra batch[0]:', chunks[0]?.slice(0, 5));
 
       const results = await Promise.all(
-        chunks.map((batch) =>
+        chunks.map((batch, i) =>
           supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch)
             .then(({ data, error }) => {
-              if (error) console.error('[CreateShipment] ERP batch fetch error:', error.message);
+              if (error) console.error(`[CreateShipment] ERP batch[${i}] error:`, error.message);
+              console.log(`[LOAD] ERP batch[${i}]: enviou ${batch.length} ids, recebeu ${data?.length ?? 0} rows`);
               return (data || []) as any[];
             })
         )
       );
       const allPedidos = results.flat();
-      console.log('[LOAD] ERP rows:', allPedidos.length);
+      console.log('[LOAD] ERP rows total:', allPedidos.length);
       const inErp = allPedidos.filter((r: any) => debugIds.has(normId(r.numero_pedido)));
       console.log('[DEBUG] em allPedidos (ERP):', inErp.length ? inErp.map((r: any) => r.numero_pedido) : 'AUSENTES — numero_pedido não encontrado no ERP');
 

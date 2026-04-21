@@ -411,7 +411,7 @@ export async function listLancamentosFinanceiros() {
   const { data: lancamentos, error: lancError } = await supabaseOps
     .from('concrem_lancamentos_financeiros')
     .select(`
-      id, pedido_id, carregamento_id, motorista_id,
+      id, pedido_id, motorista_id,
       data_entrega, valor_frete, valor_motorista, status, criado_em,
       concrem_lancamentos_despesas (
         id,
