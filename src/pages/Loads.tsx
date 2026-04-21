@@ -103,6 +103,7 @@ const LoadsPage = () => {
   const { sortState, toggleSort, sortItems } = useTableSort();
   const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<Load>('Aguardando Despacho');
   const colFilter = useColumnFilters();
+  const [orderNumFilter, setOrderNumFilter] = useState('');
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -163,12 +164,17 @@ const LoadsPage = () => {
       textGetters,
       (l) => l.shipmentStatus,
     );
-    const sorted = sortItems(filtered, sortGetters);
+    const byOrder = orderNumFilter.trim()
+      ? filtered.filter((l) =>
+          l.orderIds.some((oid) => oid.toLowerCase().includes(orderNumFilter.trim().toLowerCase()))
+        )
+      : filtered;
+    const sorted = sortItems(byOrder, sortGetters);
     if (!sortState.key) {
       return [...sorted].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }));
     }
     return sorted;
-  }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs]);
+  }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs, orderNumFilter]);
 
   const allOrdersMap = useMemo(() => {
     const m = new Map<string, Order>();
@@ -379,7 +385,7 @@ const LoadsPage = () => {
       </div>
 
       <div className="bg-card rounded-xl shadow-card border border-border overflow-hidden">
-        <div className="p-4 border-b border-border">
+        <div className="p-4 border-b border-border space-y-3">
           <QuickFilterBar
             query={query}
             onQueryChange={setQuery}
@@ -388,6 +394,23 @@ const LoadsPage = () => {
             activeStatus={activeStatus}
             onStatusChange={setActiveStatus}
           />
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              value={orderNumFilter}
+              onChange={(e) => setOrderNumFilter(e.target.value)}
+              placeholder="Buscar por número do pedido..."
+              className="w-72 h-9 rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+            />
+            {orderNumFilter && (
+              <button
+                onClick={() => setOrderNumFilter('')}
+                className="text-xs text-muted-foreground hover:text-foreground"
+              >
+                Limpar
+              </button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
