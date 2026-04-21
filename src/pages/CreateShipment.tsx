@@ -288,7 +288,10 @@ const CreateShipment = () => {
 
   const selectedDriver = drivers.find(d => d.id === driverId);
   const [pedidoStatusRows, setPedidoStatusRows] = useState<import('@/types').PedidoStatusRow[]>([]);
-  const pedidoStatusMap = useMemo(() => new Map(pedidoStatusRows.map(r => [r.pedido_id, r] as const)), [pedidoStatusRows]);
+  const pedidoStatusMap = useMemo(
+    () => new Map(pedidoStatusRows.map(r => [String(r.pedido_id ?? '').trim(), r] as const)),
+    [pedidoStatusRows],
+  );
 
   useEffect(() => {
     if (!supabasePedidos || !supabaseOps) return;
@@ -296,21 +299,26 @@ const CreateShipment = () => {
 
     const STATUS_CS_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em';
 
+    const normId = (v: unknown) => String(v ?? '').trim();
+
     const load = async () => {
       const { data: statusData, error: statusErr } = await supabaseOps!
         .from('concrem_pedidos_status')
         .select(STATUS_CS_COLS)
         .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES)
         .order('atualizado_em', { ascending: false })
-        .limit(500);
+        .limit(2000);
 
       if (statusErr) { console.error('[CreateShipment] status load error:', statusErr.message); return; }
       const statusRows = statusData || [];
+      console.log('[LOAD] status rows:', statusRows.length);
       if (!statusRows.length) return;
 
       setPedidoStatusRows(statusRows as any);
 
-      const ids = statusRows.map((r: any) => r.pedido_id);
+      const ids = statusRows.map((r: any) => normId(r.pedido_id)).filter(Boolean);
+      console.log('[LOAD] ids do OPS (primeiros 20):', ids.slice(0, 20));
+
       const chunks: string[][] = [];
       for (let i = 0; i < ids.length; i += 200) chunks.push(ids.slice(i, i + 200));
 
@@ -323,7 +331,9 @@ const CreateShipment = () => {
             })
         )
       );
-      const mapped = results.flat().map((row: any) => rowToOrder(row, 'CLI-001'));
+      const allPedidos = results.flat();
+      console.log('[LOAD] ERP rows:', allPedidos.length);
+      const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001'));
       setDirectPedidos(mapped);
     };
     void load();
@@ -410,26 +420,30 @@ const CreateShipment = () => {
     return map;
   }, [invoices]);
 
-  const availableOrders = useMemo(() => allCandidates.filter(o => {
-    const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
-    const isAllowedStatus = pedidoStatus
-      ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id)
-      : false;
-    const isCurrentInEdit = isEditing && selectedOrderIds.includes(o.id);
+  const availableOrders = useMemo(() => {
+    const result = allCandidates.filter(o => {
+      const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
+      const isAllowedStatus = pedidoStatus
+        ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id)
+        : false;
+      const isCurrentInEdit = isEditing && selectedOrderIds.includes(o.id);
 
-    if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
+      if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
-    const client = clientsById.get(o.clientId);
-    const cityState = `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
+      const client = clientsById.get(o.clientId);
+      const cityState = `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
 
-    const matchesId = o.id.toLowerCase().includes(filters.id.toLowerCase());
-    const matchesClient = (o.representativeName || '').toLowerCase().includes(filters.client.toLowerCase());
-    const matchesRep = (o.representativePhone || '').toLowerCase().includes(filters.representative.toLowerCase());
-    const matchesCity = cityState.toLowerCase().includes(filters.city.toLowerCase());
-    const matchesExpiry = (o.previsaoCarregamento || o.expiryDate || '').toLowerCase().includes(filters.expiry.toLowerCase());
+      const matchesId = o.id.toLowerCase().includes(filters.id.toLowerCase());
+      const matchesClient = (o.representativeName || '').toLowerCase().includes(filters.client.toLowerCase());
+      const matchesRep = (o.representativePhone || '').toLowerCase().includes(filters.representative.toLowerCase());
+      const matchesCity = cityState.toLowerCase().includes(filters.city.toLowerCase());
+      const matchesExpiry = (o.previsaoCarregamento || o.expiryDate || '').toLowerCase().includes(filters.expiry.toLowerCase());
 
-    return matchesId && matchesClient && matchesRep && matchesCity && matchesExpiry;
-  }), [allCandidates, pedidoStatusMap, idsInOtherLoads, isEditing, selectedOrderIds, filters, clientsById]);
+      return matchesId && matchesClient && matchesRep && matchesCity && matchesExpiry;
+    });
+    console.log('[LOAD] availableOrders:', result.length, '/ allCandidates:', allCandidates.length, '/ statusMap size:', pedidoStatusMap.size);
+    return result;
+  }, [allCandidates, pedidoStatusMap, idsInOtherLoads, isEditing, selectedOrderIds, filters, clientsById]);
 
   const displayedOrders = useMemo(() => {
     const afterQuick = quickFilterItems(availableOrders, quickTextGetters);
