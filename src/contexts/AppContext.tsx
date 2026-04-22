@@ -288,29 +288,12 @@ const nextId = (prefix: string, key: keyof typeof counters) => {
   return `${prefix}-${String(counters[key]).padStart(3, '0')}`;
 };
 
-// REGRA OFICIAL: ped_compra_cliente tem prioridade absoluta. Valor não é critério.
-//
-// VENDA — quando ped_compra_cliente indica pedido de venda:
-//  - IS NULL (sem PO = venda direta)
-//  - ILIKE *APTO MODELO*
-//  - ILIKE *COMPLEMENTO*
-//  String vazia ('') é tratada como NULL no client-side (isSuporteRow, filtro numérico).
-//
-// SUPORTE — qualquer outro valor de ped_compra_cliente (ex: AMOSTRA, TREINAMENTO, etc.)
-//  Nota: NOT ILIKE em PostgreSQL retorna NULL para valores NULL → exclui NULL implicitamente.
-export const vendasOr = [
-  'and(id_nota_conf.in.(307,309),ped_compra_cliente.is.null)',
-  'and(id_nota_conf.in.(613,665),ped_compra_cliente.is.null)',
-  'ped_compra_cliente.ilike.*APTO MODELO*',
-  'ped_compra_cliente.ilike.*COMPLEMENTO*',
-].join(',');
-
-export const suporteOr = [
-  // 613/665 com PO preenchido (não-null, não APTO, não COMPLEMENTO) → SUPORTE
-  'and(id_nota_conf.in.(613,665),ped_compra_cliente.not.is.null,ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*)',
-  // 307/309 com PO preenchido (NOT ILIKE exclui NULL implicitamente) → SUPORTE
-  'and(id_nota_conf.in.(307,309),ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*)',
-].join(',');
+// Classificação por id_nota_conf exclusivamente.
+// VENDA:   id_nota_conf 307 ou 309
+// SUPORTE: id_nota_conf 613 ou 665
+// ped_compra_cliente e valor não são critérios de classificação.
+export const vendasOr = 'id_nota_conf.in.(307,309)';
+export const suporteOr = 'id_nota_conf.in.(613,665)';
 
 // Colunas usadas na listagem e em lógica de negócio (filtragem, cálculos, exibição).
 // Colunas de detalhe puro (endereço completo) são buscadas sob demanda.

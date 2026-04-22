@@ -107,18 +107,8 @@ const ComercialLiberacao = () => {
       );
       const allPedidos = batchResults.flat();
 
-      // Espelho da regra oficial: ped_compra_cliente tem prioridade absoluta, valor não é critério.
-      const isSuporteRow = (o: Order) => {
-        const conf = o.idNotaConf;
-        if (conf !== 307 && conf !== 309 && conf !== 613 && conf !== 665) return false;
-        // NULL ou vazio → VENDA
-        if (o.pedCompraCliente == null || String(o.pedCompraCliente).trim() === '') return false;
-        const pc = String(o.pedCompraCliente).toUpperCase().trim();
-        // APTO MODELO ou COMPLEMENTO → VENDA
-        if (pc.includes('APTO MODELO') || pc.includes('COMPLEMENTO')) return false;
-        // qualquer outro valor (AMOSTRA, TREINAMENTO, etc.) → SUPORTE
-        return true;
-      };
+      // Classificação exclusiva por id_nota_conf: 613/665 = SUPORTE, 307/309 = VENDA.
+      const isSuporteRow = (o: Order) => o.idNotaConf === 613 || o.idNotaConf === 665;
       const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001')).filter(o => !isSuporteRow(o));
       const statusMap = new Map(statusData.map((r: any) => [r.pedido_id, r] as const));
       setDirectOrders(mapped);
