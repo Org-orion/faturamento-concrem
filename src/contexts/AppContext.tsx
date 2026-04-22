@@ -288,30 +288,28 @@ const nextId = (prefix: string, key: keyof typeof counters) => {
   return `${prefix}-${String(counters[key]).padStart(3, '0')}`;
 };
 
-// Venda:
-//  1. id_nota_conf 307/309 E valor efetivo >= 20000 (qualquer ped_compra_cliente)
-//  2. OU ped_compra_cliente contém 'APTO MODELO' (independente de valor/nota)
-//  3. OU ped_compra_cliente contém 'COMPLEMENTO' (independente de valor/nota)
-//  4. OU id_nota_conf 307/309 E ped_compra_cliente IS NULL (sem PO = pedido de venda)
-//  5. OU id_nota_conf 613/665 E ped_compra_cliente IS NULL (sem PO = pedido de venda)
-// valor efetivo = total_pedido_venda se > 0, senão total_produtos
-// Prioridade: APTO MODELO / COMPLEMENTO / NULL sempre vão para Venda
+// REGRA OFICIAL: ped_compra_cliente tem prioridade absoluta. Valor não é critério.
+//
+// VENDA — quando ped_compra_cliente indica pedido de venda:
+//  - IS NULL (sem PO = venda direta)
+//  - ILIKE *APTO MODELO*
+//  - ILIKE *COMPLEMENTO*
+//  String vazia ('') é tratada como NULL no client-side (isSuporteRow, filtro numérico).
+//
+// SUPORTE — qualquer outro valor de ped_compra_cliente (ex: AMOSTRA, TREINAMENTO, etc.)
+//  Nota: NOT ILIKE em PostgreSQL retorna NULL para valores NULL → exclui NULL implicitamente.
 export const vendasOr = [
-  'and(id_nota_conf.in.(307,309),or(total_pedido_venda.gte.20000,and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),total_produtos.gte.20000)))',
-  'ped_compra_cliente.ilike.*APTO MODELO*',
-  'ped_compra_cliente.ilike.*COMPLEMENTO*',
   'and(id_nota_conf.in.(307,309),ped_compra_cliente.is.null)',
   'and(id_nota_conf.in.(613,665),ped_compra_cliente.is.null)',
+  'ped_compra_cliente.ilike.*APTO MODELO*',
+  'ped_compra_cliente.ilike.*COMPLEMENTO*',
 ].join(',');
 
-// Suporte:
-//  1. id_nota_conf 613 ou 665 E ped_compra_cliente IS NOT NULL (com PO = pedido de suporte)
-//  2. id_nota_conf 307/309 E valor < 20000 E ped_compra_cliente NÃO é APTO MODELO nem COMPLEMENTO
-//     Nota: ped_compra_cliente NULL não casa com NOT ILIKE em PostgreSQL (NULL comparison = NULL/falsy),
-//     portanto pedidos com NULL vão automaticamente para VENDA sem precisar de condição explícita.
 export const suporteOr = [
-  'and(id_nota_conf.in.(613,665),ped_compra_cliente.not.is.null)',
-  'and(id_nota_conf.in.(307,309),or(and(total_pedido_venda.gt.0,total_pedido_venda.lt.20000),and(or(total_pedido_venda.is.null,total_pedido_venda.lte.0),or(total_produtos.is.null,total_produtos.lt.20000))),and(ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*))',
+  // 613/665 com PO preenchido (não-null, não APTO, não COMPLEMENTO) → SUPORTE
+  'and(id_nota_conf.in.(613,665),ped_compra_cliente.not.is.null,ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*)',
+  // 307/309 com PO preenchido (NOT ILIKE exclui NULL implicitamente) → SUPORTE
+  'and(id_nota_conf.in.(307,309),ped_compra_cliente.not.ilike.*APTO MODELO*,ped_compra_cliente.not.ilike.*COMPLEMENTO*)',
 ].join(',');
 
 // Colunas usadas na listagem e em lógica de negócio (filtragem, cálculos, exibição).

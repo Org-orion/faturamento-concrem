@@ -221,9 +221,13 @@ const PedidoSuporte = () => {
           const mapped = data.map((row: any) => rowToOrder(row, 'CLI-001') as unknown as SupportOrder);
           setServerOrders(mapped.filter(o => {
             if (movedToVendaSet.has(o.id)) return false;
-            // Apply same classification as suporteOr: 613/665 without PO number = VENDA
+            // Mesma regra do suporteOr: ped_compra_cliente define tudo, valor não é critério
             const conf = (o as any).idNotaConf;
-            if ((conf === 613 || conf === 665) && (o as any).pedCompraCliente == null) return false;
+            if (conf !== 307 && conf !== 309 && conf !== 613 && conf !== 665) return false;
+            const pc = (o as any).pedCompraCliente;
+            if (pc == null || String(pc).trim() === '') return false;
+            const pcU = String(pc).toUpperCase().trim();
+            if (pcU.includes('APTO MODELO') || pcU.includes('COMPLEMENTO')) return false;
             return true;
           }));
           setTotalCount(count ?? 0);
