@@ -286,6 +286,8 @@ const Commercial = () => {
       return true;
     });
 
+    console.log(`[Commercial] allOrdersMerged=${allOrdersMerged.length} → após filtro status/override=${result.length} (statusRows carregados=${statusByPedidoId.size})`);
+
     if (debouncedFilterPedido) {
       const nums = debouncedFilterPedido.split(/[,;]+/).map((v) => v.trim()).filter(Boolean);
       if (nums.length > 1) result = result.filter((o) => nums.some((n) => o.id.includes(n)));
@@ -375,7 +377,7 @@ const Commercial = () => {
     setPage(1);
   }, [conditions]);
 
-  // Fetch venda orders — últimos 4 meses, máximo 500 linhas, 1 request
+  // Fetch venda orders — data_emissao >= 2025-01-06, paginado para superar max_rows=1000
   useEffect(() => {
     if (!supabasePedidos) return;
     let cancelled = false;
@@ -384,7 +386,7 @@ const Commercial = () => {
       setLoadingList(true);
       try {
         const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-        const isoCorte = getDataCorte(4);
+        const DATA_CORTE = '2025-01-06';
 
         const movedToVenda = Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0]);
         let finalOr = vendasOr;
@@ -392,18 +394,29 @@ const Commercial = () => {
           finalOr += `,numero_pedido.in.(${movedToVenda.map((x) => `"${x}"`).join(',')})`;
         }
 
-        const { data, error } = await supabasePedidos
-          .from(table)
-          .select(tableColumns)
-          .or(finalOr)
-          .in('id_nota_conf', [307, 309, 613, 665])
-          .gte('data_emissao', isoCorte)
-          .order('data_emissao', { ascending: false })
-          .limit(500);
+        const PAGE = 1000;
+        let from = 0;
+        const allData: any[] = [];
+        while (true) {
+          const { data, error } = await supabasePedidos
+            .from(table)
+            .select(tableColumns)
+            .or(finalOr)
+            .in('id_nota_conf', [307, 309])
+            .gte('data_emissao', DATA_CORTE)
+            .order('data_emissao', { ascending: false })
+            .range(from, from + PAGE - 1);
+          if (cancelled) return;
+          if (error) throw error;
+          const page = data || [];
+          allData.push(...page);
+          console.log(`[Commercial] página ${from / PAGE + 1}: ${page.length} pedidos (total acumulado: ${allData.length})`);
+          if (page.length < PAGE) break;
+          from += PAGE;
+        }
 
-        if (cancelled) return;
-        if (error) throw error;
-        setAllOrders((data || []).map((row: any) => rowToOrder(row, 'CLI-001')));
+        console.log(`[Commercial] fetchAll concluído: ${allData.length} pedidos de venda carregados (corte ${DATA_CORTE})`);
+        setAllOrders(allData.map((row: any) => rowToOrder(row, 'CLI-001')));
       } catch (e: any) {
         if (cancelled) return;
         console.error('[Commercial] fetchAll error:', e?.message || e);
