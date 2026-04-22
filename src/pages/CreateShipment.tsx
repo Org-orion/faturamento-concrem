@@ -468,20 +468,15 @@ const CreateShipment = () => {
 
       if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
-      // CONTENÇÃO OPERACIONAL — TEMPORÁRIA (introduzida em 2026-04-21)
-      // Contexto: concrem_pedidos_status acumulou ~12.447 linhas com status liberado_producao,
-      // a maioria delas referentes a pedidos históricos da Leroy Merlin que nunca foram
-      // movidos para um status terminal (entregue, finalizado, etc.).
-      // Impacto sem esse filtro: a tela de carregamento exibe centenas de pedidos inativos
-      // da Leroy, dificultando a operação diária.
-      // Solução definitiva: migration no banco marcando esses pedidos como arquivados/expirados
-      // (ex: coluna archived_at em concrem_pedidos_status), eliminando a necessidade desse
-      // filtro no frontend.
-      // TODO: remover esse bloco após executar a migration de limpeza no OPS.
-      if (
-        (o.clientName || '').toUpperCase().includes('LEROY MERLIN') &&
-        o.date < '2026-01-01'
-      ) return false;
+      // Filtro de corte por data de emissão:
+      //   LEROY MERLIN → apenas pedidos a partir de 2026-01-01
+      //   Demais clientes → apenas pedidos a partir de 2025-01-06
+      // Motivo: concrem_pedidos_status acumula pedidos históricos com status liberado_producao
+      // que nunca foram movidos para status terminal, inflando a tela de carregamento.
+      // TODO: remover após migration de limpeza no OPS (coluna archived_at).
+      const _clientUpper = (o.clientName || '').toUpperCase();
+      const _dateCorte = _clientUpper.includes('LEROY MERLIN') ? '2026-01-01' : '2025-01-06';
+      if (o.date < _dateCorte) return false;
 
       const client = clientsById.get(o.clientId);
       const cityState = `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
