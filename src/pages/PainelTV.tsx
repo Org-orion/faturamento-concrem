@@ -322,21 +322,51 @@ function OrderCard({ order }: { order: PainelOrder }) {
   );
 }
 
-function StatsBar({ orders }: { orders: PainelOrder[] }) {
+function StatsBar({
+  orders,
+  activeFilters,
+  onToggle,
+}: {
+  orders: PainelOrder[];
+  activeFilters: Set<string>;
+  onToggle: (label: string) => void;
+}) {
   const counts: Record<string, number> = {};
   orders.forEach((o) => { counts[o.statusLabel] = (counts[o.statusLabel] || 0) + 1; });
+  const total = orders.length;
+  const hasFilter = activeFilters.size > 0;
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
+      {/* Total geral */}
+      <div className="flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-bold tracking-wider bg-foreground text-background mr-1">
+        <span>TOTAL</span>
+        <span className="rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-extrabold bg-white/20">
+          {total}
+        </span>
+      </div>
+
+      <div className="h-4 w-px bg-border mx-0.5" />
+
+      {/* Badge por status — clicável para filtrar */}
       {Object.entries(counts)
         .sort((a, b) => b[1] - a[1])
         .map(([label, count]) => {
-          const cfg = STATUS_CFG[label] ?? STATUS_CFG['AVALIAÇÃO'];
+          const cfg      = STATUS_CFG[label] ?? STATUS_CFG['AVALIAÇÃO'];
+          const isActive = activeFilters.has(label);
+          const isDimmed = hasFilter && !isActive;
           return (
-            <div
+            <button
               key={label}
-              className="flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-bold tracking-wider"
-              style={{ background: cfg.bg, color: cfg.fg }}
+              onClick={() => onToggle(label)}
+              className="flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-bold tracking-wider transition-all"
+              style={{
+                background: cfg.bg,
+                color:      cfg.fg,
+                opacity:    isDimmed ? 0.35 : 1,
+                outline:    isActive ? `2px solid ${cfg.accent}` : undefined,
+                outlineOffset: isActive ? 2 : undefined,
+              }}
             >
               <span>{label}</span>
               <span
@@ -345,9 +375,19 @@ function StatsBar({ orders }: { orders: PainelOrder[] }) {
               >
                 {count}
               </span>
-            </div>
+            </button>
           );
         })}
+
+      {/* Botão limpar filtro */}
+      {hasFilter && (
+        <button
+          onClick={() => onToggle('__clear__')}
+          className="ml-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+        >
+          limpar filtro
+        </button>
+      )}
     </div>
   );
 }
@@ -537,6 +577,20 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
 // ─── Página principal ─────────────────────────────────────────────────────────
 const PainelTV: React.FC = () => {
   const { orders, feed, popup, lastRefresh, dismissPopup } = usePainel();
+  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
+
+  const toggleFilter = useCallback((label: string) => {
+    if (label === '__clear__') { setActiveFilters(new Set()); return; }
+    setActiveFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(label)) next.delete(label); else next.add(label);
+      return next;
+    });
+  }, []);
+
+  const visibleOrders = activeFilters.size > 0
+    ? orders.filter((o) => activeFilters.has(o.statusLabel))
+    : orders;
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden font-display">
@@ -565,7 +619,7 @@ const PainelTV: React.FC = () => {
 
       {/* Stats bar */}
       <div className="bg-card border-b border-border px-6 py-2.5 shrink-0 shadow-sm">
-        <StatsBar orders={orders} />
+        <StatsBar orders={orders} activeFilters={activeFilters} onToggle={toggleFilter} />
       </div>
 
       {/* Conteúdo */}
@@ -582,7 +636,7 @@ const PainelTV: React.FC = () => {
               className="grid gap-4"
               style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(270px, 1fr))' }}
             >
-              {orders.map((o) => <OrderCard key={o.id} order={o} />)}
+              {visibleOrders.map((o) => <OrderCard key={o.id} order={o} />)}
             </div>
           )}
         </div>
