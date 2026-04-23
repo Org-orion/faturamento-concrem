@@ -100,9 +100,24 @@ const ACTIVE_STATUSES = [
   'entregue', 'aguardando_pagamento', 'finalizado',
 ];
 
-const PER_STATUS = 50; // máx por status
+const PER_STATUS = 100; // cards exibidos por status
 
-// ─── Fetch ────────────────────────────────────────────────────────────────────
+// ─── Contagem real por status (query leve, sem dados) ────────────────────────
+async function loadStatusCounts(): Promise<Record<string, number>> {
+  if (!supabaseOps) return {};
+  const results = await Promise.all(
+    ACTIVE_STATUSES.map(async (status) => {
+      const { count } = await supabaseOps!
+        .from('concrem_pedidos_status')
+        .select('*', { count: 'exact', head: true })
+        .eq('status_atual', status);
+      return [status, count ?? 0] as const;
+    }),
+  );
+  return Object.fromEntries(results);
+}
+
+// ─── Fetch de cards ───────────────────────────────────────────────────────────
 async function loadPainelOrders(): Promise<PainelOrder[]> {
   if (!supabaseOps || !supabasePedidos) return [];
 
@@ -159,6 +174,7 @@ async function loadPainelOrders(): Promise<PainelOrder[]> {
 // ─── Hook polling + diff ──────────────────────────────────────────────────────
 function usePainel() {
   const [orders, setOrders]           = useState<PainelOrder[]>([]);
+  const [counts, setCounts]           = useState<Record<string, number>>({});
   const [feed, setFeed]               = useState<FeedEntry[]>([]);
   const [popup, setPopup]             = useState<FeedEntry | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
@@ -168,8 +184,20 @@ function usePainel() {
   const isFirst     = useRef(true);
 
   const poll = useCallback(async () => {
-    const data = await loadPainelOrders();
+    // Busca cards e contagens reais em paralelo
+    const [data, rawCounts] = await Promise.all([
+      loadPainelOrders(),
+      loadStatusCounts(),
+    ]);
     if (!data.length) return;
+
+    // Agrupa counts por label de exibição
+    const labelCounts: Record<string, number> = {};
+    for (const [statusRaw, n] of Object.entries(rawCounts)) {
+      const label = STATUS_LABEL[statusRaw] || statusRaw.toUpperCase();
+      labelCounts[label] = (labelCounts[label] || 0) + n;
+    }
+    setCounts(labelCounts);
 
     const newEntries: FeedEntry[] = [];
     data.forEach((p) => {
@@ -215,7 +243,7 @@ function usePainel() {
     return () => { clearInterval(interval); clearTimeout(popupTimer.current); };
   }, [poll]);
 
-  return { orders, feed, popup, lastRefresh, dismissPopup: () => setPopup(null) };
+  return { orders, counts, feed, popup, lastRefresh, dismissPopup: () => setPopup(null) };
 }
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
@@ -323,17 +351,15 @@ function OrderCard({ order }: { order: PainelOrder }) {
 }
 
 function StatsBar({
-  orders,
+  counts,
   activeFilters,
   onToggle,
 }: {
-  orders: PainelOrder[];
+  counts: Record<string, number>;
   activeFilters: Set<string>;
   onToggle: (label: string) => void;
 }) {
-  const counts: Record<string, number> = {};
-  orders.forEach((o) => { counts[o.statusLabel] = (counts[o.statusLabel] || 0) + 1; });
-  const total = orders.length;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
   const hasFilter = activeFilters.size > 0;
 
   return (
@@ -576,7 +602,7 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 const PainelTV: React.FC = () => {
-  const { orders, feed, popup, lastRefresh, dismissPopup } = usePainel();
+  const { orders, counts, feed, popup, lastRefresh, dismissPopup } = usePainel();
   const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
 
   const toggleFilter = useCallback((label: string) => {
@@ -619,7 +645,7 @@ const PainelTV: React.FC = () => {
 
       {/* Stats bar */}
       <div className="bg-card border-b border-border px-6 py-2.5 shrink-0 shadow-sm">
-        <StatsBar orders={orders} activeFilters={activeFilters} onToggle={toggleFilter} />
+        <StatsBar counts={counts} activeFilters={activeFilters} onToggle={toggleFilter} />
       </div>
 
       {/* Conteúdo */}
