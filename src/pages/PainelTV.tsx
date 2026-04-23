@@ -196,29 +196,38 @@ function usePainel() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const popupTimer    = useRef<ReturnType<typeof setTimeout>>();
   const feedKey       = useRef(0);
-  // Inicializa no momento atual — só mostra mudanças que ocorrerem APÓS o painel abrir
-  const lastHistoryTs = useRef<string>(new Date().toISOString());
+  // null = primeiro poll ainda não completou; string = watermark válido
+  const lastHistoryTs = useRef<string | null>(null);
   const ordersRef     = useRef<PainelOrder[]>([]);
   // Deduplicação: guarda o último status_novo exibido no popup por pedido
   const shownStatus   = useRef<Record<string, string>>({});
 
   const poll = useCallback(async () => {
-    // Busca cards, contagens e histórico recente em paralelo
+    const isFirstPoll = lastHistoryTs.current === null;
+
+    // No primeiro poll: não busca histórico (evita clock skew entre browser e banco)
+    // Nos seguintes: busca mudanças desde o último watermark
     const [data, rawCounts, histRows] = await Promise.all([
       loadPainelOrders(),
       loadStatusCounts(),
-      loadRecentHistory(lastHistoryTs.current),
+      isFirstPoll ? Promise.resolve([]) : loadRecentHistory(lastHistoryTs.current!),
     ]);
 
-    // Watermark = max(alterado_em) das linhas retornadas (evita repetição)
-    // Se não veio nada, avança para agora para não rever o passado
-    if (histRows.length > 0) {
+    // Watermark = max(alterado_em) retornado OU timestamp atual do browser
+    // No primeiro poll, usa o timestamp mais recente da tabela de histórico
+    // para garantir que não pegamos entradas antigas no próximo poll
+    if (isFirstPoll) {
+      const { data: latest } = await supabaseOps!
+        .from('concrem_pedidos_status_historico')
+        .select('alterado_em')
+        .order('alterado_em', { ascending: false })
+        .limit(1);
+      lastHistoryTs.current = latest?.[0]?.alterado_em ?? new Date().toISOString();
+    } else if (histRows.length > 0) {
       lastHistoryTs.current = histRows.reduce(
         (max, h) => (h.alterado_em > max ? h.alterado_em : max),
         histRows[0].alterado_em,
       );
-    } else {
-      lastHistoryTs.current = new Date().toISOString();
     }
 
     if (!data.length) return;
