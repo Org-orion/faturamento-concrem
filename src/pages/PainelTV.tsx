@@ -90,23 +90,47 @@ const repShort = (rep: string) => rep.replace(/^\d+\s*[-–]\s*/, '').trim() || 
 
 const erpTable = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
+// Todos os status ativos (exceto aguardando_avaliacao que é ruído)
+const ACTIVE_STATUSES = [
+  'aguardando_mapeamento', 'mapeamento_andamento', 'mapeamento_concluido',
+  'aguardando_ferragem', 'ferragem_recebida',
+  'liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia',
+  'liberado_producao', 'em_producao', 'producao_finalizada',
+  'faturado', 'em_entrega', 'parcialmente_entregue',
+  'entregue', 'aguardando_pagamento', 'finalizado',
+];
+
+const PER_STATUS = 50; // máx por status
+
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 async function loadPainelOrders(): Promise<PainelOrder[]> {
   if (!supabaseOps || !supabasePedidos) return [];
 
-  const { data: statusRows, error } = await supabaseOps
-    .from('concrem_pedidos_status')
-    .select('pedido_id, status_atual, atualizado_em')
-    .not('status_atual', 'eq', 'aguardando_avaliacao')
-    .order('atualizado_em', { ascending: false })
-    .limit(500);
+  // Busca os N mais recentes por status em paralelo — garante todos os status visíveis
+  const pages = await Promise.all(
+    ACTIVE_STATUSES.map((status) =>
+      supabaseOps!
+        .from('concrem_pedidos_status')
+        .select('pedido_id, status_atual, atualizado_em')
+        .eq('status_atual', status)
+        .order('atualizado_em', { ascending: false })
+        .limit(PER_STATUS)
+        .then(({ data }) => data || []),
+    ),
+  );
 
-  if (error || !statusRows?.length) return [];
+  // Mescla e ordena globalmente por mais recente
+  const statusRows = (pages.flat() as any[]).sort(
+    (a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime(),
+  );
+
+  if (!statusRows.length) return [];
 
   const ids = statusRows.map((r: any) => String(r.pedido_id));
 
-  // Busca ERP em lotes de 200 (limite PostgREST)
-  const chunkArr = <T,>(arr: T[], n: number) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
+  // Busca ERP em lotes de 200
+  const chunkArr = <T,>(arr: T[], n: number) =>
+    Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
   const erpBatches = await Promise.all(
     chunkArr(ids, 200).map((batch) =>
       supabasePedidos!
