@@ -171,27 +171,50 @@ async function loadPainelOrders(): Promise<PainelOrder[]> {
   });
 }
 
-// ─── Hook polling + diff ──────────────────────────────────────────────────────
+// ─── Fetch de histórico recente (mudanças reais desde o último poll) ──────────
+async function loadRecentHistory(since: string): Promise<Array<{
+  pedido_id: string; status_anterior: string | null; status_novo: string; alterado_em: string;
+}>> {
+  if (!supabaseOps) return [];
+  const { data } = await supabaseOps
+    .from('concrem_pedidos_status_historico')
+    .select('pedido_id, status_anterior, status_novo, alterado_em')
+    .gt('alterado_em', since)
+    .order('alterado_em', { ascending: false })
+    .limit(30);
+  return (data || []) as any[];
+}
+
+// ─── Hook polling ─────────────────────────────────────────────────────────────
 function usePainel() {
   const [orders, setOrders]           = useState<PainelOrder[]>([]);
   const [counts, setCounts]           = useState<Record<string, number>>({});
   const [feed, setFeed]               = useState<FeedEntry[]>([]);
   const [popup, setPopup]             = useState<FeedEntry | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const prevStatus  = useRef<Record<string, string>>({});
-  const popupTimer  = useRef<ReturnType<typeof setTimeout>>();
-  const feedKey     = useRef(0);
-  const isFirst     = useRef(true);
+  const popupTimer    = useRef<ReturnType<typeof setTimeout>>();
+  const feedKey       = useRef(0);
+  const lastHistoryTs = useRef<string>(new Date(Date.now() - 10000).toISOString());
+  const ordersRef     = useRef<PainelOrder[]>([]);
 
   const poll = useCallback(async () => {
-    // Busca cards e contagens reais em paralelo
-    const [data, rawCounts] = await Promise.all([
+    const pollStart = new Date().toISOString();
+
+    // Busca cards, contagens e histórico recente em paralelo
+    const [data, rawCounts, histRows] = await Promise.all([
       loadPainelOrders(),
       loadStatusCounts(),
+      loadRecentHistory(lastHistoryTs.current),
     ]);
+
+    lastHistoryTs.current = pollStart;
+
     if (!data.length) return;
 
-    // Agrupa counts por label de exibição
+    // Atualiza mapa de ordens para lookup de clientes nas notificações
+    ordersRef.current = data;
+
+    // Agrupa counts por label
     const labelCounts: Record<string, number> = {};
     for (const [statusRaw, n] of Object.entries(rawCounts)) {
       const label = STATUS_LABEL[statusRaw] || statusRaw.toUpperCase();
@@ -199,40 +222,32 @@ function usePainel() {
     }
     setCounts(labelCounts);
 
-    const newEntries: FeedEntry[] = [];
-    data.forEach((p) => {
-      const prev = prevStatus.current[p.id];
-      if (prev !== undefined && prev !== p.statusRaw) {
-        newEntries.push({
-          key: `${p.id}-${++feedKey.current}`,
-          time: new Date(), orderId: p.id,
-          from: STATUS_LABEL[prev] || prev,
-          to: p.statusLabel, client: p.client, isNew: false,
-        });
-      } else if (prev === undefined) {
-        newEntries.push({
-          key: `${p.id}-${++feedKey.current}`,
-          time: new Date(), orderId: p.id,
-          from: null, to: p.statusLabel, client: p.client, isNew: true,
-        });
-      }
-      prevStatus.current[p.id] = p.statusRaw;
-    });
+    // ── Detecção de mudanças via histórico (confiável para qualquer pedido) ──
+    if (histRows.length > 0) {
+      const erpMap = new Map(data.map((o) => [o.id, o]));
 
-    if (newEntries.length) {
-      setFeed((prev) => [...newEntries, ...prev].slice(0, 40));
-      // Popup apenas após a primeira carga (para não aparecer no carregamento inicial)
-      if (!isFirst.current) {
-        const change = newEntries.find((e) => !e.isNew);
-        if (change) {
-          setPopup(change);
-          clearTimeout(popupTimer.current);
-          popupTimer.current = setTimeout(() => setPopup(null), 6000);
-        }
-      }
+      const changeEntries: FeedEntry[] = histRows.map((h) => {
+        const order = erpMap.get(String(h.pedido_id));
+        return {
+          key:     `hist-${h.pedido_id}-${++feedKey.current}`,
+          time:    new Date(h.alterado_em),
+          orderId: String(h.pedido_id),
+          from:    h.status_anterior ? (STATUS_LABEL[h.status_anterior] || h.status_anterior) : null,
+          to:      STATUS_LABEL[h.status_novo] || h.status_novo,
+          client:  order?.client || '—',
+          isNew:   false,
+        };
+      });
+
+      setFeed((prev) => [...changeEntries, ...prev].slice(0, 40));
+
+      // Popup com o mais recente
+      const latest = changeEntries[0];
+      setPopup(latest);
+      clearTimeout(popupTimer.current);
+      popupTimer.current = setTimeout(() => setPopup(null), 8000);
     }
 
-    isFirst.current = false;
     setOrders(data);
     setLastRefresh(new Date());
   }, []);
