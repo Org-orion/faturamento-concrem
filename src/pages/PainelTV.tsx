@@ -199,8 +199,8 @@ function usePainel() {
   // Inicializa no momento atual — só mostra mudanças que ocorrerem APÓS o painel abrir
   const lastHistoryTs = useRef<string>(new Date().toISOString());
   const ordersRef     = useRef<PainelOrder[]>([]);
-  // Deduplicação: guarda timestamp da última vez que cada pedido gerou popup
-  const shownAt       = useRef<Record<string, number>>({});
+  // Deduplicação: guarda o último status_novo exibido no popup por pedido
+  const shownStatus   = useRef<Record<string, string>>({});
 
   const poll = useCallback(async () => {
     // Busca cards, contagens e histórico recente em paralelo
@@ -253,14 +253,12 @@ function usePainel() {
 
       setFeed((prev) => [...changeEntries, ...prev].slice(0, 40));
 
-      // Popup com o mais recente — deduplica: mesmo pedido não abre popup por 60s
-      const DEDUP_MS = 60_000;
-      const now = Date.now();
+      // Popup: só abre se o status novo for diferente do último exibido para aquele pedido
       const candidate = changeEntries.find(
-        (e) => !e.isNew && (now - (shownAt.current[e.orderId] ?? 0)) > DEDUP_MS,
+        (e) => !e.isNew && shownStatus.current[e.orderId] !== e.to,
       );
       if (candidate) {
-        shownAt.current[candidate.orderId] = now;
+        shownStatus.current[candidate.orderId] = candidate.to;
         setPopup(candidate);
         clearTimeout(popupTimer.current);
         popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
