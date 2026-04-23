@@ -94,7 +94,16 @@ const AtualizacaoStatus = () => {
             .limit(STATUS_PAGE);
           if (error) { console.error('[AtualizacaoStatus] refresh query error:', error); return; }
           allRows = (data || []) as PedidoStatusRow[];
-          const newHasMore = allRows.length >= STATUS_PAGE;
+          // Complementa com status de TODOS os pedidos do AppContext (sem limite por atualizado_em)
+          const knownIdList = [...(orders || []).map((o) => o.id), ...(supportOrders || []).map((o) => o.id)];
+          if (knownIdList.length > 0) {
+            const appRows = await listPedidosStatusByPedidoIds(knownIdList);
+            const merged = new Map<string, PedidoStatusRow>(allRows.map((r) => [String(r.pedido_id), r]));
+            for (const r of appRows) merged.set(String(r.pedido_id), r);
+            allRows = Array.from(merged.values());
+            console.log(`[AtualizacaoStatus] statusRows: ${(data || []).length} recentes + ${appRows.length} app = ${allRows.length} total`);
+          }
+          const newHasMore = (data || []).length >= STATUS_PAGE;
           setHasMoreStatus(newHasMore);
           statusCursorRef.current = newHasMore && allRows.length > 0
             ? (allRows[allRows.length - 1]?.atualizado_em || null)
@@ -339,6 +348,20 @@ const AtualizacaoStatus = () => {
       [(p) => p.numero, (p) => p.cliente, (p) => p.representante],
       (p) => statusByPedidoId.get(p.id)?.status_atual ?? null,
     );
+    const liberadoProducaoRows = logisticaPedidos.filter(
+      (p) => statusByPedidoId.get(p.id)?.status_atual === 'liberado_producao'
+    );
+    const ghostCount = logisticaPedidos.filter((p) => p.cliente === '-').length;
+    console.log('[AtualizacaoStatus]', {
+      statusRows: statusRows.length,
+      pedidosComStatus: logisticaPedidos.length,
+      ghostOrders: ghostCount,
+      liberadoProducaoTotal: liberadoProducaoRows.length,
+      filtradosLiberadoProducao: colFilter.values.status === 'liberado_producao' || activeStatus === 'liberado_producao' ? result.length : '(filtro não ativo)',
+      totalUI: result.length,
+      activeStatus,
+      colFilterStatus: colFilter.values.status,
+    });
     // Garante que o pedido em foco nunca desaparece da lista por efeito de filtros
     if (selectedId && !result.some((p) => p.id === selectedId)) {
       const pinned = logisticaPedidos.find((p) => p.id === selectedId);
@@ -457,7 +480,7 @@ const AtualizacaoStatus = () => {
           placeholder="Filtrar por cliente, representante ou n. do pedido..."
           statuses={statusButtons}
           activeStatus={activeStatus}
-          onStatusChange={setActiveStatus}
+          onStatusChange={(s) => { setActiveStatus(s); colFilter.setFilter('status', '', true); }}
         >
           {/* Sort dropdown */}
           <select

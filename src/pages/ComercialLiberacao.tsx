@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
-import { useApp, getDataCorte } from '@/contexts/AppContext';
+import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { btnPrimary, btnSecondary, inputClass } from '@/components/shared';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
@@ -84,21 +84,21 @@ const ComercialLiberacao = () => {
     if (!supabaseOps || !supabasePedidos) return;
     setLoading(true);
     try {
-      const isoCorte = getDataCorte(4);
       const { data: statusData, error: statusErr } = await supabaseOps!
         .from('concrem_pedidos_status')
         .select('pedido_id, status_atual, numero_pedido, atualizado_em')
         .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia'])
-        .gte('atualizado_em', isoCorte)
         .order('atualizado_em', { ascending: false });
       if (statusErr) { console.error('[ComercialLiberacao] status query error:', statusErr.message); return; }
       if (!statusData?.length) { setDirectOrders([]); return; }
 
       const ids = statusData.map((r: any) => r.pedido_id);
 
+      const DATA_CORTE = '2025-01-06';
       const batchResults = await Promise.all(
         chunkArr(ids, 200).map((batch) =>
           supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', batch)
+            .gte('data_emissao', DATA_CORTE)
             .then(({ data, error }) => {
               if (error) console.error('[ComercialLiberacao] ERP batch fetch error:', error.message);
               return (data || []) as any[];
@@ -109,7 +109,13 @@ const ComercialLiberacao = () => {
 
       // Classificação exclusiva por id_nota_conf: 613/665 = SUPORTE, 307/309 = VENDA.
       const isSuporteRow = (o: Order) => o.idNotaConf === 613 || o.idNotaConf === 665;
-      const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001')).filter(o => !isSuporteRow(o));
+      const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001')).filter((o) => {
+        if (isSuporteRow(o)) return false;
+        // Regra de data por cliente: LEROY >= 2026-01-01, demais >= 2025-01-06
+        const clientUpper = (o.clientName || '').toUpperCase();
+        const dateCorte = clientUpper.includes('LEROY MERLIN') ? '2026-01-01' : '2025-01-06';
+        return (o.date || '') >= dateCorte;
+      });
       const statusMap = new Map(statusData.map((r: any) => [r.pedido_id, r] as const));
       setDirectOrders(mapped);
       setStatusRowsDirect(statusMap);

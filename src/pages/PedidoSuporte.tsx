@@ -195,7 +195,7 @@ const PedidoSuporte = () => {
 
   // Fetch paginated data from Supabase
   useEffect(() => {
-    if (!supabasePedidos || !supabaseOps) return;
+    if (!supabasePedidos) return;
     let cancelled = false;
 
     const fetchPage = async () => {
@@ -230,14 +230,6 @@ const PedidoSuporte = () => {
         return;
       }
 
-      // Mostrar pedidos com aguardando_avaliacao ou liberado_producao
-      const { data: statusData } = await supabaseOps
-        .from('concrem_pedidos_status')
-        .select('pedido_id')
-        .in('status_atual', ['aguardando_avaliacao', 'liberado_producao']);
-      if (cancelled) return;
-      const allowedIds = (statusData || []).map((r: any) => String(r.pedido_id));
-
       const movedToSupport = Object.entries(moveOverride).filter(x => x[1] === 'SUPORTE').map(x => x[0]);
       const movedToVenda = Object.entries(moveOverride).filter(x => x[1] === 'VENDA').map(x => x[0]);
 
@@ -246,20 +238,8 @@ const PedidoSuporte = () => {
         finalOr += `,numero_pedido.in.(${movedToSupport.map(x => `"${x}"`).join(',')})`;
       }
 
-      let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).or(finalOr).in('id_nota_conf', [307, 309, 613, 665]);
-
-      // Intersect with pedidos that have allowed status
-      if (allowedIds.length > 0) {
-        query = query.in('numero_pedido', allowedIds);
-      } else {
-        // No orders with allowed status — skip fetching pedidos
-        if (!cancelled) {
-          setLoadingList(false);
-          setServerOrders([]);
-          setTotalCount(0);
-        }
-        return;
-      }
+      let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).or(finalOr)
+        .gte('data_emissao', '2025-01-06');
 
       if (movedToVenda.length > 0) {
         query = query.not('numero_pedido', 'in', `(${movedToVenda.map(x => `"${x}"`).join(',')})`);
@@ -305,7 +285,11 @@ const PedidoSuporte = () => {
 
       if (data) {
         const mapped = data.map((row: any) => rowToOrder(row, 'CLI-001') as unknown as SupportOrder);
-        setServerOrders(mapped);
+        setServerOrders(mapped.filter((o) => {
+          const clientUpper = (o.clientName || '').toUpperCase();
+          const dateCorte = clientUpper.includes('LEROY MERLIN') ? '2026-01-01' : '2025-01-06';
+          return (o.date || '') >= dateCorte;
+        }));
       }
       if (count !== null) {
         setTotalCount(count);

@@ -144,25 +144,36 @@ const PainelPedidos = () => {
   const refresh = async () => {
     setLoading(true);
     try {
-      // 1. Busca rápida dos status já existentes — query única limitada
+      // 1. Busca status para TODOS os pedidos do AppContext (sem limite por atualizado_em)
+      //    + linhas recentes para pedidos "fantasma" (no OPS mas não no AppContext)
+      const allKnownOrders = [...(orders || []), ...(supportOrders || [])];
+      const allKnownIds = allKnownOrders.map((o) => o.id);
+      const appStatusRows = await listPedidosStatusByPedidoIds(allKnownIds);
       let statusData: PedidoStatusRow[];
       if (supabaseOps) {
-        statusData = await fetchPainelStatusRows();
+        const recentRows = await fetchPainelStatusRows();
+        const appIdSet = new Set(allKnownIds.map(String));
+        const ghostRows = recentRows.filter((r) => !appIdSet.has(String(r.pedido_id)));
+        statusData = [...appStatusRows, ...ghostRows];
+        console.log(`[PainelPedidos] statusData: ${appStatusRows.length} app + ${ghostRows.length} ghost = ${statusData.length} total`);
       } else {
-        const knownIds = [...(orders || []), ...(supportOrders || [])].map((o) => o.id);
-        statusData = await listPedidosStatusByPedidoIds(knownIds);
+        statusData = appStatusRows;
       }
 
       // 2. Descobre quais pedidos do AppContext ainda não têm status no banco
-      const allKnownOrders = [...(orders || []), ...(supportOrders || [])];
       const missingStatusOrders = getMissingStatusOrders(allKnownOrders, statusData)
         .map((o) => ({ pedidoId: o.id, numeroPedido: o.id, grupoCliente: (o as any).grupoCliente }));
 
       // 3. Inicializa status apenas para os faltantes — não percorre a lista inteira
       if (missingStatusOrders.length > 0) {
         await ensurePedidosStatusInitializedBatch(missingStatusOrders, user?.username || null);
-        // Recarrega para incluir as linhas recém-criadas
-        if (supabaseOps) statusData = await fetchPainelStatusRows();
+        if (supabaseOps) {
+          const appRowsRefreshed = await listPedidosStatusByPedidoIds(allKnownIds);
+          const recentRows = await fetchPainelStatusRows();
+          const appIdSet = new Set(allKnownIds.map(String));
+          const ghostRows = recentRows.filter((r) => !appIdSet.has(String(r.pedido_id)));
+          statusData = [...appRowsRefreshed, ...ghostRows];
+        }
       }
 
       // 4. Sincroniza Map ref para O(1) no realtime handler
@@ -311,11 +322,26 @@ const PainelPedidos = () => {
 
   const filtered = useMemo(() => {
     const colFiltered = colFilter.filterItems(pedidosComStatus, colDefs);
-    return filterItems(
+    const result = filterItems(
       colFiltered,
       [(p) => p.numero, (p) => p.cliente, (p) => p.representante],
       (p) => statusByPedidoId.get(p.id)?.status_atual ?? null,
     );
+    const liberadoProducaoRows = pedidosComStatus.filter(
+      (p) => statusByPedidoId.get(p.id)?.status_atual === 'liberado_producao'
+    );
+    const ghostCount = pedidosComStatus.filter((p) => p.cliente === '-').length;
+    console.log('[PainelPedidos]', {
+      statusRows: statusRows.length,
+      pedidosComStatus: pedidosComStatus.length,
+      ghostOrders: ghostCount,
+      liberadoProducaoTotal: liberadoProducaoRows.length,
+      filtradosLiberadoProducao: colFilter.values.status === 'liberado_producao' || activeStatus === 'liberado_producao' ? result.length : '(filtro não ativo)',
+      totalUI: result.length,
+      activeStatus,
+      colFilterStatus: colFilter.values.status,
+    });
+    return result;
   }, [pedidosComStatus, filterItems, statusByPedidoId, colFilter, colDefs]);
 
   const selected = useMemo(() => (selectedId ? pedidosComStatus.find((p) => p.id === selectedId) || null : null), [pedidosComStatus, selectedId]);

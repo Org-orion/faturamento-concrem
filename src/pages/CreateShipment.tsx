@@ -489,8 +489,26 @@ const CreateShipment = () => {
 
       return matchesId && matchesClient && matchesRep && matchesCity && matchesExpiry;
     });
+
+    const beforeDate = allCandidates.filter((o) => {
+      const pedidoStatus = pedidoStatusMap.get(o.id)?.status_atual;
+      const isAllowed = pedidoStatus ? CARREGAMENTO_ALLOWED_STATUSES.includes(pedidoStatus) && !idsInOtherLoads.has(o.id) : false;
+      return isAllowed && !selectedOrderIds.includes(o.id);
+    }).length;
+    const liberadoInResult = result.filter((o) => pedidoStatusMap.get(o.id)?.status_atual === 'liberado_producao').length;
+    console.log('[CreateShipment]', {
+      directPedidos: directPedidos.length,
+      allCandidates: allCandidates.length,
+      availableOrders: result.length,
+      selectedOrderIds: selectedOrderIds.length,
+      idsInOtherLoads: idsInOtherLoads.size,
+      beforeDateFilter: beforeDate,
+      excluidosPorData: beforeDate - result.length,
+      liberadoProducaoNaLista: liberadoInResult,
+      totalUI: result.length,
+    });
     return result;
-  }, [allCandidates, pedidoStatusMap, idsInOtherLoads, isEditing, selectedOrderIds, filters, clientsById]);
+  }, [allCandidates, pedidoStatusMap, idsInOtherLoads, isEditing, selectedOrderIds, filters, clientsById, directPedidos]);
 
   const displayedOrders = useMemo(() => {
     const afterQuick = quickFilterItems(availableOrders, quickTextGetters);

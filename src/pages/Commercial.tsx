@@ -261,32 +261,22 @@ const Commercial = () => {
     if (ids.length) void refreshStatusRows([...allOrderIds, ...ids]);
   }, [extraSearchOrders]);
 
-  // Client-side filtering: status, move overrides, text filters, sort
+  // Client-side filtering: move overrides, data de emissão (LEROY vs demais), text filters, sort
   const filteredOrders = useMemo(() => {
-    const ALLOWED = new Set(['aguardando_avaliacao', 'liberado_producao']);
     const movedToSupportSet = new Set(
       Object.entries(moveOverride).filter((x) => x[1] === 'SUPORTE').map((x) => x[0])
     );
-    const movedToVendaSet = new Set(
-      Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0])
-    );
-
-    // When searching by specific number, show regardless of status (to allow finding any order)
-    const isNumericSearch = debouncedFilterPedido && /^\d/.test(debouncedFilterPedido.trim());
 
     let result = allOrdersMerged.filter((o) => {
       if (movedToSupportSet.has(o.id)) return false;
-      // Ao pesquisar por número específico, mostrar o pedido independente do status
-      if (isNumericSearch) return true;
-      // Pedidos movidos manualmente para Venda sempre aparecem com seu status real
-      if (movedToVendaSet.has(o.id)) return true;
-      const st = statusByPedidoId.get(o.id)?.status_atual;
-      // If status not yet loaded, show optimistically; if loaded, must be in ALLOWED
-      if (st && !ALLOWED.has(st)) return false;
+      // Regra de data por cliente: LEROY >= 2026-01-01, demais >= 2025-01-06
+      const clientUpper = (o.clientName || '').toUpperCase();
+      const dateCorte = clientUpper.includes('LEROY MERLIN') ? '2026-01-01' : '2025-01-06';
+      if ((o.date || '') < dateCorte) return false;
       return true;
     });
 
-    console.log(`[Commercial] allOrdersMerged=${allOrdersMerged.length} → após filtro status/override=${result.length} (statusRows carregados=${statusByPedidoId.size})`);
+    console.log(`[Commercial] allOrdersMerged=${allOrdersMerged.length} → após filtro data/override=${result.length}`);
 
     if (debouncedFilterPedido) {
       const nums = debouncedFilterPedido.split(/[,;]+/).map((v) => v.trim()).filter(Boolean);
