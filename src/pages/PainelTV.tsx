@@ -196,7 +196,8 @@ function usePainel() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const popupTimer    = useRef<ReturnType<typeof setTimeout>>();
   const feedKey       = useRef(0);
-  const lastHistoryTs = useRef<string>(new Date(Date.now() - 10000).toISOString());
+  // Inicializa no momento atual — só mostra mudanças que ocorrerem APÓS o painel abrir
+  const lastHistoryTs = useRef<string>(new Date().toISOString());
   const ordersRef     = useRef<PainelOrder[]>([]);
 
   const poll = useCallback(async () => {
@@ -504,56 +505,54 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-lg mx-4 overflow-hidden"
-        style={{ borderTopWidth: 3, borderTopColor: cfg.accent }}
+        className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-2xl mx-6 overflow-hidden"
+        style={{ borderTopWidth: 4, borderTopColor: cfg.accent }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Barra de progresso */}
-        <div className="h-1 bg-muted">
+        <div className="h-1.5 bg-muted">
           <div
-            className="h-full transition-none rounded-full"
+            className="h-full transition-none"
             style={{ width: `${progress}%`, background: cfg.accent }}
           />
         </div>
 
-        <div className="p-6 space-y-5">
+        <div className="p-8 space-y-6">
           {/* Topo */}
-          <div className="flex items-start justify-between gap-3">
+          <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-1">
+              <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">
                 Atualização de Pedido
               </p>
-              <p className="text-3xl font-extrabold font-mono text-foreground leading-none">
+              <p className="text-5xl font-extrabold font-mono text-foreground leading-none">
                 #{entry.orderId}
               </p>
-              <p className="text-sm text-muted-foreground mt-1.5 leading-snug max-w-xs">
+              <p className="text-base text-muted-foreground mt-2 leading-snug">
                 {entry.client}
               </p>
             </div>
             <button
               onClick={onClose}
-              className="text-muted-foreground hover:text-foreground transition-colors text-2xl leading-none w-8 h-8 flex items-center justify-center rounded-md hover:bg-muted/50"
+              className="text-muted-foreground hover:text-foreground transition-colors text-3xl leading-none w-10 h-10 flex items-center justify-center rounded-lg hover:bg-muted/50 shrink-0"
             >
               ×
             </button>
           </div>
 
           {/* Transição de status */}
-          <div className="flex items-center justify-center gap-5 py-3 bg-muted/30 rounded-xl">
+          <div className="flex items-center justify-center gap-8 py-5 bg-muted/30 rounded-xl">
             {cfgFrom && entry.from && (
               <>
                 <div className="text-center">
                   <StatusBadge label={entry.from} size="lg" />
-                  <p className="text-[10px] text-muted-foreground mt-2 font-medium">Anterior</p>
+                  <p className="text-xs text-muted-foreground mt-2 font-medium">Anterior</p>
                 </div>
-                <div className="flex flex-col items-center">
-                  <span className="text-2xl text-muted-foreground font-light">→</span>
-                </div>
+                <span className="text-4xl text-muted-foreground font-light">→</span>
               </>
             )}
             <div className="text-center">
               <StatusBadge label={entry.to} size="lg" />
-              <p className="text-[10px] text-muted-foreground mt-2 font-medium">
+              <p className="text-xs text-muted-foreground mt-2 font-medium">
                 {entry.from ? 'Novo status' : 'Status atual'}
               </p>
             </div>
@@ -561,7 +560,7 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
 
           {/* Progresso de etapas */}
           <div>
-            <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mb-3">
+            <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">
               Progresso do Pedido
             </p>
             <div className="flex items-center gap-0">
@@ -573,20 +572,20 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
                   <React.Fragment key={s}>
                     <div className="flex flex-col items-center" style={{ flex: isCurrent ? '0 0 auto' : '1 1 0' }}>
                       <div
-                        className="rounded-full transition-all duration-300 relative"
+                        className="rounded-full transition-all duration-300"
                         style={{
-                          width:       isCurrent ? 16 : wasFrom ? 12 : 8,
-                          height:      isCurrent ? 16 : wasFrom ? 12 : 8,
+                          width:       isCurrent ? 20 : wasFrom ? 14 : 10,
+                          height:      isCurrent ? 20 : wasFrom ? 14 : 10,
                           background:  isCurrent ? cfg.accent : isDone ? 'hsl(171,100%,40%)' : 'hsl(214,32%,85%)',
-                          boxShadow:   isCurrent ? `0 0 10px ${cfg.accent}` : undefined,
+                          boxShadow:   isCurrent ? `0 0 12px ${cfg.accent}` : undefined,
                           outline:     wasFrom && !isCurrent ? '2px solid hsl(27,90%,65%)' : undefined,
-                          outlineOffset: 2,
+                          outlineOffset: 3,
                         }}
                       />
                     </div>
                     {i < STEPS.length - 1 && (
                       <div
-                        className="h-px flex-1"
+                        className="h-0.5 flex-1"
                         style={{ background: isDone ? 'hsl(171,100%,40%)' : 'hsl(214,32%,85%)' }}
                       />
                     )}
@@ -594,16 +593,13 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
                 );
               })}
             </div>
-            {/* Labels */}
-            <div className="flex mt-1.5" style={{ gap: 0 }}>
+            <div className="flex mt-2" style={{ gap: 0 }}>
               {STEPS.map((s, i) => (
                 <p
                   key={s}
                   className={cn(
                     'text-center leading-tight',
-                    i === toIdx
-                      ? 'text-[9px] font-bold text-foreground'
-                      : 'text-[8px] text-muted-foreground',
+                    i === toIdx ? 'text-[10px] font-bold text-foreground' : 'text-[9px] text-muted-foreground',
                   )}
                   style={{ flex: '1 1 0', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                 >
@@ -613,7 +609,7 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
             </div>
           </div>
 
-          <p className="text-[11px] text-muted-foreground text-center">
+          <p className="text-sm text-muted-foreground text-center">
             Fecha em {Math.ceil((progress / 100) * (POPUP_DURATION_MS / 1000))}s — ou clique fora
           </p>
         </div>
