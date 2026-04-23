@@ -173,18 +173,17 @@ async function loadPainelOrders(): Promise<PainelOrder[]> {
   });
 }
 
-// ─── Fetch de histórico recente (mudanças reais desde o último poll) ──────────
-async function loadRecentHistory(since: string): Promise<Array<{
-  pedido_id: string; status_anterior: string | null; status_novo: string; alterado_em: string;
-}>> {
+type HistRow = { pedido_id: string; status_anterior: string | null; status_novo: string; alterado_em: string };
+
+// Busca os N mais recentes do histórico (sem filtro de data — filtragem via Set)
+async function loadRecentHistory(limit = 50): Promise<HistRow[]> {
   if (!supabaseOps) return [];
   const { data } = await supabaseOps
     .from('concrem_pedidos_status_historico')
     .select('pedido_id, status_anterior, status_novo, alterado_em')
-    .gt('alterado_em', since)
     .order('alterado_em', { ascending: false })
-    .limit(30);
-  return (data || []) as any[];
+    .limit(limit);
+  return (data || []) as HistRow[];
 }
 
 // ─── Hook polling ─────────────────────────────────────────────────────────────
@@ -194,60 +193,62 @@ function usePainel() {
   const [feed, setFeed]               = useState<FeedEntry[]>([]);
   const [popup, setPopup]             = useState<FeedEntry | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const popupTimer    = useRef<ReturnType<typeof setTimeout>>();
-  const feedKey       = useRef(0);
-  // null = primeiro poll ainda não completou; string = watermark válido
-  const lastHistoryTs = useRef<string | null>(null);
-  const ordersRef     = useRef<PainelOrder[]>([]);
-  // Deduplicação: guarda o último status_novo exibido no popup por pedido
-  const shownStatus   = useRef<Record<string, string>>({});
+  const popupTimer  = useRef<ReturnType<typeof setTimeout>>();
+  const feedKey     = useRef(0);
+  // Set de chaves `pedido_id_alterado_em` já processadas — imune a clock skew
+  const seenKeys    = useRef<Set<string>>(new Set());
+  const initialized = useRef(false);
+  // Último status exibido no popup por pedido
+  const shownStatus = useRef<Record<string, string>>({});
 
   const poll = useCallback(async () => {
-    const isFirstPoll = lastHistoryTs.current === null;
+    // Primeiro poll: popula seenKeys com TODO o histórico existente sem notificar
+    if (!initialized.current) {
+      const [data, rawCounts, existingHist] = await Promise.all([
+        loadPainelOrders(),
+        loadStatusCounts(),
+        loadRecentHistory(2000),
+      ]);
+      existingHist.forEach((h) => seenKeys.current.add(`${h.pedido_id}_${h.alterado_em}`));
+      initialized.current = true;
+      if (!data.length) return;
+      const lc: Record<string, number> = {};
+      for (const [s, n] of Object.entries(rawCounts)) {
+        const lb = STATUS_LABEL[s] || s.toUpperCase();
+        lc[lb] = (lc[lb] || 0) + n;
+      }
+      setCounts(lc);
+      setOrders(data);
+      setLastRefresh(new Date());
+      return;
+    }
 
-    // No primeiro poll: não busca histórico (evita clock skew entre browser e banco)
-    // Nos seguintes: busca mudanças desde o último watermark
-    const [data, rawCounts, histRows] = await Promise.all([
+    // Polls seguintes: busca os 50 mais recentes e filtra pelo Set
+    const [data, rawCounts, recentHist] = await Promise.all([
       loadPainelOrders(),
       loadStatusCounts(),
-      isFirstPoll ? Promise.resolve([]) : loadRecentHistory(lastHistoryTs.current!),
+      loadRecentHistory(50),
     ]);
-
-    // Watermark = max(alterado_em) retornado OU timestamp atual do browser
-    // No primeiro poll, usa o timestamp mais recente da tabela de histórico
-    // para garantir que não pegamos entradas antigas no próximo poll
-    if (isFirstPoll) {
-      const { data: latest } = await supabaseOps!
-        .from('concrem_pedidos_status_historico')
-        .select('alterado_em')
-        .order('alterado_em', { ascending: false })
-        .limit(1);
-      lastHistoryTs.current = latest?.[0]?.alterado_em ?? new Date().toISOString();
-    } else if (histRows.length > 0) {
-      lastHistoryTs.current = histRows.reduce(
-        (max, h) => (h.alterado_em > max ? h.alterado_em : max),
-        histRows[0].alterado_em,
-      );
-    }
 
     if (!data.length) return;
 
-    // Atualiza mapa de ordens para lookup de clientes nas notificações
-    ordersRef.current = data;
+    const newHist = recentHist.filter((h) => {
+      const key = `${h.pedido_id}_${h.alterado_em}`;
+      if (seenKeys.current.has(key)) return false;
+      seenKeys.current.add(key);
+      return true;
+    });
 
-    // Agrupa counts por label
-    const labelCounts: Record<string, number> = {};
-    for (const [statusRaw, n] of Object.entries(rawCounts)) {
-      const label = STATUS_LABEL[statusRaw] || statusRaw.toUpperCase();
-      labelCounts[label] = (labelCounts[label] || 0) + n;
+    const lc: Record<string, number> = {};
+    for (const [s, n] of Object.entries(rawCounts)) {
+      const lb = STATUS_LABEL[s] || s.toUpperCase();
+      lc[lb] = (lc[lb] || 0) + n;
     }
-    setCounts(labelCounts);
+    setCounts(lc);
 
-    // ── Detecção de mudanças via histórico (confiável para qualquer pedido) ──
-    if (histRows.length > 0) {
+    if (newHist.length > 0) {
       const erpMap = new Map(data.map((o) => [o.id, o]));
-
-      const changeEntries: FeedEntry[] = histRows.map((h) => {
+      const changeEntries: FeedEntry[] = newHist.map((h) => {
         const order = erpMap.get(String(h.pedido_id));
         return {
           key:     `hist-${h.pedido_id}-${++feedKey.current}`,
@@ -262,9 +263,8 @@ function usePainel() {
 
       setFeed((prev) => [...changeEntries, ...prev].slice(0, 40));
 
-      // Popup: só abre se o status novo for diferente do último exibido para aquele pedido
       const candidate = changeEntries.find(
-        (e) => !e.isNew && shownStatus.current[e.orderId] !== e.to,
+        (e) => shownStatus.current[e.orderId] !== e.to,
       );
       if (candidate) {
         shownStatus.current[candidate.orderId] = candidate.to;
