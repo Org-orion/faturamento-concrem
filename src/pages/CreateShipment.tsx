@@ -824,7 +824,7 @@ const CreateShipment = () => {
 </head>
 <body>
   ${formHtml.replace(/<style[\s\S]*?<\/style>/, '')}
-  <script>window.onload = () => { window.focus(); window.print(); };<\/script>
+  <script>window.onload = () => { window.focus(); window.print(); };</script>
 </body>
 </html>`;
 
@@ -1577,69 +1577,6 @@ const CreateShipment = () => {
 
           <div className="flex-1 overflow-y-auto pr-2 custom-scrollbar space-y-4 pb-2">
             {/* Seção de Selecionados — aparece ABAIXO dos disponíveis */}
-            {false && (
-              <div className="space-y-2">
-                <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] px-1 mb-3">Pedidos Selecionados ({selectedOrderIds.length})</h4>
-                <div className="grid grid-cols-1 gap-2">
-                  {selectedOrderIds.map(id => {
-                    const order = allCandidates.find(o => o.id === id);
-                    if (!order) return null;
-                    const client = clients.find(c => c.id === order.clientId);
-                    return (
-                      <div
-                        key={id}
-                        className="flex items-center justify-between p-3 rounded-lg border-2 border-primary bg-primary/5 transition-all group relative overflow-hidden"
-                      >
-                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
-                        <div className="flex items-center gap-4 pl-2">
-                          <button
-                            type="button"
-                            onClick={(e) => selectOrder(e, id)}
-                            className="w-5 h-5 rounded-full bg-primary text-white flex items-center justify-center shadow-sm hover:bg-primary/80 transition-colors shrink-0"
-                          >
-                            <Check className="h-3 w-3" />
-                          </button>
-                          <div className="grid grid-cols-1 md:grid-cols-5 gap-4 flex-1 items-center">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <p className="font-bold text-sm font-mono-data">{order.id}</p>
-                                <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Embarcado</span>
-                              </div>
-                              <p className="text-[10px] text-muted-foreground font-medium">Nº Pedido</p>
-                            </div>
-                            <div>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}
-                                <p className="font-bold text-sm text-primary truncate max-w-[150px]">{order.clientName || order.clientCode || '-'}</p>
-                              </div>
-                              <p className="text-[10px] text-muted-foreground font-medium">Cliente</p>
-                            </div>
-                            <div>
-                              <p className="font-bold text-sm font-mono-data">{(() => { const repId = String(order.representativeId || '').trim(); const repName = String(order.representativeName || '').trim(); const contact = repContacts[repId] || repContacts[repName]; return contact?.telefone || order.representativePhone || '-'; })()}</p>
-                              <p className="text-[10px] text-muted-foreground font-medium">Tel. Rep.</p>
-                            </div>
-                            <div>
-                              <p className="font-bold text-sm truncate">{order.clientCity || client?.address.city}/{order.clientUF || client?.address.state}</p>
-                              <p className="text-[10px] text-muted-foreground font-medium">Cidade/UF</p>
-                            </div>
-                            <div>
-                              <p className="font-bold text-sm text-amber-600">{order.previsaoCarregamento || order.expiryDate}</p>
-                              <p className="text-[10px] text-muted-foreground font-medium">Previsão</p>
-                            </div>
-                          </div>
-                        </div>
-                        <div className="text-right min-w-[100px]">
-                          <p className="font-bold text-sm text-[#1E3A5F]">{formatCurrency(order.totalPedidoVenda || getOrderTotal(order))}</p>
-                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight">Frete: {formatCurrency(order.freightValue || 0)}</p>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-                <div className="h-px bg-border my-6" />
-              </div>
-            )}
-
             {/* Seção de Disponíveis (Vertical) */}
             <div className="space-y-2">
               <h4 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.2em] px-1 mb-3">Disponíveis para Adicionar ({displayedOrders.length})</h4>

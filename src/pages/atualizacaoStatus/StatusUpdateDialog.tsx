@@ -50,7 +50,7 @@ export function StatusUpdateDialog({
     // Buscar telefone do cadastro de representantes
     const repName = pedido.representante || '';
     void (async () => {
-      let contact = repName ? await findRepresentanteContato(repName) : null;
+      const contact = repName ? await findRepresentanteContato(repName) : null;
       const phone = contact?.telefone || pedido.repPhone || null;
       setResolvedPhone(phone);
       setNotify(Boolean(phone));

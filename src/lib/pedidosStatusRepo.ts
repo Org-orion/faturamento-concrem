@@ -625,7 +625,7 @@ export async function runMigrationSuporteLiberadoProducao(
   };
 
   // Fetch current status for all IDs
-  let existing: Array<{ pedido_id: string; status_atual: string }> = [];
+  const existing: Array<{ pedido_id: string; status_atual: string }> = [];
   for (const batch of chunk(ids, 200)) {
     try {
       const { data, error } = await supabaseOps
