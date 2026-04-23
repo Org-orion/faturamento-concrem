@@ -199,6 +199,8 @@ function usePainel() {
   // Inicializa no momento atual — só mostra mudanças que ocorrerem APÓS o painel abrir
   const lastHistoryTs = useRef<string>(new Date().toISOString());
   const ordersRef     = useRef<PainelOrder[]>([]);
+  // Deduplicação: guarda timestamp da última vez que cada pedido gerou popup
+  const shownAt       = useRef<Record<string, number>>({});
 
   const poll = useCallback(async () => {
     // Busca cards, contagens e histórico recente em paralelo
@@ -251,11 +253,18 @@ function usePainel() {
 
       setFeed((prev) => [...changeEntries, ...prev].slice(0, 40));
 
-      // Popup com o mais recente
-      const latest = changeEntries[0];
-      setPopup(latest);
-      clearTimeout(popupTimer.current);
-      popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
+      // Popup com o mais recente — deduplica: mesmo pedido não abre popup por 60s
+      const DEDUP_MS = 60_000;
+      const now = Date.now();
+      const candidate = changeEntries.find(
+        (e) => !e.isNew && (now - (shownAt.current[e.orderId] ?? 0)) > DEDUP_MS,
+      );
+      if (candidate) {
+        shownAt.current[candidate.orderId] = now;
+        setPopup(candidate);
+        clearTimeout(popupTimer.current);
+        popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
+      }
     }
 
     setOrders(data);
@@ -505,7 +514,8 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
       onClick={onClose}
     >
       <div
-        className="bg-card rounded-2xl shadow-2xl border border-border w-full max-w-2xl mx-6 overflow-hidden"
+        className="bg-card rounded-2xl shadow-2xl border border-border overflow-hidden"
+        style={{ width: '50vw', maxHeight: '80vh', overflowY: 'auto' }}
         style={{ borderTopWidth: 4, borderTopColor: cfg.accent }}
         onClick={(e) => e.stopPropagation()}
       >
