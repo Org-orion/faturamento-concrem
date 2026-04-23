@@ -12,6 +12,7 @@ import {
   ClipboardList,
   TriangleAlert,
   Factory,
+  Monitor,
 } from 'lucide-react';
 import { useSidebar } from './MainLayout';
 import { cn } from '@/lib/utils';
@@ -39,6 +40,7 @@ const iconMap = {
   'clipboard-list': ClipboardList,
   flame: TriangleAlert,
   factory: Factory,
+  monitor: Monitor,
 } as const;
 
 type MenuChild = { title: string; href: string; icon?: LucideIcon };
@@ -177,22 +179,28 @@ export const Sidebar: React.FC = () => {
     }
 
     const active = isActive(item.href);
+    const isExternal = item.href === '/painel-tv';
 
-    const content = (
-      <Link to={item.href || '#'}>
-        <button
-          className={cn(
-            "w-full flex items-center h-10 rounded-md transition-all duration-150",
-            isCollapsed ? "justify-center px-0" : "gap-3 px-3",
-            active
-              ? "bg-white/15 text-white font-semibold pl-3"
-              : "text-white font-normal pl-3 hover:bg-white/5"
-          )}
-        >
+    const btnClass = cn(
+      "w-full flex items-center h-10 rounded-md transition-all duration-150",
+      isCollapsed ? "justify-center px-0" : "gap-3 px-3",
+      active
+        ? "bg-white/15 text-white font-semibold pl-3"
+        : "text-white font-normal pl-3 hover:bg-white/5"
+    );
+
+    const content = isExternal ? (
+      <a href={item.href} target="_blank" rel="noopener noreferrer">
+        <button className={btnClass}>
           <item.icon className={cn("shrink-0", isCollapsed ? "h-[18px] w-[18px]" : "h-[17px] w-[17px]")} />
-          {!isCollapsed && (
-            <span className="truncate text-sm font-sans">{item.title}</span>
-          )}
+          {!isCollapsed && <span className="truncate text-sm font-sans">{item.title}</span>}
+        </button>
+      </a>
+    ) : (
+      <Link to={item.href || '#'}>
+        <button className={btnClass}>
+          <item.icon className={cn("shrink-0", isCollapsed ? "h-[18px] w-[18px]" : "h-[17px] w-[17px]")} />
+          {!isCollapsed && <span className="truncate text-sm font-sans">{item.title}</span>}
         </button>
       </Link>
     );
