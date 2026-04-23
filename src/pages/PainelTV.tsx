@@ -99,17 +99,24 @@ async function loadPainelOrders(): Promise<PainelOrder[]> {
     .select('pedido_id, status_atual, atualizado_em')
     .not('status_atual', 'eq', 'aguardando_avaliacao')
     .order('atualizado_em', { ascending: false })
-    .limit(60);
+    .limit(500);
 
   if (error || !statusRows?.length) return [];
 
   const ids = statusRows.map((r: any) => String(r.pedido_id));
-  const { data: erpRows } = await supabasePedidos
-    .from(erpTable)
-    .select('numero_pedido, cliente_nome, representante, total_pedido_venda')
-    .in('numero_pedido', ids);
 
-  const erpMap = new Map((erpRows || []).map((r: any) => [String(r.numero_pedido), r]));
+  // Busca ERP em lotes de 200 (limite PostgREST)
+  const chunkArr = <T,>(arr: T[], n: number) => Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
+  const erpBatches = await Promise.all(
+    chunkArr(ids, 200).map((batch) =>
+      supabasePedidos!
+        .from(erpTable)
+        .select('numero_pedido, cliente_nome, representante, total_pedido_venda')
+        .in('numero_pedido', batch)
+        .then(({ data }) => data || []),
+    ),
+  );
+  const erpMap = new Map(erpBatches.flat().map((r: any) => [String(r.numero_pedido), r]));
 
   return statusRows.map((s: any) => {
     const erp = erpMap.get(String(s.pedido_id));
@@ -174,7 +181,7 @@ function usePainel() {
     }
 
     isFirst.current = false;
-    setOrders(data.slice(0, 12));
+    setOrders(data);
     setLastRefresh(new Date());
   }, []);
 
