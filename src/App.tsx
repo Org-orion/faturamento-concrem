@@ -28,6 +28,8 @@ const UsersPage = lazy(() => import('@/pages/Users'));
 const PrioridadesPage = lazy(() => import('@/pages/Prioridades'));
 const AccessDenied = lazy(() => import('@/pages/AccessDenied'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
+// PAINEL TV — remover: delete PainelTV.tsx e esta linha
+const PainelTVPage = lazy(() => import('@/pages/PainelTV'));
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, user } = useApp();
@@ -69,6 +71,8 @@ const AppRoutes = () => {
         <Route path="/financeiro" element={<ProtectedRoute><FinancialPage /></ProtectedRoute>} />
         <Route path="/prioridades" element={<ProtectedRoute><PrioridadesPage /></ProtectedRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
+        {/* PAINEL TV — remover: delete PainelTV.tsx e esta linha */}
+        <Route path="/painel-tv" element={<PainelTVPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>
