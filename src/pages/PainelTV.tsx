@@ -84,7 +84,9 @@ const fmtRelative = (iso: string) => {
 };
 
 const fmtTime = (d: Date) =>
-  d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Sao_Paulo' });
+
+const POPUP_DURATION_MS = 8000;
 
 const repShort = (rep: string) => rep.replace(/^\d+\s*[-–]\s*/, '').trim() || '—';
 
@@ -198,8 +200,6 @@ function usePainel() {
   const ordersRef     = useRef<PainelOrder[]>([]);
 
   const poll = useCallback(async () => {
-    const pollStart = new Date().toISOString();
-
     // Busca cards, contagens e histórico recente em paralelo
     const [data, rawCounts, histRows] = await Promise.all([
       loadPainelOrders(),
@@ -207,7 +207,16 @@ function usePainel() {
       loadRecentHistory(lastHistoryTs.current),
     ]);
 
-    lastHistoryTs.current = pollStart;
+    // Watermark = max(alterado_em) das linhas retornadas (evita repetição)
+    // Se não veio nada, avança para agora para não rever o passado
+    if (histRows.length > 0) {
+      lastHistoryTs.current = histRows.reduce(
+        (max, h) => (h.alterado_em > max ? h.alterado_em : max),
+        histRows[0].alterado_em,
+      );
+    } else {
+      lastHistoryTs.current = new Date().toISOString();
+    }
 
     if (!data.length) return;
 
@@ -245,7 +254,7 @@ function usePainel() {
       const latest = changeEntries[0];
       setPopup(latest);
       clearTimeout(popupTimer.current);
-      popupTimer.current = setTimeout(() => setPopup(null), 8000);
+      popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
     }
 
     setOrders(data);
@@ -472,8 +481,6 @@ function FeedPanel({ feed }: { feed: FeedEntry[] }) {
 }
 
 // ─── Popup centralizado ───────────────────────────────────────────────────────
-const POPUP_MS = 6000;
-
 function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void }) {
   const [progress, setProgress] = useState(100);
   const cfg     = STATUS_CFG[entry.to]   ?? STATUS_CFG['AVALIAÇÃO'];
@@ -484,7 +491,7 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
   useEffect(() => {
     const start = Date.now();
     const tick = setInterval(() => {
-      const pct = Math.max(0, 100 - ((Date.now() - start) / POPUP_MS) * 100);
+      const pct = Math.max(0, 100 - ((Date.now() - start) / POPUP_DURATION_MS) * 100);
       setProgress(pct);
       if (pct === 0) clearInterval(tick);
     }, 50);
@@ -607,7 +614,7 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
           </div>
 
           <p className="text-[11px] text-muted-foreground text-center">
-            Fecha em {Math.ceil((progress / 100) * (POPUP_MS / 1000))}s — ou clique fora
+            Fecha em {Math.ceil((progress / 100) * (POPUP_DURATION_MS / 1000))}s — ou clique fora
           </p>
         </div>
       </div>
