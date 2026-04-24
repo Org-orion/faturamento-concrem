@@ -83,7 +83,7 @@ const AtualizacaoStatus = () => {
         ...(orders || []).map((o) => o.id),
         ...(supportOrders || []).map((o) => o.id),
       ];
-      const STATUS_PAGE = 200;
+      const STATUS_PAGE = 1000;
       if (supabaseOps) {
         try {
           const { data, error } = await supabaseOps!

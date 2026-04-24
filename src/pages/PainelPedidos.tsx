@@ -19,7 +19,6 @@ import { PainelPedidosDetails } from '@/pages/painelPedidos/PainelPedidosDetails
 import type { UnifiedPedido } from '@/pages/painelPedidos/types';
 
 const STATUS_PAINEL_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em';
-const STATUS_PAINEL_PAGE_SIZE = 500;
 
 // Helpers de módulo — fora do componente para não recriar a cada render
 
@@ -31,13 +30,22 @@ function chunkArray<T>(items: T[], size: number): T[][] {
 
 async function fetchPainelStatusRows(): Promise<PedidoStatusRow[]> {
   if (!supabaseOps) return [];
-  const { data, error } = await supabaseOps
-    .from('concrem_pedidos_status')
-    .select(STATUS_PAINEL_COLS)
-    .order('atualizado_em', { ascending: false })
-    .limit(STATUS_PAINEL_PAGE_SIZE);
-  if (error) throw new Error(`[PainelPedidos] fetchPainelStatusRows: ${error.message}`);
-  return (data || []) as PedidoStatusRow[];
+  const PAGE = 1000;
+  let from = 0;
+  const all: PedidoStatusRow[] = [];
+  while (true) {
+    const { data, error } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select(STATUS_PAINEL_COLS)
+      .order('atualizado_em', { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (error) throw new Error(`[PainelPedidos] fetchPainelStatusRows: ${error.message}`);
+    const page = (data || []) as PedidoStatusRow[];
+    all.push(...page);
+    if (page.length < PAGE) break;
+    from += PAGE;
+  }
+  return all;
 }
 
 async function fetchExtraPedidosInParallel(missingIds: string[]): Promise<UnifiedPedido[]> {
