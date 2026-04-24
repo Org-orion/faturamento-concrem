@@ -468,15 +468,17 @@ const CreateShipment = () => {
 
       if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
-      // Filtro de corte por data de emissão:
-      //   LEROY MERLIN → apenas pedidos a partir de 2026-01-01
-      //   Demais clientes → apenas pedidos a partir de 2025-01-06
+      // Filtro de corte por data de emissão — só para pedidos que vieram do AppContext (não do OPS direto).
+      // Pedidos do OPS (directPedidos) têm status explícito e devem aparecer independente da data.
       // Motivo: concrem_pedidos_status acumula pedidos históricos com status liberado_producao
       // que nunca foram movidos para status terminal, inflando a tela de carregamento.
       // TODO: remover após migration de limpeza no OPS (coluna archived_at).
-      const _clientUpper = (o.clientName || '').toUpperCase();
-      const _dateCorte = _clientUpper.includes('LEROY MERLIN') ? '2026-01-01' : '2025-01-06';
-      if (o.date < _dateCorte) return false;
+      const fromDirect = directPedidos.some((d) => d.id === o.id);
+      if (!fromDirect) {
+        const _clientUpper = (o.clientName || '').toUpperCase();
+        const _dateCorte = _clientUpper.includes('LEROY MERLIN') ? '2026-01-01' : '2025-01-06';
+        if (o.date < _dateCorte) return false;
+      }
 
       const client = clientsById.get(o.clientId);
       const cityState = `${o.clientCity || client?.address.city || ''}/${o.clientUF || client?.address.state || ''}`;
