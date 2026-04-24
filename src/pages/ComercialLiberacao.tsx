@@ -278,6 +278,16 @@ const ComercialLiberacao = () => {
   const [pdfMesRef, setPdfMesRef] = useState('');
   const [pdfDataEmbarque, setPdfDataEmbarque] = useState('');
   const [pdfDataLiberacao, setPdfDataLiberacao] = useState('');
+  const [pdfOrderDates, setPdfOrderDates] = useState<Record<string, { embarque: string; liberacao: string }>>({});
+
+  useEffect(() => {
+    if (!showPdfModal) return;
+    setPdfOrderDates(() => {
+      const init: Record<string, { embarque: string; liberacao: string }> = {};
+      for (const o of s3Processed) init[o.id] = { embarque: pdfDataEmbarque, liberacao: pdfDataLiberacao };
+      return init;
+    });
+  }, [showPdfModal]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // --- PDF Gerência ---
   const [showPdfGerenciaModal, setShowPdfGerenciaModal] = useState(false);
@@ -496,25 +506,26 @@ const ComercialLiberacao = () => {
     const pedidos = s3Processed;
     if (pedidos.length === 0) { showToast('Nenhum pedido na carga para exportar.', 'error'); return; }
     if (!pdfMesRef.trim()) { showToast('Informe o mês de referência.', 'error'); return; }
-    if (!pdfDataEmbarque || !pdfDataLiberacao) { showToast('Informe as datas de embarque e liberação.', 'error'); return; }
+    const missing = pedidos.filter(o => { const d = pdfOrderDates[o.id]; return !d?.embarque || !d?.liberacao; });
+    if (missing.length > 0) { showToast(`Informe as datas para todos os pedidos (${missing.length} sem data).`, 'error'); return; }
 
     const now = new Date();
     const mesRef = pdfMesRef.trim();
-
-    const dtEmbarque = new Date(pdfDataEmbarque + 'T00:00:00');
-    const dtLiberacao = new Date(pdfDataLiberacao + 'T00:00:00');
-    const diasCorridosVal = Math.max(0, Math.ceil((dtEmbarque.getTime() - dtLiberacao.getTime()) / 86400000));
-
     const fmtCurrency = (v?: number) => v != null ? `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
+    const fmtDateLocal = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
 
     let totalValor = 0;
     let totalQtdKits = 0;
     const rows = pedidos.map((o) => {
       totalValor += o.totalPedidoVenda || 0;
       totalQtdKits += o.totalQtd || 0;
+      const d = pdfOrderDates[o.id]!;
+      const dias = Math.max(0, Math.ceil((new Date(d.embarque + 'T00:00:00').getTime() - new Date(d.liberacao + 'T00:00:00').getTime()) / 86400000));
       return `<tr>
         <td>${mesRef}</td>
-        <td style="text-align:center">${diasCorridosVal}</td>
+        <td style="text-align:center">${fmtDateLocal(d.liberacao)}</td>
+        <td style="text-align:center">${fmtDateLocal(d.embarque)}</td>
+        <td style="text-align:center">${dias}</td>
         <td>${o.clientName || o.clientCode || '-'}</td>
         <td style="text-align:right">${fmtCurrency(o.totalPedidoVenda)}</td>
         <td style="text-align:center;font-weight:700">${o.id}</td>
@@ -537,7 +548,6 @@ const ComercialLiberacao = () => {
   thead th { background: #0a2315; color: #fff; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
   tbody td { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; font-size: 11px; }
   tbody tr:nth-child(even) { background: #f5f7f5; }
-  tbody tr:hover { background: #e8f0e8; }
   tfoot td { padding: 10px; font-weight: 800; font-size: 12px; border-top: 3px solid #0a2315; background: #f0f2f0; }
   .info { display: flex; gap: 24px; font-size: 10px; color: #555; margin-bottom: 8px; }
   .info span { font-weight: 600; color: #0a2315; }
@@ -549,7 +559,7 @@ const ComercialLiberacao = () => {
   <img src="${logoProgramacao}" alt="Concrem" />
   <div class="title">
     <h1>Programação de Produção</h1>
-    <p>${mesRef} &mdash; ${pedidos.length} pedido(s) &mdash; ${diasCorridosVal} dias corridos</p>
+    <p>${mesRef} &mdash; ${pedidos.length} pedido(s)</p>
   </div>
 </div>
 <div class="info">
@@ -560,6 +570,8 @@ const ComercialLiberacao = () => {
 <table>
   <thead><tr>
     <th style="text-align:left">Mês Referência</th>
+    <th style="text-align:center">Lib. Produção</th>
+    <th style="text-align:center">Embarque</th>
     <th style="text-align:center">Dias Corridos</th>
     <th style="text-align:left">Cliente</th>
     <th style="text-align:right">Valor Pedido</th>
@@ -568,7 +580,8 @@ const ComercialLiberacao = () => {
   </tr></thead>
   <tbody>${rows}</tbody>
   <tfoot><tr>
-    <td colspan="3" style="text-align:right">TOTAL</td>
+    <td colspan="4" style="text-align:right">TOTAL</td>
+    <td></td>
     <td style="text-align:right">${fmtCurrency(totalValor)}</td>
     <td></td>
     <td style="text-align:center">${totalQtdKits || '-'}</td>
@@ -576,7 +589,7 @@ const ComercialLiberacao = () => {
 </table>
 </body></html>`;
 
-    const w = window.open('', '_blank', 'width=1100,height=700');
+    const w = window.open('', '_blank', 'width=1200,height=700');
     if (!w) { showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error'); return; }
     w.document.open();
     w.document.write(fullHtml);
@@ -742,26 +755,66 @@ const ComercialLiberacao = () => {
 
       {showPdfModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-5 max-h-[90vh] overflow-y-auto">
             <h2 className="text-lg font-bold font-display text-foreground">Exportar Programação de Produção</h2>
             <div className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Mês de Referência</label>
                 <input className={inputClass} placeholder="ex: Março/2026" value={pdfMesRef} onChange={(e) => setPdfMesRef(e.target.value)} />
               </div>
-              <div>
-                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Data de Liberação para Produção</label>
-                <input type="date" className={inputClass} value={pdfDataLiberacao} onChange={(e) => setPdfDataLiberacao(e.target.value)} />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Lib. Produção (padrão)</label>
+                  <input type="date" className={inputClass} value={pdfDataLiberacao} onChange={(e) => setPdfDataLiberacao(e.target.value)} />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Embarque (padrão)</label>
+                  <input type="date" className={inputClass} value={pdfDataEmbarque} onChange={(e) => setPdfDataEmbarque(e.target.value)} />
+                </div>
               </div>
+              <button
+                type="button"
+                className={btnSecondary}
+                onClick={() => setPdfOrderDates(() => {
+                  const next: Record<string, { embarque: string; liberacao: string }> = {};
+                  for (const o of s3Processed) next[o.id] = { embarque: pdfDataEmbarque, liberacao: pdfDataLiberacao };
+                  return next;
+                })}
+              >
+                Aplicar datas padrão a todos
+              </button>
               <div>
-                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Data de Embarque</label>
-                <input type="date" className={inputClass} value={pdfDataEmbarque} onChange={(e) => setPdfDataEmbarque(e.target.value)} />
+                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-2">
+                  Datas por Pedido <span className="normal-case font-normal">(Lib. Produção → Embarque)</span>
+                </label>
+                <div className="space-y-2 max-h-[38vh] overflow-y-auto border border-border rounded-lg p-3">
+                  {s3Processed.map(o => {
+                    const d = pdfOrderDates[o.id] || { embarque: '', liberacao: '' };
+                    const dias = d.embarque && d.liberacao ? Math.max(0, Math.ceil((new Date(d.embarque + 'T00:00:00').getTime() - new Date(d.liberacao + 'T00:00:00').getTime()) / 86400000)) : null;
+                    return (
+                      <div key={o.id} className="flex items-center gap-2">
+                        <span className="font-mono-data font-bold text-primary text-sm w-16 shrink-0">{o.id}</span>
+                        <span className="text-sm text-muted-foreground truncate w-32 shrink-0">{o.clientName || o.clientCode || '-'}</span>
+                        <input
+                          type="date"
+                          title="Lib. Produção"
+                          className="flex-1 px-2 py-1.5 rounded border border-input bg-background text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                          value={d.liberacao}
+                          onChange={(e) => setPdfOrderDates(prev => ({ ...prev, [o.id]: { ...(prev[o.id] ?? { embarque: '', liberacao: '' }), liberacao: e.target.value } }))}
+                        />
+                        <input
+                          type="date"
+                          title="Embarque"
+                          className="flex-1 px-2 py-1.5 rounded border border-input bg-background text-foreground text-xs focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+                          value={d.embarque}
+                          onChange={(e) => setPdfOrderDates(prev => ({ ...prev, [o.id]: { ...(prev[o.id] ?? { embarque: '', liberacao: '' }), embarque: e.target.value } }))}
+                        />
+                        {dias !== null && <span className="text-xs text-muted-foreground w-10 shrink-0 text-right">{dias}d</span>}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              {pdfDataEmbarque && pdfDataLiberacao && (
-                <p className="text-sm text-muted-foreground">
-                  Dias corridos: <strong className="text-foreground">{Math.max(0, Math.ceil((new Date(pdfDataEmbarque + 'T00:00:00').getTime() - new Date(pdfDataLiberacao + 'T00:00:00').getTime()) / 86400000))}</strong>
-                </p>
-              )}
               <p className="text-xs text-muted-foreground">Serão exportados <strong>{s3Processed.length}</strong> pedido(s) prontos para produção.</p>
             </div>
             <div className="flex justify-end gap-3 pt-2">
@@ -957,6 +1010,13 @@ const ComercialLiberacao = () => {
       {activeTab === 'producao' && <div className="space-y-6">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Prontos para Produção</h2>
+          <button
+            className={btnSecondary}
+            disabled={s3CandProcessed.length === 0}
+            onClick={() => setLoadIds(prev => { const set = new Set(prev); s3CandProcessed.forEach(o => set.add(o.id)); return Array.from(set); })}
+          >
+            Selecionar Todos ({s3CandProcessed.length})
+          </button>
         </div>
         <div className="flex items-center gap-3">
           <input type="text" value={s3CandColFilter.values['pedido'] || ''} onChange={(e) => s3CandColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
