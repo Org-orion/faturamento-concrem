@@ -6,7 +6,8 @@ import { cn } from '@/lib/utils';
 import { UnifiedPedido, PedidoStatusById } from './types';
 import { fmtDateTime } from '@/lib/dateUtils';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
-import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
+import { useAtencao } from '@/contexts/AtencaoContext';
+import { PrioridadeIcon, AtencaoIcon } from '@/components/pedidos/PrioridadeBadge';
 
 export function AtualizacaoStatusList({
   pedidos,
@@ -20,6 +21,7 @@ export function AtualizacaoStatusList({
   onSelect: (id: string) => void;
 }) {
   const { map: prioMap } = usePrioridades();
+  const { map: atencaoMap } = useAtencao();
   const parentRef = useRef<HTMLDivElement>(null);
 
   const rowVirtualizer = useVirtualizer({
@@ -78,9 +80,7 @@ export function AtualizacaoStatusList({
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="font-bold">{p.cliente}</span>
-                      {prioMap.has(p.id) && (
-                        <PrioridadeIcon nivel={prioMap.get(p.id)!.nivel} motivo={prioMap.get(p.id)!.motivo} />
-                      )}
+                      {prioMap.has(p.id) && (<PrioridadeIcon nivel={prioMap.get(p.id)!.nivel} motivo={prioMap.get(p.id)!.motivo} />)}{atencaoMap.has(p.id) && (<AtencaoIcon motivo={atencaoMap.get(p.id)!.motivo} />)}
                     </div>
                     <div className="mt-1 text-sm text-muted-foreground">
                       <span className="font-mono-data font-bold text-primary">{p.numero}</span>

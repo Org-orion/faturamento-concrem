@@ -20,7 +20,8 @@ import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntrega
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 
 import { usePrioridades } from '@/contexts/PrioridadesContext';
-import { PrioridadeIcon, PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
+import { useAtencao } from '@/contexts/AtencaoContext';
+import { PrioridadeIcon, PrioridadeDot, AtencaoIcon, AtencaoDot } from '@/components/pedidos/PrioridadeBadge';
 import { todayBR, fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText, sendEvolutionMedia } from '@/lib/evolutionApi';
 import type { FilterCondition, FilterField } from '@/lib/filters';
@@ -47,6 +48,7 @@ const CreateShipment = () => {
   const { showToast } = useToast();
 
   const { map: prioMap } = usePrioridades();
+  const { map: atencaoMap } = useAtencao();
   const isEditing = Boolean(id);
   const [driverId, setDriverId] = useState('');
   type ShipmentStatus = 'Aguardando Despacho' | 'Despachado' | 'Em Rota' | 'Entregue' | 'Cancelado';
@@ -1644,7 +1646,7 @@ const CreateShipment = () => {
                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Nº Pedido</p>
                             </div>
                             <div className="flex justify-center">
-                              {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}
+                              {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}{atencaoMap.has(order.id) && <AtencaoIcon motivo={atencaoMap.get(order.id)!.motivo} />}
                             </div>
                             <div>
                               <p className="font-bold text-sm text-primary/80 truncate">{order.clientName || order.clientCode || '-'}</p>
@@ -1734,7 +1736,7 @@ const CreateShipment = () => {
                               <p className="text-[10px] text-muted-foreground font-medium">Nº Pedido</p>
                             </div>
                             <div className="flex justify-center">
-                              {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}
+                              {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}{atencaoMap.has(order.id) && <AtencaoIcon motivo={atencaoMap.get(order.id)!.motivo} />}
                             </div>
                             <div>
                               <p className="font-bold text-sm text-primary truncate">{order.clientName || order.clientCode || '-'}</p>
@@ -1926,7 +1928,7 @@ const CreateShipment = () => {
                                 <>
                                   <td className="py-3 px-4 font-mono-data font-bold text-primary">
                                     <span className="inline-flex items-center gap-1.5">
-                                      {prioMap.has(order.id) && <PrioridadeDot nivel={prioMap.get(order.id)!.nivel} />}
+                                      {prioMap.has(order.id) && <PrioridadeDot nivel={prioMap.get(order.id)!.nivel} />}{atencaoMap.has(order.id) && <AtencaoDot />}
                                       {order.id}
                                     </span>
                                   </td>

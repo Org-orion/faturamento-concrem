@@ -24,7 +24,8 @@ import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/table/SortableHeader';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
-import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
+import { useAtencao } from '@/contexts/AtencaoContext';
+import { PrioridadeIcon, AtencaoIcon } from '@/components/pedidos/PrioridadeBadge';
 
 type ScheduleCandidate = {
   id: string;
@@ -44,6 +45,7 @@ const Commercial = () => {
   const navigate = useNavigate();
 
   const { map: prioMap } = usePrioridades();
+  const { map: atencaoMap } = useAtencao();
   const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
 
   const { sortState, toggleSort } = useTableSort();
@@ -635,7 +637,7 @@ const Commercial = () => {
                         </span>
                       </td>
                       <td className="w-32 py-2 text-center align-middle">
-                        {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}
+                        {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}{atencaoMap.has(o.id) && <AtencaoIcon motivo={atencaoMap.get(o.id)!.motivo} />}
                       </td>
                       <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
                       <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? fmtDate(o.date) : '-'}</td>
@@ -830,7 +832,7 @@ const Commercial = () => {
                       />
                     </td>
                     <td className="py-3 px-4 font-mono-data font-bold text-primary">
-                      {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}
+                      {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}{atencaoMap.has(o.id) && <AtencaoIcon motivo={atencaoMap.get(o.id)!.motivo} />}
                       {o.id}
                       {o.kind === 'SUPORTE' && (
                         <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-muted text-muted-foreground">

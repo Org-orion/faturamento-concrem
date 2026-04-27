@@ -22,7 +22,8 @@ import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/table/SortableHeader';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
-import { PrioridadeIcon } from '@/components/pedidos/PrioridadeBadge';
+import { useAtencao } from '@/contexts/AtencaoContext';
+import { PrioridadeIcon, AtencaoIcon } from '@/components/pedidos/PrioridadeBadge';
 
 
 const PedidoSuporte = () => {
@@ -32,6 +33,7 @@ const PedidoSuporte = () => {
   const navigate = useNavigate();
 
   const { map: prioMap } = usePrioridades();
+  const { map: atencaoMap } = useAtencao();
   const { sortState, toggleSort } = useTableSort();
 
   const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
@@ -534,7 +536,7 @@ const PedidoSuporte = () => {
                         </span>
                       </td>
                       <td className="w-32 py-2 text-center align-middle">
-                        {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}
+                        {prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}{atencaoMap.has(o.id) && <AtencaoIcon motivo={atencaoMap.get(o.id)!.motivo} />}
                       </td>
                       <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
                       <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? fmtDate(o.date) : '-'}</td>
@@ -775,7 +777,7 @@ const PedidoSuporte = () => {
                         }
                       />
                     </td>
-                    <td className="py-3 px-4 font-mono-data font-bold text-primary">{prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}{o.id}</td>
+                    <td className="py-3 px-4 font-mono-data font-bold text-primary">{prioMap.has(o.id) && <PrioridadeIcon nivel={prioMap.get(o.id)!.nivel} motivo={prioMap.get(o.id)!.motivo} />}{atencaoMap.has(o.id) && <AtencaoIcon motivo={atencaoMap.get(o.id)!.motivo} />}{o.id}</td>
                     <td className="py-3 px-4">{o.representativeName}</td>
                     <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(o.total)}</td>
                   </tr>

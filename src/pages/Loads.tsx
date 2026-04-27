@@ -17,7 +17,8 @@ import { ColumnFilterRow, ColFilterSlot } from '@/components/table/ColumnFilterR
 import type { Load } from '@/types';
 import { fmtDate, todayBR } from '@/lib/dateUtils';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
-import { PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
+import { useAtencao } from '@/contexts/AtencaoContext';
+import { PrioridadeDot, AtencaoDot } from '@/components/pedidos/PrioridadeBadge';
 
 type ReportRow = {
   driverName: string;
@@ -67,6 +68,7 @@ const shipmentStatuses = [
 const LoadsPage = () => {
   const { loads, drivers, orders, supportOrders } = useApp();
   const { map: prioMap } = usePrioridades();
+  const { map: atencaoMap } = useAtencao();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [extraOrders, setExtraOrders] = useState<Order[]>([]);
   const [pedidoStatusMap, setPedidoStatusMap] = useState<Map<string, PedidoStatusRow>>(new Map());
@@ -607,7 +609,7 @@ const LoadsPage = () => {
                         <tr key={o.id} className="hover:bg-muted/20 transition-colors">
                           <td className="py-3 px-4 font-mono-data font-bold text-primary">
                             <div className="flex items-center gap-1.5">
-                              {prioMap.has(o.id) && <PrioridadeDot nivel={prioMap.get(o.id)!.nivel} />}
+                              {prioMap.has(o.id) && <PrioridadeDot nivel={prioMap.get(o.id)!.nivel} />}{atencaoMap.has(o.id) && <AtencaoDot />}
                               {o.id}
                             </div>
                           </td>
