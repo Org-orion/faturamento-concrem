@@ -394,7 +394,6 @@ const Commercial = () => {
             .from(table)
             .select(tableColumns)
             .or(finalOr)
-            .in('id_nota_conf', [307, 309])
             .gte('data_emissao', DATA_CORTE)
             .order('data_emissao', { ascending: false })
             .range(from, from + PAGE - 1);

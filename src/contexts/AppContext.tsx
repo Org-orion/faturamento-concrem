@@ -374,7 +374,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       if (venda.length === 0 && suporte.length === 0) {
         const { data: fallbackData, error: fallbackErr } = await supabasePedidos.from(table).select(columns)
-          .or(pedidosFilter)
+          .gte('data_emissao', '2025-01-01')
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1);
         if (cancelled) return;
