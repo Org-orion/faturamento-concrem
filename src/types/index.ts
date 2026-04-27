@@ -182,6 +182,7 @@ export interface Order {
   commercialNotes?: string;
   commercialDecisionNote?: string;
   carregamentoId?: string;
+  situacaoEntrega?: string;
   history?: { at: string; by: string; action: string; note?: string }[];
 }
 

@@ -468,6 +468,9 @@ const CreateShipment = () => {
 
       if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
+      // Pedidos com situacao_entrega = "Totalmente Entregue" nunca devem aparecer no carregamento.
+      if (o.situacaoEntrega === 'Totalmente Entregue') return false;
+
       // Filtro de corte por data de emissão — só para pedidos que vieram do AppContext (não do OPS direto).
       // Pedidos do OPS (directPedidos) têm status explícito e devem aparecer independente da data.
       // Motivo: concrem_pedidos_status acumula pedidos históricos com status liberado_producao

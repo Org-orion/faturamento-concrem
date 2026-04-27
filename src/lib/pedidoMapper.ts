@@ -278,6 +278,7 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
     commercialNotes: pickString(row, ['commercial_notes', 'obs_comercial', 'commercialNotes']) || undefined,
     commercialDecisionNote: pickString(row, ['commercial_decision_note', 'nota_decisao', 'commercialDecisionNote']) || undefined,
     carregamentoId: pickString(row, ['embarque_id', 'load_id', 'carregamentoId', 'loadId']) || undefined,
+    situacaoEntrega: pickString(row, ['situacao_entrega', 'situacaoEntrega']) || undefined,
     history: Array.isArray(row.history) ? row.history : undefined,
   };
 }
