@@ -352,12 +352,12 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       const columns = tableColumns;
       const [vendasRes, suporteRes] = await Promise.all([
-        supabasePedidos.from(table).select(columns).or(vendasOr)
+        supabasePedidos.from(table).select(columns).in('id_nota_conf', [307, 309])
           .gte('data_emissao', '2025-01-01')
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
-        supabasePedidos.from(table).select(columns).or(suporteOr)
+        supabasePedidos.from(table).select(columns).in('id_nota_conf', [613, 665])
           .gte('data_emissao', '2025-01-01')
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1)
@@ -861,10 +861,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const defaultClientId = sampleClients[0]?.id || 'CLI-001';
     try {
       const [vendasRes, suporteRes] = await Promise.all([
-        supabasePedidos.from(table).select(tableColumns).or(vendasOr)
+        supabasePedidos.from(table).select(tableColumns).in('id_nota_conf', [307, 309])
           .gte('data_emissao', '2025-01-01').order('data_emissao', { ascending: false }).range(from, to)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
-        supabasePedidos.from(table).select(tableColumns).or(suporteOr)
+        supabasePedidos.from(table).select(tableColumns).in('id_nota_conf', [613, 665])
           .gte('data_emissao', '2025-01-01').order('data_emissao', { ascending: false }).range(from, to)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
       ]);
