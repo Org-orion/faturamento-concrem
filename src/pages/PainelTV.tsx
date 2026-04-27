@@ -175,12 +175,13 @@ async function loadPainelOrders(): Promise<PainelOrder[]> {
 
 type HistRow = { pedido_id: string; status_anterior: string | null; status_novo: string; alterado_em: string };
 
-// Busca os N mais recentes do histórico (sem filtro de data — filtragem via Set)
-async function loadRecentHistory(limit = 50): Promise<HistRow[]> {
+// Busca histórico desde um timestamp (filtra no banco — evita full-scan)
+async function loadHistorySince(since: string, limit = 100): Promise<HistRow[]> {
   if (!supabaseOps) return [];
   const { data } = await supabaseOps
     .from('concrem_pedidos_status_historico')
     .select('pedido_id, status_anterior, status_novo, alterado_em')
+    .gte('alterado_em', since)
     .order('alterado_em', { ascending: false })
     .limit(limit);
   return (data || []) as HistRow[];
@@ -195,21 +196,21 @@ function usePainel() {
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
   const popupTimer  = useRef<ReturnType<typeof setTimeout>>();
   const feedKey     = useRef(0);
-  // Set de chaves `pedido_id_alterado_em` já processadas — imune a clock skew
+  // Timestamp do carregamento da página — só notifica mudanças APÓS este momento
+  const pageLoadTime = useRef(new Date().toISOString());
+  // Set de chaves já exibidas nesta sessão (dedup entre polls)
   const seenKeys    = useRef<Set<string>>(new Set());
   const initialized = useRef(false);
   // Último status exibido no popup por pedido
   const shownStatus = useRef<Record<string, string>>({});
 
   const poll = useCallback(async () => {
-    // Primeiro poll: popula seenKeys com TODO o histórico existente sem notificar
+    // Primeiro poll: carrega dados sem buscar histórico
     if (!initialized.current) {
-      const [data, rawCounts, existingHist] = await Promise.all([
+      const [data, rawCounts] = await Promise.all([
         loadPainelOrders(),
         loadStatusCounts(),
-        loadRecentHistory(2000),
       ]);
-      existingHist.forEach((h) => seenKeys.current.add(`${h.pedido_id}_${h.alterado_em}`));
       initialized.current = true;
       if (!data.length) return;
       const lc: Record<string, number> = {};
@@ -223,14 +224,12 @@ function usePainel() {
       return;
     }
 
-    // Polls seguintes: busca os 50 mais recentes e filtra pelo Set
+    // Polls seguintes: busca apenas histórico APÓS o carregamento da página
     const [data, rawCounts, recentHist] = await Promise.all([
       loadPainelOrders(),
       loadStatusCounts(),
-      loadRecentHistory(50),
+      loadHistorySince(pageLoadTime.current, 100),
     ]);
-
-    if (!data.length) return;
 
     const newHist = recentHist.filter((h) => {
       const key = `${h.pedido_id}_${h.alterado_em}`;
@@ -247,7 +246,7 @@ function usePainel() {
     setCounts(lc);
 
     if (newHist.length > 0) {
-      const erpMap = new Map(data.map((o) => [o.id, o]));
+      const erpMap = new Map((data.length ? data : orders).map((o) => [o.id, o]));
       const changeEntries: FeedEntry[] = newHist.map((h) => {
         const order = erpMap.get(String(h.pedido_id));
         return {
@@ -274,9 +273,9 @@ function usePainel() {
       }
     }
 
-    setOrders(data);
+    if (data.length) setOrders(data);
     setLastRefresh(new Date());
-  }, []);
+  }, [orders]);
 
   useEffect(() => {
     poll();
@@ -522,8 +521,7 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
     >
       <div
         className="bg-card rounded-2xl shadow-2xl border border-border overflow-hidden"
-        style={{ width: '50vw', maxHeight: '80vh', overflowY: 'auto' }}
-        style={{ borderTopWidth: 4, borderTopColor: cfg.accent }}
+        style={{ width: '50vw', maxHeight: '80vh', overflowY: 'auto', borderTopWidth: 4, borderTopColor: cfg.accent }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Barra de progresso */}
