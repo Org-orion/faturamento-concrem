@@ -351,19 +351,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
       const columns = tableColumns;
-      // Carrega apenas a primeira página (ORDERS_PAGE_SIZE) em paralelo — exibe rápido.
-      // loadMoreOrders() busca as páginas seguintes sob demanda.
-      // Regra: data_emissao >= 2026-01-01 entra sempre; antes disso entra só se não for "Totalmente Entregue".
-      const pedidosFilter = 'data_emissao.gte.2026-01-01,situacao_entrega.neq.Totalmente Entregue';
-
       const [vendasRes, suporteRes] = await Promise.all([
         supabasePedidos.from(table).select(columns).or(vendasOr)
-          .or(pedidosFilter)
+          .gte('data_emissao', '2025-01-01')
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
         supabasePedidos.from(table).select(columns).or(suporteOr)
-          .or(pedidosFilter)
+          .gte('data_emissao', '2025-01-01')
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
@@ -863,15 +858,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const from = nextPage * ORDERS_PAGE_SIZE;
     const to = from + ORDERS_PAGE_SIZE - 1;
     const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-    const pedidosFilter = 'data_emissao.gte.2026-01-01,situacao_entrega.neq.Totalmente Entregue';
     const defaultClientId = sampleClients[0]?.id || 'CLI-001';
     try {
       const [vendasRes, suporteRes] = await Promise.all([
         supabasePedidos.from(table).select(tableColumns).or(vendasOr)
-          .or(pedidosFilter).order('data_emissao', { ascending: false }).range(from, to)
+          .gte('data_emissao', '2025-01-01').order('data_emissao', { ascending: false }).range(from, to)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
         supabasePedidos.from(table).select(tableColumns).or(suporteOr)
-          .or(pedidosFilter).order('data_emissao', { ascending: false }).range(from, to)
+          .gte('data_emissao', '2025-01-01').order('data_emissao', { ascending: false }).range(from, to)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
       ]);
       const newVenda = vendasRes.error ? [] : vendasRes.data.map((r: any) => rowToOrder(r, defaultClientId));
