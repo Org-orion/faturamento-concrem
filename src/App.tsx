@@ -6,6 +6,7 @@ import { MainLayout } from '@/components/Layout/MainLayout';
 import SkeletonLoader from '@/components/SkeletonLoader';
 import { canAccessRoute } from '@/utils/access';
 import { PrioridadesProvider } from '@/contexts/PrioridadesContext';
+import { AtencaoProvider } from '@/contexts/AtencaoContext';
 
 // Lazy loading pages
 const Login = lazy(() => import('@/pages/Login'));
@@ -81,11 +82,13 @@ const App = () => {
   return (
     <AppProvider>
       <PrioridadesProvider>
-        <ToastProvider>
-          <Router>
-            <AppRoutes />
-          </Router>
-        </ToastProvider>
+        <AtencaoProvider>
+          <ToastProvider>
+            <Router>
+              <AppRoutes />
+            </Router>
+          </ToastProvider>
+        </AtencaoProvider>
       </PrioridadesProvider>
     </AppProvider>
   );

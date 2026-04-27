@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Flag } from 'lucide-react';
+import { Flag, Bell } from 'lucide-react';
 import type { NivelPrioridade } from '@/lib/prioridadesRepo';
 
 const NIVEL_STYLES: Record<NivelPrioridade, { color: string; bg: string; border: string; ring: string; pulse: string }> = {
@@ -96,5 +96,66 @@ export function PrioridadeAlert({ nivel, motivo }: { nivel: NivelPrioridade; mot
         </div>
       </div>
     </div>
+  );
+}
+
+const ATENCAO_STYLE = {
+  color: 'text-blue-600',
+  bg: 'bg-blue-50',
+  border: 'border-blue-300',
+  ring: 'ring-blue-300',
+  pulse: 'bg-blue-400',
+};
+
+/** Clickable badge for "atenção" flag — same interaction pattern as PrioridadeIcon */
+export function AtencaoIcon({ motivo, className }: { motivo?: string; className?: string }) {
+  const s = ATENCAO_STYLE;
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={ref} className={`relative inline-flex ${className || ''}`}>
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); setOpen(prev => !prev); }}
+        className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold border ${s.bg} ${s.color} ${s.border} hover:ring-2 ${s.ring} transition-all cursor-pointer`}
+      >
+        <span className="relative flex h-2 w-2">
+          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${s.pulse} opacity-75`} />
+          <span className={`relative inline-flex rounded-full h-2 w-2 ${s.pulse}`} />
+        </span>
+        <Bell className="h-3 w-3" />
+        Atenção
+      </button>
+
+      {open && motivo && (
+        <div className={`absolute z-50 top-full left-0 mt-1 w-64 rounded-lg border shadow-lg p-3 ${s.bg} ${s.border}`}>
+          <div className={`text-xs font-bold uppercase tracking-tight ${s.color} mb-1`}>
+            Ponto de Atenção
+          </div>
+          <div className={`text-sm ${s.color} font-medium`}>{motivo}</div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Minimal pulsing dot for "atenção" — compact spaces */
+export function AtencaoDot() {
+  const s = ATENCAO_STYLE;
+  return (
+    <span className="relative inline-flex h-2.5 w-2.5 shrink-0">
+      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${s.pulse} opacity-75`} />
+      <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${s.pulse}`} />
+    </span>
   );
 }

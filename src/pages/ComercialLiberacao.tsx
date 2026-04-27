@@ -135,6 +135,20 @@ const ComercialLiberacao = () => {
 
   const [statusRowsDirect, setStatusRowsDirect] = useState<Map<string, any>>(new Map());
   const [pedidoMetaMap, setPedidoMetaMap] = useState<Record<string, { observacao?: string | null }>>({});
+  const [editingObsId, setEditingObsId] = useState<string | null>(null);
+  const [editingObsValue, setEditingObsValue] = useState('');
+
+  const startEditObs = (id: string) => {
+    setEditingObsId(id);
+    setEditingObsValue(pedidoMetaMap[id]?.observacao || '');
+  };
+
+  const commitEditObs = async (id: string) => {
+    const val = editingObsValue.trim();
+    setEditingObsId(null);
+    setPedidoMetaMap(prev => ({ ...prev, [id]: { ...prev[id], observacao: val || null } }));
+    await upsertComercialPedidoMeta({ pedido_id: id, observacao: val || null, atualizado_por: user?.name || null });
+  };
 
   useEffect(() => { void refreshOrders(); }, []);
 
@@ -502,12 +516,29 @@ const ComercialLiberacao = () => {
     showToast('Carga liberada para Produção');
   };
 
-  const handleExportProgramacaoPDF = () => {
+  const handleExportProgramacaoPDF = async () => {
     const pedidos = s3Processed;
     if (pedidos.length === 0) { showToast('Nenhum pedido na carga para exportar.', 'error'); return; }
     if (!pdfMesRef.trim()) { showToast('Informe o mês de referência.', 'error'); return; }
     const missing = pedidos.filter(o => { const d = pdfOrderDates[o.id]; return !d?.embarque || !d?.liberacao; });
     if (missing.length > 0) { showToast(`Informe as datas para todos os pedidos (${missing.length} sem data).`, 'error'); return; }
+
+    // Salva previsao_embarque no ERP para cada pedido — aparece na tela de carregamento
+    if (supabasePedidos) {
+      const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
+      const saveResults = await Promise.all(
+        pedidos.map(o =>
+          supabasePedidos!.from(table)
+            .update({ previsao_embarque: pdfOrderDates[o.id]!.embarque })
+            .eq('numero_pedido', o.id)
+        )
+      );
+      const errors = saveResults.filter(r => r.error);
+      if (errors.length > 0) {
+        console.error('[ComercialLiberacao] Erro ao salvar previsao_embarque:', errors.map(r => r.error?.message));
+        showToast(`Aviso: ${errors.length} data(s) de embarque não foram salvas.`, 'error');
+      }
+    }
 
     const now = new Date();
     const mesRef = pdfMesRef.trim();
@@ -1059,7 +1090,26 @@ const ComercialLiberacao = () => {
                     <td className="py-4 px-6">{o.representativeName || '-'}</td>
                     <td className="py-4 px-6">{o.clientCity && o.clientUF ? `${o.clientCity} - ${o.clientUF}` : '-'}</td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">{formatDateBR(o.expiryDate)}</td>
-                    <td className="py-4 px-6 text-muted-foreground italic">{pedidoMetaMap[o.id]?.observacao || '-'}</td>
+                    <td className="py-4 px-6">
+                      {editingObsId === o.id ? (
+                        <input
+                          autoFocus
+                          className="w-full px-2 py-1 rounded border border-primary bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-ring/20"
+                          value={editingObsValue}
+                          onChange={e => setEditingObsValue(e.target.value)}
+                          onBlur={() => void commitEditObs(o.id)}
+                          onKeyDown={e => { if (e.key === 'Enter') void commitEditObs(o.id); if (e.key === 'Escape') setEditingObsId(null); }}
+                        />
+                      ) : (
+                        <span
+                          className="block w-full cursor-pointer text-muted-foreground italic hover:text-foreground hover:not-italic transition-colors min-h-[1.5rem]"
+                          title="Clique para editar"
+                          onClick={() => startEditObs(o.id)}
+                        >
+                          {pedidoMetaMap[o.id]?.observacao || <span className="opacity-40">—</span>}
+                        </span>
+                      )}
+                    </td>
                     <td className="py-4 px-6 text-right">
                       <button className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all" onClick={() => addToLoad(o.id)} title="Adicionar à carga">
                         <Plus className="h-4 w-4" />
