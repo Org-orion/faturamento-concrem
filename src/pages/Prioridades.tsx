@@ -86,7 +86,7 @@ const Prioridades = () => {
     const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
     const { data } = await supabasePedidos
       .from(table)
-      .select(tableColumns)
+      .select('numero_pedido, cliente_nome, cliente_codigo')
       .ilike('numero_pedido', `%${searchQuery.trim()}%`)
       .limit(10);
     setSearchResults((data || []).map((r: any) => rowToOrder(r, 'CLI-001')));
