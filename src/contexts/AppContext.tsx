@@ -298,7 +298,7 @@ export const suporteOr = 'id_nota_conf.in.(613,665)';
 // Colunas usadas na listagem e em lógica de negócio (filtragem, cálculos, exibição).
 // Colunas de detalhe puro (endereço completo) são buscadas sob demanda.
 export const tableColumns =
-  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete';
+  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete, situacao_entrega';
 
 // Colunas de endereço — buscadas separadamente no detalhe do pedido
 export const tableColumnsDetail =
@@ -353,16 +353,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const columns = tableColumns;
       // Carrega apenas a primeira página (ORDERS_PAGE_SIZE) em paralelo — exibe rápido.
       // loadMoreOrders() busca as páginas seguintes sob demanda.
-      const isoCorte = getDataCorte(4);
+      // Regra: data_emissao >= 2026-01-01 entra sempre; antes disso entra só se não for "Totalmente Entregue".
+      const pedidosFilter = 'data_emissao.gte.2026-01-01,situacao_entrega.neq.Totalmente Entregue';
 
       const [vendasRes, suporteRes] = await Promise.all([
         supabasePedidos.from(table).select(columns).or(vendasOr)
-          .gte('data_emissao', isoCorte)
+          .or(pedidosFilter)
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
         supabasePedidos.from(table).select(columns).or(suporteOr)
-          .gte('data_emissao', isoCorte)
+          .or(pedidosFilter)
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
@@ -378,7 +379,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       if (venda.length === 0 && suporte.length === 0) {
         const { data: fallbackData, error: fallbackErr } = await supabasePedidos.from(table).select(columns)
-          .gte('data_emissao', isoCorte)
+          .or(pedidosFilter)
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1);
         if (cancelled) return;
@@ -862,15 +863,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const from = nextPage * ORDERS_PAGE_SIZE;
     const to = from + ORDERS_PAGE_SIZE - 1;
     const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-    const isoCorte = getDataCorte(4);
+    const pedidosFilter = 'data_emissao.gte.2026-01-01,situacao_entrega.neq.Totalmente Entregue';
     const defaultClientId = sampleClients[0]?.id || 'CLI-001';
     try {
       const [vendasRes, suporteRes] = await Promise.all([
         supabasePedidos.from(table).select(tableColumns).or(vendasOr)
-          .gte('data_emissao', isoCorte).order('data_emissao', { ascending: false }).range(from, to)
+          .or(pedidosFilter).order('data_emissao', { ascending: false }).range(from, to)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
         supabasePedidos.from(table).select(tableColumns).or(suporteOr)
-          .gte('data_emissao', isoCorte).order('data_emissao', { ascending: false }).range(from, to)
+          .or(pedidosFilter).order('data_emissao', { ascending: false }).range(from, to)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
       ]);
       const newVenda = vendasRes.error ? [] : vendasRes.data.map((r: any) => rowToOrder(r, defaultClientId));
