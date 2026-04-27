@@ -87,7 +87,7 @@ const Prioridades = () => {
     const { data } = await supabasePedidos
       .from(table)
       .select('numero_pedido, cliente_nome, cliente_codigo')
-      .ilike('numero_pedido', `%${searchQuery.trim()}%`)
+      .eq('numero_pedido', searchQuery.trim())
       .limit(10);
     setSearchResults((data || []).map((r: any) => rowToOrder(r, 'CLI-001')));
     setSearching(false);
