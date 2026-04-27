@@ -378,11 +378,11 @@ const Commercial = () => {
       setLoadingList(true);
       try {
         const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-        const DATA_CORTE = '2025-01-06';
+        const DATA_CORTE = getDataCorte(14); // últimos 14 meses
 
         const movedToVenda = Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0]);
 
-        const PAGE = 1000;
+        const PAGE = 300;
         let from = 0;
         const allData: any[] = [];
         while (true) {

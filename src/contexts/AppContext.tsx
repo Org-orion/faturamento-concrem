@@ -351,14 +351,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
       const columns = tableColumns;
+      const dataCorte = getDataCorte(14); // últimos 14 meses para carga inicial
       const [vendasRes, suporteRes] = await Promise.all([
         supabasePedidos.from(table).select(columns).in('id_nota_conf', [307, 309])
-          .gte('data_emissao', '2025-01-01')
+          .gte('data_emissao', dataCorte)
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
         supabasePedidos.from(table).select(columns).in('id_nota_conf', [613, 665])
-          .gte('data_emissao', '2025-01-01')
+          .gte('data_emissao', dataCorte)
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
@@ -374,7 +375,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       if (venda.length === 0 && suporte.length === 0) {
         const { data: fallbackData, error: fallbackErr } = await supabasePedidos.from(table).select(columns)
-          .gte('data_emissao', '2025-01-01')
+          .gte('data_emissao', dataCorte)
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1);
         if (cancelled) return;
