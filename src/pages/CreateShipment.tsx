@@ -94,6 +94,8 @@ const CreateShipment = () => {
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [conditions, setConditions] = useState<FilterCondition[]>([]);
+  const [orderPage, setOrderPage] = useState(0);
+  const ORDER_PAGE_SIZE = 10;
 
   const { sortState, toggleSort, sortItems } = useTableSort();
   const { query: quickQuery, setQuery: setQuickQuery, filterItems: quickFilterItems } = useQuickFilter<Order>();
@@ -520,6 +522,15 @@ const CreateShipment = () => {
     return sortItems(afterQuick, sortGetters);
   }, [availableOrders, quickFilterItems, quickTextGetters, sortItems, sortGetters]);
 
+  // Reset página ao filtrar/ordenar
+  useEffect(() => { setOrderPage(0); }, [displayedOrders.length, quickQuery, conditions.length]);
+
+  const pagedOrders = useMemo(
+    () => displayedOrders.slice(orderPage * ORDER_PAGE_SIZE, (orderPage + 1) * ORDER_PAGE_SIZE),
+    [displayedOrders, orderPage],
+  );
+  const totalOrderPages = Math.max(1, Math.ceil(displayedOrders.length / ORDER_PAGE_SIZE));
+
   const toggleOrder = (orderId: string) => {
     setSelectedOrderIds(prev =>
       prev.includes(orderId) ? prev.filter(oid => oid !== orderId) : [...prev, orderId]
@@ -606,6 +617,9 @@ const CreateShipment = () => {
       ? `${order.clientCode} - ${order.clientName || client?.name || '-'}`
       : (order.clientName || client?.name || '-');
     const cnpj = client?.cpfCnpj || '-';
+    const valorPedido = order.totalPedidoVenda != null
+      ? `R$ ${order.totalPedidoVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
+      : '-';
 
     const kits = qtdKits[orderId] || '0';
     const pallets = qtdPallets[orderId] || '0';
@@ -711,7 +725,25 @@ const CreateShipment = () => {
   <!-- MANDATORY -->
   <div class="mandatory">*****Preenchimento obrigatório!*****</div>
 
-  <!-- DADOS DO MOTORISTA -->
+  <!-- SEÇÃO 1: PEDIDO / CLIENTE / CNPJ -->
+  <table class="sec">
+    <tr><td colspan="3" class="sec-hdr">Identificação do Pedido</td></tr>
+    <tr height="22">
+      <td width="20%" height="22" valign="middle" style="width:20%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nº do Pedido: </span><span class="val">${numeroPedido}</span></td>
+      <td width="50%" height="22" valign="middle" style="width:50%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cliente: </span><span class="val">${empresaLabel}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CNPJ: </span><span class="val">${cnpj}</span></td>
+    </tr>
+    <tr height="22">
+      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Responsável pelo Recebimento: </span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Data do Recebimento: </span></td>
+    </tr>
+    <tr height="22">
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cargo: </span></td>
+      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CPF: </span></td>
+    </tr>
+  </table>
+
+  <!-- SEÇÃO 2: DADOS DO MOTORISTA -->
   <table class="sec">
     <tr><td colspan="2" class="sec-hdr">Dados do Motorista</td></tr>
     <tr height="22">
@@ -722,43 +754,28 @@ const CreateShipment = () => {
       <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Placas: </span><span class="val">${driverPlate}</span></td>
       <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cel: </span><span class="val">${driverPhone}</span></td>
     </tr>
+  </table>
+
+  <!-- SEÇÃO 3: REPRESENTANTE / TELEFONE / VALOR TOTAL -->
+  <table class="sec">
+    <tr><td colspan="3" class="sec-hdr">Representante Comercial</td></tr>
     <tr height="22">
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Representante Comercial Concrem: </span><span class="val">${representanteName}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cel: </span><span class="val">${representantePhone}</span></td>
+      <td width="40%" height="22" valign="middle" style="width:40%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Representante: </span><span class="val">${representanteName}</span></td>
+      <td width="30%" height="22" valign="middle" style="width:30%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Telefone: </span><span class="val">${representantePhone}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Valor Total: </span><span class="val">${valorPedido}</span></td>
     </tr>
   </table>
 
-  <!-- DADOS DA ENTREGA -->
+  <!-- SEÇÃO 4: DADOS DA ENTREGA -->
   <table class="sec">
     <tr><td colspan="2" class="sec-hdr">Dados da Entrega</td></tr>
     <tr height="22">
-      <td width="50%" height="22" valign="middle" style="width:50%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nº do Pedido: </span><span class="val">${numeroPedido}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nº da nota fiscal: </span><span class="val">${nfNumber}</span></td>
+      <td width="50%" height="22" valign="middle" style="width:50%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Endereço de entrega: </span><span class="val">${enderecoRaw}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cidade/UF: </span><span class="val">${cidadeUfRaw}</span></td>
     </tr>
     <tr height="22">
-      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Endereço de entrega: </span><span class="val">${enderecoRaw}</span></td>
-    </tr>
-    <tr height="22">
-      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cidade/UF: </span><span class="val">${cidadeUfRaw}</span></td>
-    </tr>
-  </table>
-
-  <!-- DADOS DO CLIENTE -->
-  <table class="sec">
-    <tr><td colspan="2" class="sec-hdr">Dados do Cliente</td></tr>
-    <tr height="22">
-      <td width="60%" height="22" valign="middle" style="width:60%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Empresa: </span><span class="val">${empresaLabel}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CNPJ: </span><span class="val">${cnpj}</span></td>
-    </tr>
-    <tr height="22">
-      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Responsável pelo Recebimento: </span></td>
-    </tr>
-    <tr height="22">
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cargo: </span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CPF: </span></td>
-    </tr>
-    <tr height="22">
-      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Data do recebimento: </span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nº da Nota Fiscal: </span><span class="val">${nfNumber}</span></td>
+      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"></td>
     </tr>
   </table>
 
@@ -1608,7 +1625,7 @@ const CreateShipment = () => {
                 </div>
               ) : (
                 <div className="grid grid-cols-1 gap-2">
-                  {displayedOrders.map(order => {
+                  {pagedOrders.map(order => {
                     const client = clients.find(c => c.id === order.clientId);
                     return (
                       <div
@@ -1657,6 +1674,32 @@ const CreateShipment = () => {
                 </div>
               )}
             </div>
+
+            {/* Paginação */}
+            {displayedOrders.length > ORDER_PAGE_SIZE && (
+              <div className="flex items-center justify-between px-1 pt-1 pb-1">
+                <button
+                  type="button"
+                  disabled={orderPage === 0}
+                  onClick={() => setOrderPage(p => p - 1)}
+                  className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  ← Anterior
+                </button>
+                <span className="text-xs text-muted-foreground">
+                  Página <strong className="text-foreground">{orderPage + 1}</strong> de <strong className="text-foreground">{totalOrderPages}</strong>
+                  <span className="ml-2 text-muted-foreground/60">({displayedOrders.length} pedidos)</span>
+                </span>
+                <button
+                  type="button"
+                  disabled={orderPage >= totalOrderPages - 1}
+                  onClick={() => setOrderPage(p => p + 1)}
+                  className="px-3 py-1.5 rounded-lg border border-border text-xs font-semibold text-muted-foreground hover:text-foreground hover:border-primary/50 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                >
+                  Próxima →
+                </button>
+              </div>
+            )}
 
             {/* Seção de Selecionados — abaixo dos disponíveis */}
             {selectedOrderIds.length > 0 && (
