@@ -235,14 +235,13 @@ const PedidoSuporte = () => {
       const movedToSupport = Object.entries(moveOverride).filter(x => x[1] === 'SUPORTE').map(x => x[0]);
       const movedToVenda = Object.entries(moveOverride).filter(x => x[1] === 'VENDA').map(x => x[0]);
 
-      let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).in('id_nota_conf', [613, 665])
-        .gte('data_emissao', '2025-01-06');
-
+      let finalOr = suporteOr;
       if (movedToSupport.length > 0) {
-        // Inclui pedidos movidos manualmente para suporte via OR separado
-        const extraOr = `numero_pedido.in.(${movedToSupport.map(x => `"${x}"`).join(',')})`;
-        query = (query as any).or(extraOr);
+        finalOr += `,numero_pedido.in.(${movedToSupport.map(x => `"${x}"`).join(',')})`;
       }
+
+      let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).or(finalOr)
+        .gte('data_emissao', '2025-01-06');
 
       if (movedToVenda.length > 0) {
         query = query.not('numero_pedido', 'in', `(${movedToVenda.map(x => `"${x}"`).join(',')})`);

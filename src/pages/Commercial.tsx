@@ -381,36 +381,28 @@ const Commercial = () => {
         const DATA_CORTE = getDataCorte(14); // últimos 14 meses
 
         const movedToVenda = Object.entries(moveOverride).filter((x) => x[1] === 'VENDA').map((x) => x[0]);
+        let finalOr = vendasOr;
+        if (movedToVenda.length > 0) {
+          finalOr += `,numero_pedido.in.(${movedToVenda.map((x) => `"${x}"`).join(',')})`;
+        }
 
         const PAGE = 300;
         let from = 0;
         const allData: any[] = [];
         while (true) {
-          let q = supabasePedidos
+          const { data, error } = await supabasePedidos
             .from(table)
             .select(tableColumns)
-            .in('id_nota_conf', [307, 309])
+            .or(finalOr)
             .gte('data_emissao', DATA_CORTE)
             .order('data_emissao', { ascending: false })
             .range(from, from + PAGE - 1);
-          const { data, error } = await q;
           if (cancelled) return;
           if (error) throw error;
-          let page = data || [];
-          // Inclui pedidos manualmente movidos para venda que não sejam id_nota_conf 307/309
-          if (movedToVenda.length > 0 && from === 0) {
-            const extraIds = movedToVenda.filter((id) => !page.some((r: any) => String(r.numero_pedido) === id));
-            if (extraIds.length > 0) {
-              const { data: extraData } = await supabasePedidos
-                .from(table)
-                .select(tableColumns)
-                .in('numero_pedido', extraIds);
-              if (extraData) page = [...page, ...extraData];
-            }
-          }
+          const page = data || [];
           allData.push(...page);
           console.log(`[Commercial] página ${from / PAGE + 1}: ${page.length} pedidos (total acumulado: ${allData.length})`);
-          if ((data || []).length < PAGE) break;
+          if (page.length < PAGE) break;
           from += PAGE;
         }
 
