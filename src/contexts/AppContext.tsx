@@ -351,17 +351,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
       const columns = tableColumns;
-      const dataCorte = getDataCorte(14); // últimos 14 meses para carga inicial
+      // Sem ORDER BY na carga inicial: o banco para ao achar os primeiros N registros
+      // em vez de ordenar toda a tabela. Com índice em id_nota_conf, isso é muito rápido.
+      // loadMoreOrders usa ORDER BY para paginação consistente.
+      const dataCorte = getDataCorte(14); // últimos 14 meses
       const [vendasRes, suporteRes] = await Promise.all([
         supabasePedidos.from(table).select(columns).in('id_nota_conf', [307, 309])
           .gte('data_emissao', dataCorte)
-          .order('data_emissao', { ascending: false })
-          .range(0, ORDERS_PAGE_SIZE - 1)
+          .limit(ORDERS_PAGE_SIZE)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
         supabasePedidos.from(table).select(columns).in('id_nota_conf', [613, 665])
           .gte('data_emissao', dataCorte)
-          .order('data_emissao', { ascending: false })
-          .range(0, ORDERS_PAGE_SIZE - 1)
+          .limit(ORDERS_PAGE_SIZE)
           .then(({ data, error }) => ({ data: (data || []) as any[], error })),
       ]);
 
@@ -376,8 +377,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       if (venda.length === 0 && suporte.length === 0) {
         const { data: fallbackData, error: fallbackErr } = await supabasePedidos.from(table).select(columns)
           .gte('data_emissao', dataCorte)
-          .order('data_emissao', { ascending: false })
-          .range(0, ORDERS_PAGE_SIZE - 1);
+          .limit(ORDERS_PAGE_SIZE);
         if (cancelled) return;
         if (fallbackErr) { console.error(`[Supabase] Falha ao carregar fallback de ${table}:`, fallbackErr.message); return; }
         const fallbackVenda: Order[] = ((fallbackData || []) as any[]).map((row: any) => rowToOrder(row, defaultClientId));
