@@ -391,6 +391,7 @@ const Commercial = () => {
             .select(tableColumns)
             .in('id_nota_conf', [307, 309])
             .gte('data_emissao', DATA_CORTE)
+            .order('data_emissao', { ascending: false })
             .range(from, from + PAGE - 1);
           const { data, error } = await q;
           if (cancelled) return;
