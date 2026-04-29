@@ -344,11 +344,19 @@ function usePainel() {
         prevStatusMap.current = new Map(data.map((o) => [o.id, o.statusRaw]));
         lastLoadedAt.current  = nowIso; // delta parte de agora
 
-        // Pré-popula feed com mudanças recentes (sem popup)
+        // Pré-popula feed com mudanças recentes
         if (initialFeed.length) {
           setFeed(initialFeed);
-          // Registra em shownStatus para não re-notificar via popup
-          for (const e of initialFeed) shownStatus.current.set(e.orderId, e.to);
+          // Mostra popup da mudança mais recente (se ocorreu nos últimos 10 min)
+          const recent = initialFeed[0];
+          const ageMs  = Date.now() - recent.time.getTime();
+          if (ageMs <= 10 * 60_000) {
+            shownStatus.current.set(recent.orderId, recent.to);
+            setPopup(recent);
+            clearTimeout(popupTimer.current);
+            popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
+          }
+          // Não bloqueia popups futuros para os demais — apenas o exibido acima entra em shownStatus
         }
 
         initialized.current   = true;
