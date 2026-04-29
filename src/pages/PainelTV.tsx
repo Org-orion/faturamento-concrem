@@ -196,6 +196,47 @@ async function loadByLabel(label: string): Promise<PainelOrder[]> {
   return enrichWithErp(rows);
 }
 
+// Feed inicial: últimas mudanças reais de status nas últimas 2h (pré-popula o painel lateral)
+async function loadRecentFeed(): Promise<FeedEntry[]> {
+  if (!supabaseOps || !supabasePedidos) return [];
+  const now     = new Date().toISOString();
+  const cutoff  = new Date(Date.now() - 2 * 3600_000).toISOString();
+
+  const { data } = await supabaseOps
+    .from('concrem_pedidos_status_historico')
+    .select('pedido_id, numero_pedido, status_anterior, status_novo, alterado_em')
+    .lte('alterado_em', now)
+    .gte('alterado_em', cutoff)
+    .order('alterado_em', { ascending: false })
+    .limit(60);
+
+  if (!data?.length) return [];
+
+  // Apenas mudanças reais (status_anterior ≠ status_novo, ambos preenchidos)
+  const real = (data as any[])
+    .filter((r) => r.status_anterior && r.status_novo && r.status_anterior !== r.status_novo)
+    .slice(0, 30);
+
+  if (!real.length) return [];
+
+  // Enriquece com nome do cliente via ERP
+  const ids = [...new Set(real.map((r) => String(r.numero_pedido || r.pedido_id)))];
+  const { data: erpData } = await supabasePedidos
+    .from(erpTable)
+    .select('numero_pedido, cliente_nome')
+    .in('numero_pedido', ids);
+  const erpMap = new Map((erpData || []).map((r: any) => [String(r.numero_pedido), r.cliente_nome as string]));
+
+  return real.map((r, i) => ({
+    key:     `hist-${r.pedido_id}-${i}`,
+    time:    new Date(r.alterado_em),
+    orderId: String(r.numero_pedido || r.pedido_id),
+    from:    r.status_anterior ? (STATUS_LABEL[r.status_anterior] || r.status_anterior) : null,
+    to:      STATUS_LABEL[r.status_novo] || r.status_novo,
+    client:  erpMap.get(String(r.numero_pedido || r.pedido_id)) || '—',
+  }));
+}
+
 // Delta: apenas status primários alterados desde 'since'
 async function loadDeltaSince(since: string): Promise<PainelOrder[]> {
   const rows = await fetchStatusRows(PRIMARY_STATUSES, 500, since);
@@ -286,9 +327,10 @@ function usePainel() {
       // ── Carga inicial (ou reload pós-filtro) ─────────────────────────────
       if (!initialized.current) {
         setCardsLoading(true);
-        const [data, rawCounts] = await Promise.all([
+        const [data, rawCounts, initialFeed] = await Promise.all([
           filter ? loadByLabel(filter) : loadAllPrimary(),
           loadStatusCounts(),
+          loadRecentFeed(),
         ]);
         setCardsLoading(false);
         setCounts(rawCounts);
@@ -301,6 +343,14 @@ function usePainel() {
         setCards(data);
         prevStatusMap.current = new Map(data.map((o) => [o.id, o.statusRaw]));
         lastLoadedAt.current  = nowIso; // delta parte de agora
+
+        // Pré-popula feed com mudanças recentes (sem popup)
+        if (initialFeed.length) {
+          setFeed(initialFeed);
+          // Registra em shownStatus para não re-notificar via popup
+          for (const e of initialFeed) shownStatus.current.set(e.orderId, e.to);
+        }
+
         initialized.current   = true;
         setLastRefresh(new Date());
         return;
