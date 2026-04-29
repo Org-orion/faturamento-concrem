@@ -7,7 +7,7 @@ import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { cn } from '@/lib/utils';
 import logoSidebar from '@/assets/logo-sidebar.png';
 
-// ─── Status: mapeamento interno → label ──────────────────────────────────────
+// ─── Mapeamento status → label ────────────────────────────────────────────────
 const STATUS_LABEL: Record<string, string> = {
   aguardando_avaliacao:  'AVALIAÇÃO',
   aguardando_mapeamento: 'MAPEAMENTO',
@@ -29,7 +29,6 @@ const STATUS_LABEL: Record<string, string> = {
   finalizado:            'FINALIZADO',
 };
 
-// Cores dos badges — usa as cores de card do app (hsl direto)
 const STATUS_CFG: Record<string, { bg: string; fg: string; accent: string }> = {
   'AVALIAÇÃO':     { bg: 'hsl(214,32%,91%)',   fg: 'hsl(213,12%,52%)',  accent: 'hsl(213,12%,52%)' },
   'MAPEAMENTO':    { bg: 'hsl(204,71%,57%)',    fg: '#fff',              accent: 'hsl(204,71%,57%)' },
@@ -49,8 +48,21 @@ const STEPS = [
 ];
 const STEP_IDX = Object.fromEntries(STEPS.map((s, i) => [s, i]));
 
-// Status para cards (exibição) — exclui aguardando_avaliacao (muito volumoso, pouco informativo)
-const ACTIVE_STATUSES = [
+// Status principais exibidos no grid (TV) — máx 100 cards por grupo
+const PRIMARY_GROUPS = [
+  { label: 'LIB. PRODUÇÃO', statuses: ['liberado_producao'] },
+  { label: 'MAPEAMENTO',    statuses: ['aguardando_mapeamento', 'mapeamento_andamento', 'mapeamento_concluido'] },
+  { label: 'FERRAGEM',      statuses: ['aguardando_ferragem', 'ferragem_recebida'] },
+  { label: 'EM ROTA',       statuses: ['em_entrega', 'parcialmente_entregue'] },
+  { label: 'ENTREGUE',      statuses: ['entregue'] },
+] as const;
+
+const PRIMARY_STATUSES = PRIMARY_GROUPS.flatMap((g) => [...g.statuses]);
+const PRIMARY_LABELS   = PRIMARY_GROUPS.map((g) => g.label);
+
+// Todos os status para contagem global (StatsBar)
+const ALL_STATUSES = [
+  'aguardando_avaliacao',
   'aguardando_mapeamento', 'mapeamento_andamento', 'mapeamento_concluido',
   'aguardando_ferragem', 'ferragem_recebida',
   'liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia',
@@ -59,11 +71,11 @@ const ACTIVE_STATUSES = [
   'entregue', 'aguardando_pagamento', 'finalizado',
 ];
 
-// Todos os status para contagem — inclui aguardando_avaliacao no TOTAL
-const ALL_STATUSES = ['aguardando_avaliacao', ...ACTIVE_STATUSES];
-
-const CARD_LIMIT    = 1000; // máximo de cards exibidos (os mais recentes)
-const COUNTS_TTL_MS = 30000; // recarrega contagens a cada 30s (não a cada 5s)
+const CARDS_PER_GROUP  = 100;   // limite por grupo/label no grid
+const COUNTS_TTL_MS    = 30_000; // contagens globais: a cada 30s
+const FULL_RELOAD_MS   = 5 * 60_000; // reload completo a cada 5min (limpa obsoletos)
+const POLL_INTERVAL_MS = 5_000;
+const POPUP_DURATION_MS = 8000;
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 interface PainelOrder {
@@ -85,6 +97,9 @@ interface FeedEntry {
   client: string;
 }
 
+type StatusRow = { pedido_id: string; status_atual: string; atualizado_em: string };
+type ErpRow    = { numero_pedido: string; cliente_nome: string; representante: string; total_pedido_venda: number };
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 const fmtCurrency = (v: number) =>
   v ? `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
@@ -101,8 +116,6 @@ const fmtRelative = (iso: string) => {
 const fmtTime = (d: Date) =>
   d.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit', timeZone: 'America/Sao_Paulo' });
 
-const POPUP_DURATION_MS = 8000;
-
 const repShort = (rep: string) => rep.replace(/^\d+\s*[-–]\s*/, '').trim() || '—';
 
 const erpTable = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
@@ -110,59 +123,48 @@ const erpTable = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos
 const chunkArr = <T,>(arr: T[], n: number): T[][] =>
   Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 
-// ─── Contagem real por status label ──────────────────────────────────────────
-// 1 query paginada (campo único) em vez de 17 queries paralelas de COUNT.
-// Roda a cada 30s, não a cada 5s.
-async function loadStatusCounts(): Promise<Record<string, number>> {
-  if (!supabaseOps) return {};
-  const acc: Record<string, number> = {};
-  let from = 0;
-  const PAGE = 1000;
-  while (true) {
-    const { data, error } = await supabaseOps
+// ─── Queries ──────────────────────────────────────────────────────────────────
+
+async function fetchStatusRows(statuses: string[], limit: number, since?: string): Promise<StatusRow[]> {
+  if (!supabaseOps) return [];
+  const now = new Date().toISOString();
+
+  if (since) {
+    const { data } = await supabaseOps
       .from('concrem_pedidos_status')
-      .select('status_atual')
-      .in('status_atual', ALL_STATUSES)
-      .range(from, from + PAGE - 1);
-    if (error || !data?.length) break;
-    for (const r of data as { status_atual: string }[]) {
-      const lb = STATUS_LABEL[r.status_atual] || r.status_atual.toUpperCase();
-      acc[lb] = (acc[lb] || 0) + 1;
-    }
-    if (data.length < PAGE) break;
-    from += PAGE;
+      .select('pedido_id, status_atual, atualizado_em')
+      .in('status_atual', statuses)
+      .gt('atualizado_em', since)
+      .lte('atualizado_em', now)
+      .order('atualizado_em', { ascending: false })
+      .range(0, limit - 1);
+    return (data || []) as StatusRow[];
   }
-  return acc;
-}
 
-// ─── Fetch de cards ───────────────────────────────────────────────────────────
-// 1 query OPS (em vez de 17 paralelas) + batches ERP.
-async function loadPainelOrders(): Promise<PainelOrder[]> {
-  if (!supabaseOps || !supabasePedidos) return [];
-
-  const { data: statusRows, error } = await supabaseOps
+  const { data } = await supabaseOps
     .from('concrem_pedidos_status')
     .select('pedido_id, status_atual, atualizado_em')
-    .in('status_atual', ACTIVE_STATUSES)
+    .in('status_atual', statuses)
+    .lte('atualizado_em', now)
     .order('atualizado_em', { ascending: false })
-    .range(0, CARD_LIMIT - 1);
+    .range(0, limit - 1);
+  return (data || []) as StatusRow[];
+}
 
-  if (error || !statusRows?.length) return [];
-
-  const ids = (statusRows as any[]).map((r) => String(r.pedido_id));
-
-  const erpBatches = await Promise.all(
+async function enrichWithErp(rows: StatusRow[]): Promise<PainelOrder[]> {
+  if (!rows.length || !supabasePedidos) return [];
+  const ids = rows.map((r) => String(r.pedido_id));
+  const batches = await Promise.all(
     chunkArr(ids, 200).map((batch) =>
       supabasePedidos!
         .from(erpTable)
         .select('numero_pedido, cliente_nome, representante, total_pedido_venda')
         .in('numero_pedido', batch)
-        .then(({ data }) => (data || []) as any[]),
+        .then(({ data }) => (data || []) as ErpRow[]),
     ),
   );
-  const erpMap = new Map(erpBatches.flat().map((r) => [String(r.numero_pedido), r]));
-
-  return (statusRows as any[]).map((s) => {
+  const erpMap = new Map(batches.flat().map((r) => [String(r.numero_pedido), r]));
+  return rows.map((s) => {
     const erp = erpMap.get(String(s.pedido_id));
     return {
       id:          String(s.pedido_id),
@@ -176,24 +178,96 @@ async function loadPainelOrders(): Promise<PainelOrder[]> {
   });
 }
 
-// ─── Hook polling ─────────────────────────────────────────────────────────────
+// Carga inicial: 5 queries paralelas, 100 por grupo
+async function loadAllPrimary(): Promise<PainelOrder[]> {
+  const allRows = (
+    await Promise.all(PRIMARY_GROUPS.map((g) => fetchStatusRows([...g.statuses], CARDS_PER_GROUP)))
+  ).flat();
+  return enrichWithErp(allRows);
+}
+
+// Filtragem por label (qualquer label, inclusive não-primários)
+async function loadByLabel(label: string): Promise<PainelOrder[]> {
+  const statuses = Object.entries(STATUS_LABEL)
+    .filter(([, lb]) => lb === label)
+    .map(([s]) => s);
+  if (!statuses.length) return [];
+  const rows = await fetchStatusRows(statuses, CARDS_PER_GROUP);
+  return enrichWithErp(rows);
+}
+
+// Delta: apenas status primários alterados desde 'since'
+async function loadDeltaSince(since: string): Promise<PainelOrder[]> {
+  const rows = await fetchStatusRows(PRIMARY_STATUSES, 500, since);
+  if (!rows.length) return [];
+  return enrichWithErp(rows);
+}
+
+// Contagem global paginada
+async function loadStatusCounts(): Promise<Record<string, number>> {
+  if (!supabaseOps) return {};
+  const acc: Record<string, number> = {};
+  let from = 0;
+  while (true) {
+    const { data, error } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select('status_atual')
+      .in('status_atual', ALL_STATUSES)
+      .range(from, from + 999);
+    if (error || !data?.length) break;
+    for (const r of data as { status_atual: string }[]) {
+      const lb = STATUS_LABEL[r.status_atual] || r.status_atual.toUpperCase();
+      acc[lb] = (acc[lb] || 0) + 1;
+    }
+    if (data.length < 1000) break;
+    from += 1000;
+  }
+  return acc;
+}
+
+// ─── Merge de cards ───────────────────────────────────────────────────────────
+function mergeCards(current: PainelOrder[], delta: PainelOrder[], filter: string | null): PainelOrder[] {
+  const map = new Map(current.map((o) => [o.id, o]));
+  for (const o of delta) map.set(o.id, o);
+  const all = [...map.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+
+  if (filter) {
+    return all.filter((o) => o.statusLabel === filter).slice(0, CARDS_PER_GROUP);
+  }
+
+  const labelCount = new Map<string, number>();
+  return all.filter((o) => {
+    const inPrimary = PRIMARY_STATUSES.includes(o.statusRaw);
+    if (!inPrimary) return false;
+    const c = labelCount.get(o.statusLabel) || 0;
+    if (c >= CARDS_PER_GROUP) return false;
+    labelCount.set(o.statusLabel, c + 1);
+    return true;
+  });
+}
+
+// ─── Hook principal ───────────────────────────────────────────────────────────
 function usePainel() {
-  const [orders, setOrders]           = useState<PainelOrder[]>([]);
-  const [counts, setCounts]           = useState<Record<string, number>>({});
-  const [feed, setFeed]               = useState<FeedEntry[]>([]);
-  const [popup, setPopup]             = useState<FeedEntry | null>(null);
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
+  const [cards, setCards]               = useState<PainelOrder[]>([]);
+  const [counts, setCounts]             = useState<Record<string, number>>({});
+  const [feed, setFeed]                 = useState<FeedEntry[]>([]);
+  const [popup, setPopup]               = useState<FeedEntry | null>(null);
+  const [lastRefresh, setLastRefresh]   = useState<Date>(new Date());
+  const [activeFilter, setFilterState]  = useState<string | null>(null);
+  const [cardsLoading, setCardsLoading] = useState(true);
 
-  const popupTimer        = useRef<ReturnType<typeof setTimeout>>();
-  const feedKey           = useRef(0);
-  const initialized       = useRef(false);
-  const lastCountsAt      = useRef(0); // timestamp da última carga de contagens
-  // Último status label notificado no popup por pedido (dedup)
-  const shownStatus       = useRef<Map<string, string>>(new Map());
-  // Snapshot do status raw de cada pedido no poll anterior — base para diff
-  const prevStatusMap     = useRef<Map<string, string>>(new Map());
+  const activeFilterRef  = useRef<string | null>(null);
+  const popupTimer       = useRef<ReturnType<typeof setTimeout>>();
+  const feedKey          = useRef(0);
+  const initialized      = useRef(false);
+  const pollInProgress   = useRef(false);
+  const lastCountsAt     = useRef(0);
+  const lastLoadedAt     = useRef('');
+  const lastFullLoadAt   = useRef(0);
+  const shownStatus      = useRef<Map<string, string>>(new Map());
+  const prevStatusMap    = useRef<Map<string, string>>(new Map());
+  const pollRef          = useRef<(() => Promise<void>) | null>(null);
 
-  // Limita shownStatus a 500 entradas para evitar crescimento indefinido
   const pruneShownStatus = () => {
     if (shownStatus.current.size > 500) {
       const entries = [...shownStatus.current.entries()];
@@ -202,82 +276,139 @@ function usePainel() {
   };
 
   const poll = useCallback(async () => {
-    const now = Date.now();
-    const needCounts = !initialized.current || (now - lastCountsAt.current >= COUNTS_TTL_MS);
+    if (pollInProgress.current) return;
+    pollInProgress.current = true;
+    try {
+      const filter = activeFilterRef.current;
+      const now    = Date.now();
+      const nowIso = new Date(now).toISOString();
 
-    const [data, rawCounts] = await Promise.all([
-      loadPainelOrders(),
-      needCounts ? loadStatusCounts() : Promise.resolve(null as Record<string, number> | null),
-    ]);
+      // ── Carga inicial (ou reload pós-filtro) ─────────────────────────────
+      if (!initialized.current) {
+        setCardsLoading(true);
+        const [data, rawCounts] = await Promise.all([
+          filter ? loadByLabel(filter) : loadAllPrimary(),
+          loadStatusCounts(),
+        ]);
+        setCardsLoading(false);
+        setCounts(rawCounts);
+        lastCountsAt.current   = now;
+        lastFullLoadAt.current = now;
 
-    // Se orders não carregaram, tenta novamente no próximo poll sem avançar o estado
-    if (!data.length) return;
+        // Se DB retornou vazio e não há filtro: aguarda próximo poll
+        if (!data.length && !filter) return;
 
-    // Atualiza contagens quando disponíveis
-    if (rawCounts !== null) {
-      lastCountsAt.current = now;
-      setCounts(rawCounts);
-    }
-
-    // ── Primeiro poll: inicializa snapshot sem disparar notificações ──
-    if (!initialized.current) {
-      initialized.current = true;
-      prevStatusMap.current = new Map(data.map((o) => [o.id, o.statusRaw]));
-      setOrders(data);
-      setLastRefresh(new Date());
-      return;
-    }
-
-    // ── Polls seguintes: diff contra snapshot — só notifica mudanças REAIS ──
-    const currentMap   = new Map(data.map((o) => [o.id, o.statusRaw]));
-    const changeEntries: FeedEntry[] = [];
-
-    for (const order of data) {
-      const prev = prevStatusMap.current.get(order.id);
-      // Pula: pedido novo (sem histórico anterior), status igual, ou já notificado com esse label
-      if (prev === undefined || prev === order.statusRaw) continue;
-      if (shownStatus.current.get(order.id) === order.statusLabel) continue;
-
-      changeEntries.push({
-        key:     `diff-${order.id}-${++feedKey.current}`,
-        time:    new Date(),
-        orderId: order.id,
-        from:    STATUS_LABEL[prev] || prev,
-        to:      order.statusLabel,
-        client:  order.client,
-      });
-    }
-
-    // Atualiza snapshot para o próximo poll
-    prevStatusMap.current = currentMap;
-
-    if (changeEntries.length > 0) {
-      setFeed((prev) => [...changeEntries, ...prev].slice(0, 40));
-
-      // Popup apenas para mudanças ainda não exibidas
-      const candidate = changeEntries.find(
-        (e) => shownStatus.current.get(e.orderId) !== e.to,
-      );
-      if (candidate) {
-        shownStatus.current.set(candidate.orderId, candidate.to);
-        pruneShownStatus();
-        setPopup(candidate);
-        clearTimeout(popupTimer.current);
-        popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
+        setCards(data);
+        prevStatusMap.current = new Map(data.map((o) => [o.id, o.statusRaw]));
+        lastLoadedAt.current  = nowIso; // delta parte de agora
+        initialized.current   = true;
+        setLastRefresh(new Date());
+        return;
       }
-    }
 
-    setOrders(data);
-    setLastRefresh(new Date());
-  }, []); // estável — sem dependências de estado externas
+      // ── Full reload periódico (5 min): limpa cards obsoletos ─────────────
+      if (now - lastFullLoadAt.current >= FULL_RELOAD_MS) {
+        const [data, rawCounts] = await Promise.all([
+          filter ? loadByLabel(filter) : loadAllPrimary(),
+          loadStatusCounts(),
+        ]);
+        lastFullLoadAt.current = now;
+        setCounts(rawCounts);
+        lastCountsAt.current = now;
+        if (data.length) {
+          setCards(data);
+          prevStatusMap.current = new Map(data.map((o) => [o.id, o.statusRaw]));
+          lastLoadedAt.current  = nowIso;
+        }
+        setLastRefresh(new Date());
+        return;
+      }
+
+      const needCounts    = now - lastCountsAt.current >= COUNTS_TTL_MS;
+      const isPrimaryFilter = !filter || PRIMARY_LABELS.includes(filter);
+
+      // ── Filtro não-primário: reload simples a cada poll ───────────────────
+      if (filter && !isPrimaryFilter) {
+        const [data, rawCounts] = await Promise.all([
+          loadByLabel(filter),
+          needCounts ? loadStatusCounts() : Promise.resolve(null as Record<string, number> | null),
+        ]);
+        if (rawCounts !== null) { setCounts(rawCounts); lastCountsAt.current = now; }
+        setCards(data);
+        setLastRefresh(new Date());
+        return;
+      }
+
+      // ── Delta poll (status primários) ─────────────────────────────────────
+      const since = lastLoadedAt.current || new Date(now - 60_000).toISOString();
+      const [delta, rawCounts] = await Promise.all([
+        loadDeltaSince(since),
+        needCounts ? loadStatusCounts() : Promise.resolve(null as Record<string, number> | null),
+      ]);
+
+      if (rawCounts !== null) { setCounts(rawCounts); lastCountsAt.current = now; }
+
+      if (delta.length > 0) {
+        const maxAt = delta.reduce((mx, o) => (o.updatedAt > mx ? o.updatedAt : mx), lastLoadedAt.current);
+        lastLoadedAt.current = maxAt;
+
+        // Diff de notificações
+        const changeEntries: FeedEntry[] = [];
+        for (const order of delta) {
+          const prev = prevStatusMap.current.get(order.id);
+          prevStatusMap.current.set(order.id, order.statusRaw);
+          if (prev === undefined || prev === order.statusRaw) continue;
+          if (shownStatus.current.get(order.id) === order.statusLabel) continue;
+          changeEntries.push({
+            key:     `diff-${order.id}-${++feedKey.current}`,
+            time:    new Date(),
+            orderId: order.id,
+            from:    STATUS_LABEL[prev] || prev,
+            to:      order.statusLabel,
+            client:  order.client,
+          });
+        }
+
+        if (changeEntries.length > 0) {
+          setFeed((prev) => [...changeEntries, ...prev].slice(0, 40));
+          const candidate = changeEntries.find((e) => shownStatus.current.get(e.orderId) !== e.to);
+          if (candidate) {
+            shownStatus.current.set(candidate.orderId, candidate.to);
+            pruneShownStatus();
+            setPopup(candidate);
+            clearTimeout(popupTimer.current);
+            popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
+          }
+        }
+
+        setCards((prev) => mergeCards(prev, delta, filter));
+      }
+
+      setLastRefresh(new Date());
+    } finally {
+      pollInProgress.current = false;
+    }
+  }, []);
+
+  useEffect(() => { pollRef.current = poll; }, [poll]);
+
+  // Troca de filtro: limpa cards e dispara poll imediato
+  const setActiveFilter = useCallback((label: string | null) => {
+    activeFilterRef.current = label;
+    setFilterState(label);
+    initialized.current = false;
+    setCards([]);
+    setCardsLoading(true);
+    pollRef.current?.();
+  }, []);
 
   useEffect(() => {
     poll();
-    const interval = setInterval(poll, 5000);
+    const interval = setInterval(poll, POLL_INTERVAL_MS);
     return () => { clearInterval(interval); clearTimeout(popupTimer.current); };
   }, [poll]);
 
-  return { orders, counts, feed, popup, lastRefresh, dismissPopup: () => setPopup(null) };
+  return { cards, counts, feed, popup, lastRefresh, activeFilter, setActiveFilter, cardsLoading, dismissPopup: () => setPopup(null) };
 }
 
 // ─── Sub-componentes ──────────────────────────────────────────────────────────
@@ -333,10 +464,7 @@ function StepTrack({ statusLabel }: { statusLabel: string }) {
             {i < STEPS.length - 1 && (
               <div
                 className="h-px shrink-0"
-                style={{
-                  width:      8,
-                  background: isDone ? 'hsl(171,100%,40%)' : 'hsl(214,32%,85%)',
-                }}
+                style={{ width: 8, background: isDone ? 'hsl(171,100%,40%)' : 'hsl(214,32%,85%)' }}
               />
             )}
           </React.Fragment>
@@ -355,25 +483,16 @@ function OrderCard({ order }: { order: PainelOrder }) {
     >
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
-          <p className="font-extrabold text-[15px] font-mono text-foreground leading-none">
-            #{order.id}
-          </p>
+          <p className="font-extrabold text-[15px] font-mono text-foreground leading-none">#{order.id}</p>
           <p className="text-xs text-muted-foreground mt-1 truncate">{order.client}</p>
         </div>
         <StatusBadge label={order.statusLabel} />
       </div>
-
       <StepTrack statusLabel={order.statusLabel} />
-
       <div className="flex items-center justify-between">
-        <p className="text-xs text-muted-foreground truncate max-w-[55%]">
-          {repShort(order.rep)}
-        </p>
-        <p className="text-sm font-bold font-mono text-foreground tabular-nums">
-          {fmtCurrency(order.value)}
-        </p>
+        <p className="text-xs text-muted-foreground truncate max-w-[55%]">{repShort(order.rep)}</p>
+        <p className="text-sm font-bold font-mono text-foreground tabular-nums">{fmtCurrency(order.value)}</p>
       </div>
-
       <p className="text-[10px] text-muted-foreground/70">{fmtRelative(order.updatedAt)}</p>
     </div>
   );
@@ -381,16 +500,14 @@ function OrderCard({ order }: { order: PainelOrder }) {
 
 function StatsBar({
   counts,
-  activeFilters,
+  activeFilter,
   onToggle,
 }: {
   counts: Record<string, number>;
-  activeFilters: Set<string>;
+  activeFilter: string | null;
   onToggle: (label: string) => void;
 }) {
-  // TOTAL inclui todos os labels, inclusive AVALIAÇÃO (aguardando_avaliacao)
-  const total    = Object.values(counts).reduce((a, b) => a + b, 0);
-  const hasFilter = activeFilters.size > 0;
+  const total = Object.values(counts).reduce((a, b) => a + b, 0);
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
@@ -407,8 +524,8 @@ function StatsBar({
         .sort((a, b) => b[1] - a[1])
         .map(([label, count]) => {
           const cfg      = STATUS_CFG[label] ?? STATUS_CFG['AVALIAÇÃO'];
-          const isActive = activeFilters.has(label);
-          const isDimmed = hasFilter && !isActive;
+          const isActive = label === activeFilter;
+          const isDimmed = activeFilter !== null && !isActive;
           return (
             <button
               key={label}
@@ -433,7 +550,7 @@ function StatsBar({
           );
         })}
 
-      {hasFilter && (
+      {activeFilter !== null && (
         <button
           onClick={() => onToggle('__clear__')}
           className="ml-1 text-[11px] text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
@@ -483,7 +600,6 @@ function FeedPanel({ feed }: { feed: FeedEntry[] }) {
   );
 }
 
-// ─── Popup centralizado ───────────────────────────────────────────────────────
 function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void }) {
   const [progress, setProgress] = useState(100);
   const cfg     = STATUS_CFG[entry.to]   ?? STATUS_CFG['AVALIAÇÃO'];
@@ -511,27 +627,18 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
         style={{ width: '50vw', maxHeight: '80vh', overflowY: 'auto', borderTopWidth: 4, borderTopColor: cfg.accent }}
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Barra de progresso */}
         <div className="h-1.5 bg-muted">
-          <div
-            className="h-full transition-none"
-            style={{ width: `${progress}%`, background: cfg.accent }}
-          />
+          <div className="h-full transition-none" style={{ width: `${progress}%`, background: cfg.accent }} />
         </div>
 
         <div className="p-8 space-y-6">
-          {/* Topo */}
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-2">
                 Atualização de Pedido
               </p>
-              <p className="text-5xl font-extrabold font-mono text-foreground leading-none">
-                #{entry.orderId}
-              </p>
-              <p className="text-base text-muted-foreground mt-2 leading-snug">
-                {entry.client}
-              </p>
+              <p className="text-5xl font-extrabold font-mono text-foreground leading-none">#{entry.orderId}</p>
+              <p className="text-base text-muted-foreground mt-2 leading-snug">{entry.client}</p>
             </div>
             <button
               onClick={onClose}
@@ -541,7 +648,6 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
             </button>
           </div>
 
-          {/* Transição de status */}
           <div className="flex items-center justify-center gap-8 py-5 bg-muted/30 rounded-xl">
             {cfgFrom && entry.from && (
               <>
@@ -560,7 +666,6 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
             </div>
           </div>
 
-          {/* Progresso de etapas */}
           <div>
             <p className="text-xs font-bold text-muted-foreground uppercase tracking-widest mb-4">
               Progresso do Pedido
@@ -622,21 +727,15 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
 
 // ─── Página principal ─────────────────────────────────────────────────────────
 const PainelTV: React.FC = () => {
-  const { orders, counts, feed, popup, lastRefresh, dismissPopup } = usePainel();
-  const [activeFilters, setActiveFilters] = useState<Set<string>>(new Set());
+  const {
+    cards, counts, feed, popup, lastRefresh,
+    activeFilter, setActiveFilter, cardsLoading, dismissPopup,
+  } = usePainel();
 
-  const toggleFilter = useCallback((label: string) => {
-    if (label === '__clear__') { setActiveFilters(new Set()); return; }
-    setActiveFilters((prev) => {
-      const next = new Set(prev);
-      if (next.has(label)) next.delete(label); else next.add(label);
-      return next;
-    });
-  }, []);
-
-  const visibleOrders = activeFilters.size > 0
-    ? orders.filter((o) => activeFilters.has(o.statusLabel))
-    : orders;
+  const handleToggle = useCallback((label: string) => {
+    if (label === '__clear__') { setActiveFilter(null); return; }
+    setActiveFilter(label === activeFilter ? null : label);
+  }, [activeFilter, setActiveFilter]);
 
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden font-display">
@@ -650,7 +749,6 @@ const PainelTV: React.FC = () => {
             Painel de Pedidos
           </span>
         </div>
-
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-green-400 shadow-[0_0_6px_#4ade80] animate-pulse" />
@@ -663,26 +761,30 @@ const PainelTV: React.FC = () => {
         </div>
       </header>
 
-      {/* Stats bar */}
+      {/* Stats bar — contagem global */}
       <div className="bg-card border-b border-border px-6 py-2.5 shrink-0 shadow-sm">
-        <StatsBar counts={counts} activeFilters={activeFilters} onToggle={toggleFilter} />
+        <StatsBar counts={counts} activeFilter={activeFilter} onToggle={handleToggle} />
       </div>
 
       {/* Conteúdo */}
       <div className="flex flex-1 overflow-hidden">
 
-        {/* Grid de cards */}
+        {/* Grid de cards — últimos 100 por status principal */}
         <div className="flex-1 p-5 overflow-y-auto">
-          {orders.length === 0 ? (
+          {cardsLoading ? (
             <div className="flex items-center justify-center h-full">
               <p className="text-muted-foreground text-base">Carregando pedidos…</p>
+            </div>
+          ) : cards.length === 0 ? (
+            <div className="flex items-center justify-center h-full">
+              <p className="text-muted-foreground text-base">Nenhum pedido encontrado.</p>
             </div>
           ) : (
             <div
               className="grid gap-4"
               style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(270px, 1fr))' }}
             >
-              {visibleOrders.map((o) => <OrderCard key={o.id} order={o} />)}
+              {cards.map((o) => <OrderCard key={o.id} order={o} />)}
             </div>
           )}
         </div>
@@ -693,7 +795,6 @@ const PainelTV: React.FC = () => {
         </aside>
       </div>
 
-      {/* Popup de atualização */}
       {popup && <UpdatePopup entry={popup} onClose={dismissPopup} />}
     </div>
   );
