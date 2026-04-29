@@ -145,8 +145,17 @@ export function getStageState(
     const completionOrder = stageCompletionOrder[stageId] ?? 0;
     return def.order >= completionOrder ? 'done' : 'current';
   }
-  // Past stage: current status already progressed beyond this stage → always done
-  return 'done';
+  // Past stage: only mark as done if its completion status actually exists in history
+  if (history?.length) {
+    const completionOrder = stageCompletionOrder[stageId] ?? 0;
+    const reached = history.some(
+      (h) =>
+        getStageForTimeline(h.status_novo) === stageId &&
+        getPedidoStatusDef(h.status_novo).order >= completionOrder,
+    );
+    return reached ? 'done' : 'current';
+  }
+  return 'done'; // fallback when no history provided
 }
 
 /**
