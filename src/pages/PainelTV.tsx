@@ -467,6 +467,66 @@ function usePainel() {
     return () => { clearInterval(interval); clearTimeout(popupTimer.current); };
   }, [poll]);
 
+  // Realtime: detecta mudanças de status instantaneamente (sem depender do polling)
+  useEffect(() => {
+    if (!supabaseOps) return;
+
+    const channel = supabaseOps
+      .channel('painel_status_realtime')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'concrem_pedidos_status' },
+        (payload) => {
+          const row = (payload as any).new as any;
+          if (!row?.status_atual || !PRIMARY_STATUSES.includes(row.status_atual)) return;
+
+          const orderId  = String(row.pedido_id);
+          const newRaw   = row.status_atual as string;
+          const newLabel = STATUS_LABEL[newRaw] || newRaw.toUpperCase();
+          const prev     = prevStatusMap.current.get(orderId);
+
+          // Atualiza snapshot
+          prevStatusMap.current.set(orderId, newRaw);
+
+          // Sem mudança real ou já notificado
+          if (prev !== undefined && prev === newRaw) return;
+          if (shownStatus.current.get(orderId) === newLabel) return;
+
+          shownStatus.current.set(orderId, newLabel);
+          if (shownStatus.current.size > 500) {
+            const entries = [...shownStatus.current.entries()];
+            shownStatus.current = new Map(entries.slice(-250));
+          }
+
+          // Busca nome do cliente e exibe popup + feed
+          const notify = async () => {
+            let client = '—';
+            if (supabasePedidos) {
+              const { data } = await supabasePedidos
+                .from(erpTable)
+                .select('cliente_nome')
+                .eq('numero_pedido', orderId)
+                .maybeSingle();
+              client = (data as any)?.cliente_nome || '—';
+            }
+            const entry: FeedEntry = {
+              key:     `rt-${orderId}-${++feedKey.current}`,
+              time:    new Date(),
+              orderId,
+              from:    prev ? (STATUS_LABEL[prev] || prev) : null,
+              to:      newLabel,
+              client,
+            };
+            setFeed((f) => [entry, ...f].slice(0, 40));
+            setPopup(entry);
+            clearTimeout(popupTimer.current);
+            popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
+          };
+          void notify();
+        })
+      .subscribe();
+
+    return () => { supabaseOps.removeChannel(channel); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   return { cards, counts, feed, popup, lastRefresh, activeFilter, setActiveFilter, cardsLoading, dismissPopup: () => setPopup(null) };
 }
 
