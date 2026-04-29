@@ -546,12 +546,22 @@ const Commercial = () => {
           <h1 className="text-2xl font-bold font-display text-foreground">Pedidos de Venda</h1>
           <p className="text-sm text-muted-foreground">Libere pedidos de venda para o comercial</p>
         </div>
-        {canCreateSchedule && (
-          <button className={btnPrimary} onClick={() => navigate('/comercial/liberacao')}>
-            <Plus className="h-4 w-4" />
-            Criar Conograma
+        <div className="flex items-center gap-2">
+          <button
+            className={btnSecondary}
+            onClick={() => { if (allOrderIds.length) void refreshStatusRows(allOrderIds); }}
+            title="Sincronizar status com o banco"
+          >
+            <CheckCircle2 className="h-4 w-4" />
+            Atualizar Status
           </button>
-        )}
+          {canCreateSchedule && (
+            <button className={btnPrimary} onClick={() => navigate('/comercial/liberacao')}>
+              <Plus className="h-4 w-4" />
+              Criar Conograma
+            </button>
+          )}
+        </div>
       </div>
 
 
