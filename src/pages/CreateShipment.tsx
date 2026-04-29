@@ -282,13 +282,14 @@ const CreateShipment = () => {
     const totalFreight = selectedOrderIds.reduce((acc, orderId) => {
       const order = orders.find(o => o.id === orderId)
         ?? (supportOrders as unknown as Order[]).find(o => o.id === orderId)
-        ?? directPedidos.find(o => o.id === orderId);
+        ?? directPedidos.find(o => o.id === orderId)
+        ?? editExtraOrders.find(o => o.id === orderId);
       return acc + (order?.freightValue || 0);
     }, 0);
     const rounded = Math.round(totalFreight * 100) / 100;
     setFreightValue(rounded);
     setFreightRaw(rounded > 0 ? String(rounded).replace('.', ',') : '');
-  }, [freightManual, selectedOrderIds, orders, supportOrders, directPedidos]);
+  }, [freightManual, selectedOrderIds, orders, supportOrders, directPedidos, editExtraOrders]);
 
   const selectedDriver = drivers.find(d => d.id === driverId);
   const [pedidoStatusRows, setPedidoStatusRows] = useState<import('@/types').PedidoStatusRow[]>([]);
@@ -485,8 +486,9 @@ const CreateShipment = () => {
 
       if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
-      // Pedidos com situacao_entrega = "Totalmente Entregue" nunca devem aparecer no carregamento.
-      if (o.situacaoEntrega === 'Totalmente Entregue') return false;
+      // Pedidos com situacao_entrega = "Totalmente Entregue" não devem aparecer no carregamento,
+      // exceto se o OPS explicitamente tem liberado_producao (reversão manual ou do mês corrente).
+      if (o.situacaoEntrega === 'Totalmente Entregue' && pedidoStatus !== 'liberado_producao') return false;
 
       // Filtro de corte por data de emissão — só para pedidos que vieram do AppContext (não do OPS direto).
       // Pedidos do OPS (directPedidos) têm status explícito e devem aparecer independente da data.

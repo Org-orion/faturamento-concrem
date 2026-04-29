@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { canDo, type UserRole } from '@/utils/access';
@@ -8,6 +8,7 @@ import { ChevronLeft, ChevronRight, Truck, Package, DollarSign, Weight, Search }
 import type { Load } from '@/types';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
+import { supabasePedidos } from '@/lib/supabase';
 
 type ViewMode = 'semana' | 'mes' | 'lista';
 
@@ -293,6 +294,43 @@ const CarregamentoDashboard = () => {
     return 'Todos os carregamentos';
   }
 
+  // ── busca valores dos pedidos da semana diretamente no ERP ──
+  const [weekOrderValueMap, setWeekOrderValueMap] = useState<Map<string, number>>(new Map());
+  const lastFetchKey = useRef('');
+
+  const weekOrderIds = useMemo(() => {
+    const wLoads = weekDays.flatMap((d) => loadsByDate.get(d) || []);
+    return [...new Set(wLoads.flatMap((l) => l.orderIds))];
+  }, [weekDays, loadsByDate]);
+
+  useEffect(() => {
+    const fetchKey = weekOrderIds.join(',');
+    if (!fetchKey || fetchKey === lastFetchKey.current || !supabasePedidos) return;
+    lastFetchKey.current = fetchKey;
+
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const BATCH = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < weekOrderIds.length; i += BATCH) chunks.push(weekOrderIds.slice(i, i + BATCH));
+
+    Promise.all(
+      chunks.map((batch) =>
+        supabasePedidos!.from(table)
+          .select('numero_pedido, total_pedido_venda, total_produtos, frete')
+          .in('numero_pedido', batch)
+          .then(({ data }) => data || [])
+      )
+    ).then((results) => {
+      const m = new Map<string, number>();
+      for (const row of results.flat()) {
+        const orderVal = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
+        const frete = row.frete || 0;
+        m.set(String(row.numero_pedido), orderVal + frete);
+      }
+      setWeekOrderValueMap(m);
+    });
+  }, [weekOrderIds]);
+
   // ── week totals ──
   const weekTotals = useMemo(() => {
     const wLoads = weekDays.flatMap((d) => loadsByDate.get(d) || []);
@@ -300,8 +338,9 @@ const CarregamentoDashboard = () => {
       count: wLoads.length,
       freight: wLoads.reduce((s, l) => s + (l.freightValue || 0), 0),
       orders: wLoads.reduce((s, l) => s + l.orderIds.length, 0),
+      total: wLoads.reduce((s, l) => s + l.orderIds.reduce((a, id) => a + (weekOrderValueMap.get(id) || 0), 0), 0),
     };
-  }, [weekDays, loadsByDate]);
+  }, [weekDays, loadsByDate, weekOrderValueMap]);
 
   return (
     <div className="space-y-4">
@@ -368,7 +407,7 @@ const CarregamentoDashboard = () => {
           <div className="flex gap-2">
             <Chip icon={Truck} value={String(weekTotals.count)} label="carreg." />
             <Chip icon={Package} value={String(weekTotals.orders)} label="pedidos" />
-            <Chip icon={DollarSign} value={formatCurrency(weekTotals.freight)} label="frete" color="text-emerald-600" />
+            <Chip icon={DollarSign} value={formatCurrency(weekTotals.total)} label="total" color="text-emerald-600" />
           </div>
         )}
       </div>

@@ -173,19 +173,6 @@ async function loadPainelOrders(): Promise<PainelOrder[]> {
   });
 }
 
-type HistRow = { pedido_id: string; status_anterior: string | null; status_novo: string; alterado_em: string };
-
-// Busca histórico desde um timestamp (filtra no banco — evita full-scan)
-async function loadHistorySince(since: string, limit = 100): Promise<HistRow[]> {
-  if (!supabaseOps) return [];
-  const { data } = await supabaseOps
-    .from('concrem_pedidos_status_historico')
-    .select('pedido_id, status_anterior, status_novo, alterado_em')
-    .gte('alterado_em', since)
-    .order('alterado_em', { ascending: false })
-    .limit(limit);
-  return (data || []) as HistRow[];
-}
 
 // ─── Hook polling ─────────────────────────────────────────────────────────────
 function usePainel() {
@@ -194,49 +181,23 @@ function usePainel() {
   const [feed, setFeed]               = useState<FeedEntry[]>([]);
   const [popup, setPopup]             = useState<FeedEntry | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const popupTimer  = useRef<ReturnType<typeof setTimeout>>();
-  const feedKey     = useRef(0);
-  // Timestamp do carregamento da página — só notifica mudanças APÓS este momento
-  const pageLoadTime = useRef(new Date().toISOString());
-  // Set de chaves já exibidas nesta sessão (dedup entre polls)
-  const seenKeys    = useRef<Set<string>>(new Set());
-  const initialized = useRef(false);
-  // Último status exibido no popup por pedido
-  const shownStatus = useRef<Record<string, string>>({});
+  const popupTimer   = useRef<ReturnType<typeof setTimeout>>();
+  const feedKey      = useRef(0);
+  const initialized  = useRef(false);
+  // Último status exibido no popup por pedido (dedup de popup)
+  const shownStatus  = useRef<Record<string, string>>({});
+  // Ref estável para orders — evita recriar poll a cada setOrders
+  const ordersRef    = useRef<PainelOrder[]>([]);
+  // Snapshot do status de cada pedido no poll anterior — base para diff
+  const prevStatusMap = useRef<Map<string, string>>(new Map());
 
   const poll = useCallback(async () => {
-    // Primeiro poll: carrega dados sem buscar histórico
-    if (!initialized.current) {
-      const [data, rawCounts] = await Promise.all([
-        loadPainelOrders(),
-        loadStatusCounts(),
-      ]);
-      initialized.current = true;
-      if (!data.length) return;
-      const lc: Record<string, number> = {};
-      for (const [s, n] of Object.entries(rawCounts)) {
-        const lb = STATUS_LABEL[s] || s.toUpperCase();
-        lc[lb] = (lc[lb] || 0) + n;
-      }
-      setCounts(lc);
-      setOrders(data);
-      setLastRefresh(new Date());
-      return;
-    }
-
-    // Polls seguintes: busca apenas histórico APÓS o carregamento da página
-    const [data, rawCounts, recentHist] = await Promise.all([
+    const [data, rawCounts] = await Promise.all([
       loadPainelOrders(),
       loadStatusCounts(),
-      loadHistorySince(pageLoadTime.current, 100),
     ]);
 
-    const newHist = recentHist.filter((h) => {
-      const key = `${h.pedido_id}_${h.alterado_em}`;
-      if (seenKeys.current.has(key)) return false;
-      seenKeys.current.add(key);
-      return true;
-    });
+    if (!data.length) return;
 
     const lc: Record<string, number> = {};
     for (const [s, n] of Object.entries(rawCounts)) {
@@ -245,21 +206,41 @@ function usePainel() {
     }
     setCounts(lc);
 
-    if (newHist.length > 0) {
-      const erpMap = new Map((data.length ? data : orders).map((o) => [o.id, o]));
-      const changeEntries: FeedEntry[] = newHist.map((h) => {
-        const order = erpMap.get(String(h.pedido_id));
-        return {
-          key:     `hist-${h.pedido_id}-${++feedKey.current}`,
-          time:    new Date(h.alterado_em),
-          orderId: String(h.pedido_id),
-          from:    h.status_anterior ? (STATUS_LABEL[h.status_anterior] || h.status_anterior) : null,
-          to:      STATUS_LABEL[h.status_novo] || h.status_novo,
-          client:  order?.client || '—',
-          isNew:   false,
-        };
-      });
+    // Primeiro poll: inicializa snapshot sem notificar
+    if (!initialized.current) {
+      initialized.current = true;
+      prevStatusMap.current = new Map(data.map((o) => [o.id, o.statusRaw]));
+      ordersRef.current = data;
+      setOrders(data);
+      setLastRefresh(new Date());
+      return;
+    }
 
+    // Polls seguintes: diff contra snapshot anterior — só notifica mudanças REAIS
+    const currentMap = new Map(data.map((o) => [o.id, o.statusRaw]));
+    const changeEntries: FeedEntry[] = [];
+
+    for (const order of data) {
+      const prev = prevStatusMap.current.get(order.id);
+      // Ignora: sem status anterior, ou status igual (no-op), ou já notificado com esse status
+      if (prev === undefined || prev === order.statusRaw) continue;
+      if (shownStatus.current[order.id] === order.statusLabel) continue;
+
+      changeEntries.push({
+        key:     `diff-${order.id}-${++feedKey.current}`,
+        time:    new Date(),
+        orderId: order.id,
+        from:    STATUS_LABEL[prev] || prev,
+        to:      order.statusLabel,
+        client:  order.client,
+        isNew:   true,
+      });
+    }
+
+    // Atualiza snapshot
+    prevStatusMap.current = currentMap;
+
+    if (changeEntries.length > 0) {
       setFeed((prev) => [...changeEntries, ...prev].slice(0, 40));
 
       const candidate = changeEntries.find(
@@ -273,9 +254,10 @@ function usePainel() {
       }
     }
 
-    if (data.length) setOrders(data);
+    ordersRef.current = data;
+    setOrders(data);
     setLastRefresh(new Date());
-  }, [orders]);
+  }, []); // estável — sem dependências externas
 
   useEffect(() => {
     poll();
