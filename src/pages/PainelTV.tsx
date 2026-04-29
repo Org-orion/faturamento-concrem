@@ -301,6 +301,7 @@ function usePainel() {
   const popupTimer       = useRef<ReturnType<typeof setTimeout>>();
   const feedKey          = useRef(0);
   const initialized      = useRef(false);
+  const isFirstLoad      = useRef(true);
   const pollInProgress   = useRef(false);
   const lastCountsAt     = useRef(0);
   const lastLoadedAt     = useRef('');
@@ -327,11 +328,13 @@ function usePainel() {
       // ── Carga inicial (ou reload pós-filtro) ─────────────────────────────
       if (!initialized.current) {
         setCardsLoading(true);
-        const [data, rawCounts, initialFeed] = await Promise.all([
+        const firstLoad = isFirstLoad.current;
+        const queries: [Promise<PainelOrder[]>, Promise<Record<string, number>>, Promise<FeedEntry[]>] = [
           filter ? loadByLabel(filter) : loadAllPrimary(),
           loadStatusCounts(),
-          loadRecentFeed(),
-        ]);
+          firstLoad ? loadRecentFeed() : Promise.resolve([] as FeedEntry[]),
+        ];
+        const [data, rawCounts, initialFeed] = await Promise.all(queries);
         setCardsLoading(false);
         setCounts(rawCounts);
         lastCountsAt.current   = now;
@@ -344,22 +347,22 @@ function usePainel() {
         prevStatusMap.current = new Map(data.map((o) => [o.id, o.statusRaw]));
         lastLoadedAt.current  = nowIso; // delta parte de agora
 
-        // Pré-popula feed com mudanças recentes
-        if (initialFeed.length) {
+        // Pré-popula feed com mudanças recentes (apenas na primeira carga)
+        if (firstLoad && initialFeed.length) {
           setFeed(initialFeed);
-          // Mostra popup da mudança mais recente (se ocorreu nos últimos 10 min)
           const recent = initialFeed[0];
           const ageMs  = Date.now() - recent.time.getTime();
-          if (ageMs <= 10 * 60_000) {
+          // Só exibe o popup se ainda não foi mostrado para este pedido/status
+          if (ageMs <= 10 * 60_000 && shownStatus.current.get(recent.orderId) !== recent.to) {
             shownStatus.current.set(recent.orderId, recent.to);
             setPopup(recent);
             clearTimeout(popupTimer.current);
             popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
           }
-          // Não bloqueia popups futuros para os demais — apenas o exibido acima entra em shownStatus
         }
 
-        initialized.current   = true;
+        initialized.current = true;
+        isFirstLoad.current = false;
         setLastRefresh(new Date());
         return;
       }
