@@ -336,10 +336,14 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
     return { ok: false, previous: statusAnterior };
   }
 
-  // Only advance status_atual — never let it go backwards
+  // Only advance status_atual — never let it go backwards; skip no-op (same status)
   const newOrder = getPedidoStatusDef(input.statusNovo).order;
   const currentOrder = statusAnterior ? getPedidoStatusDef(statusAnterior).order : 0;
-  const shouldAdvance = newOrder >= currentOrder;
+  const shouldAdvance = newOrder > currentOrder;
+
+  if (statusAnterior === input.statusNovo) {
+    return { ok: true, previous: statusAnterior };
+  }
 
   if (shouldAdvance) {
   try {

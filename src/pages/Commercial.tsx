@@ -92,7 +92,7 @@ const Commercial = () => {
   // Self-healing: auto-upgrade any LEROY orders still stuck before liberado_producao
   useEffect(() => {
     if (!statusRows.length || !allOrders.length) return;
-    const LEROY_TARGET_ORDER = 10; // liberado_producao = order 10
+    const LEROY_TARGET_ORDER = getPedidoStatusDef('liberado_producao').order; // = 9
     const toUpgrade = allOrders.filter((o) => {
       const st = statusRows.find((r) => r.pedido_id === o.id)?.status_atual;
       if (!st) return false;
