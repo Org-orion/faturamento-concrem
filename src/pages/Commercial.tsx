@@ -77,9 +77,8 @@ const Commercial = () => {
   const allOrderIdsKey = useMemo(() => allOrderIds.join(','), [allOrderIds]);
 
   const refreshStatusRows = async (ids: string[]) => {
-    const safe = ids.slice(0, 500); // cap defensivo
-    if (!safe.length) return;
-    const rows = await listPedidosStatusByPedidoIds(safe);
+    if (!ids.length) return;
+    const rows = await listPedidosStatusByPedidoIds(ids);
     setStatusRows(rows);
   };
 
