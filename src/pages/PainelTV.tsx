@@ -49,6 +49,22 @@ const STEPS = [
 ];
 const STEP_IDX = Object.fromEntries(STEPS.map((s, i) => [s, i]));
 
+// Status para cards (exibição) — exclui aguardando_avaliacao (muito volumoso, pouco informativo)
+const ACTIVE_STATUSES = [
+  'aguardando_mapeamento', 'mapeamento_andamento', 'mapeamento_concluido',
+  'aguardando_ferragem', 'ferragem_recebida',
+  'liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia',
+  'liberado_producao', 'em_producao', 'producao_finalizada',
+  'faturado', 'em_entrega', 'parcialmente_entregue',
+  'entregue', 'aguardando_pagamento', 'finalizado',
+];
+
+// Todos os status para contagem — inclui aguardando_avaliacao no TOTAL
+const ALL_STATUSES = ['aguardando_avaliacao', ...ACTIVE_STATUSES];
+
+const CARD_LIMIT    = 1000; // máximo de cards exibidos (os mais recentes)
+const COUNTS_TTL_MS = 30000; // recarrega contagens a cada 30s (não a cada 5s)
+
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 interface PainelOrder {
   id: string;
@@ -67,7 +83,6 @@ interface FeedEntry {
   from: string | null;
   to: string;
   client: string;
-  isNew: boolean;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -92,87 +107,74 @@ const repShort = (rep: string) => rep.replace(/^\d+\s*[-–]\s*/, '').trim() || 
 
 const erpTable = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
-// Todos os status ativos (exceto aguardando_avaliacao que é ruído)
-const ACTIVE_STATUSES = [
-  'aguardando_mapeamento', 'mapeamento_andamento', 'mapeamento_concluido',
-  'aguardando_ferragem', 'ferragem_recebida',
-  'liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia',
-  'liberado_producao', 'em_producao', 'producao_finalizada',
-  'faturado', 'em_entrega', 'parcialmente_entregue',
-  'entregue', 'aguardando_pagamento', 'finalizado',
-];
+const chunkArr = <T,>(arr: T[], n: number): T[][] =>
+  Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
 
-const PER_STATUS = 100; // cards exibidos por status
-
-// ─── Contagem real por status (query leve, sem dados) ────────────────────────
+// ─── Contagem real por status label ──────────────────────────────────────────
+// 1 query paginada (campo único) em vez de 17 queries paralelas de COUNT.
+// Roda a cada 30s, não a cada 5s.
 async function loadStatusCounts(): Promise<Record<string, number>> {
   if (!supabaseOps) return {};
-  const results = await Promise.all(
-    ACTIVE_STATUSES.map(async (status) => {
-      const { count } = await supabaseOps!
-        .from('concrem_pedidos_status')
-        .select('*', { count: 'exact', head: true })
-        .eq('status_atual', status);
-      return [status, count ?? 0] as const;
-    }),
-  );
-  return Object.fromEntries(results);
+  const acc: Record<string, number> = {};
+  let from = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data, error } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select('status_atual')
+      .in('status_atual', ALL_STATUSES)
+      .range(from, from + PAGE - 1);
+    if (error || !data?.length) break;
+    for (const r of data as { status_atual: string }[]) {
+      const lb = STATUS_LABEL[r.status_atual] || r.status_atual.toUpperCase();
+      acc[lb] = (acc[lb] || 0) + 1;
+    }
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return acc;
 }
 
 // ─── Fetch de cards ───────────────────────────────────────────────────────────
+// 1 query OPS (em vez de 17 paralelas) + batches ERP.
 async function loadPainelOrders(): Promise<PainelOrder[]> {
   if (!supabaseOps || !supabasePedidos) return [];
 
-  // Busca os N mais recentes por status em paralelo — garante todos os status visíveis
-  const pages = await Promise.all(
-    ACTIVE_STATUSES.map((status) =>
-      supabaseOps!
-        .from('concrem_pedidos_status')
-        .select('pedido_id, status_atual, atualizado_em')
-        .eq('status_atual', status)
-        .order('atualizado_em', { ascending: false })
-        .limit(PER_STATUS)
-        .then(({ data }) => data || []),
-    ),
-  );
+  const { data: statusRows, error } = await supabaseOps
+    .from('concrem_pedidos_status')
+    .select('pedido_id, status_atual, atualizado_em')
+    .in('status_atual', ACTIVE_STATUSES)
+    .order('atualizado_em', { ascending: false })
+    .range(0, CARD_LIMIT - 1);
 
-  // Mescla e ordena globalmente por mais recente
-  const statusRows = (pages.flat() as any[]).sort(
-    (a, b) => new Date(b.atualizado_em).getTime() - new Date(a.atualizado_em).getTime(),
-  );
+  if (error || !statusRows?.length) return [];
 
-  if (!statusRows.length) return [];
+  const ids = (statusRows as any[]).map((r) => String(r.pedido_id));
 
-  const ids = statusRows.map((r: any) => String(r.pedido_id));
-
-  // Busca ERP em lotes de 200
-  const chunkArr = <T,>(arr: T[], n: number) =>
-    Array.from({ length: Math.ceil(arr.length / n) }, (_, i) => arr.slice(i * n, i * n + n));
   const erpBatches = await Promise.all(
     chunkArr(ids, 200).map((batch) =>
       supabasePedidos!
         .from(erpTable)
         .select('numero_pedido, cliente_nome, representante, total_pedido_venda')
         .in('numero_pedido', batch)
-        .then(({ data }) => data || []),
+        .then(({ data }) => (data || []) as any[]),
     ),
   );
-  const erpMap = new Map(erpBatches.flat().map((r: any) => [String(r.numero_pedido), r]));
+  const erpMap = new Map(erpBatches.flat().map((r) => [String(r.numero_pedido), r]));
 
-  return statusRows.map((s: any) => {
+  return (statusRows as any[]).map((s) => {
     const erp = erpMap.get(String(s.pedido_id));
     return {
-      id: String(s.pedido_id),
-      client: erp?.cliente_nome || '—',
-      rep: erp?.representante || '—',
-      value: erp?.total_pedido_venda || 0,
-      statusRaw: s.status_atual,
+      id:          String(s.pedido_id),
+      client:      erp?.cliente_nome || '—',
+      rep:         erp?.representante || '—',
+      value:       erp?.total_pedido_venda || 0,
+      statusRaw:   s.status_atual,
       statusLabel: STATUS_LABEL[s.status_atual] || s.status_atual.toUpperCase(),
-      updatedAt: s.atualizado_em,
+      updatedAt:   s.atualizado_em,
     };
   });
 }
-
 
 // ─── Hook polling ─────────────────────────────────────────────────────────────
 function usePainel() {
@@ -181,50 +183,60 @@ function usePainel() {
   const [feed, setFeed]               = useState<FeedEntry[]>([]);
   const [popup, setPopup]             = useState<FeedEntry | null>(null);
   const [lastRefresh, setLastRefresh] = useState<Date>(new Date());
-  const popupTimer   = useRef<ReturnType<typeof setTimeout>>();
-  const feedKey      = useRef(0);
-  const initialized  = useRef(false);
-  // Último status exibido no popup por pedido (dedup de popup)
-  const shownStatus  = useRef<Record<string, string>>({});
-  // Ref estável para orders — evita recriar poll a cada setOrders
-  const ordersRef    = useRef<PainelOrder[]>([]);
-  // Snapshot do status de cada pedido no poll anterior — base para diff
-  const prevStatusMap = useRef<Map<string, string>>(new Map());
+
+  const popupTimer        = useRef<ReturnType<typeof setTimeout>>();
+  const feedKey           = useRef(0);
+  const initialized       = useRef(false);
+  const lastCountsAt      = useRef(0); // timestamp da última carga de contagens
+  // Último status label notificado no popup por pedido (dedup)
+  const shownStatus       = useRef<Map<string, string>>(new Map());
+  // Snapshot do status raw de cada pedido no poll anterior — base para diff
+  const prevStatusMap     = useRef<Map<string, string>>(new Map());
+
+  // Limita shownStatus a 500 entradas para evitar crescimento indefinido
+  const pruneShownStatus = () => {
+    if (shownStatus.current.size > 500) {
+      const entries = [...shownStatus.current.entries()];
+      shownStatus.current = new Map(entries.slice(-250));
+    }
+  };
 
   const poll = useCallback(async () => {
+    const now = Date.now();
+    const needCounts = !initialized.current || (now - lastCountsAt.current >= COUNTS_TTL_MS);
+
     const [data, rawCounts] = await Promise.all([
       loadPainelOrders(),
-      loadStatusCounts(),
+      needCounts ? loadStatusCounts() : Promise.resolve(null as Record<string, number> | null),
     ]);
 
+    // Se orders não carregaram, tenta novamente no próximo poll sem avançar o estado
     if (!data.length) return;
 
-    const lc: Record<string, number> = {};
-    for (const [s, n] of Object.entries(rawCounts)) {
-      const lb = STATUS_LABEL[s] || s.toUpperCase();
-      lc[lb] = (lc[lb] || 0) + n;
+    // Atualiza contagens quando disponíveis
+    if (rawCounts !== null) {
+      lastCountsAt.current = now;
+      setCounts(rawCounts);
     }
-    setCounts(lc);
 
-    // Primeiro poll: inicializa snapshot sem notificar
+    // ── Primeiro poll: inicializa snapshot sem disparar notificações ──
     if (!initialized.current) {
       initialized.current = true;
       prevStatusMap.current = new Map(data.map((o) => [o.id, o.statusRaw]));
-      ordersRef.current = data;
       setOrders(data);
       setLastRefresh(new Date());
       return;
     }
 
-    // Polls seguintes: diff contra snapshot anterior — só notifica mudanças REAIS
-    const currentMap = new Map(data.map((o) => [o.id, o.statusRaw]));
+    // ── Polls seguintes: diff contra snapshot — só notifica mudanças REAIS ──
+    const currentMap   = new Map(data.map((o) => [o.id, o.statusRaw]));
     const changeEntries: FeedEntry[] = [];
 
     for (const order of data) {
       const prev = prevStatusMap.current.get(order.id);
-      // Ignora: sem status anterior, ou status igual (no-op), ou já notificado com esse status
+      // Pula: pedido novo (sem histórico anterior), status igual, ou já notificado com esse label
       if (prev === undefined || prev === order.statusRaw) continue;
-      if (shownStatus.current[order.id] === order.statusLabel) continue;
+      if (shownStatus.current.get(order.id) === order.statusLabel) continue;
 
       changeEntries.push({
         key:     `diff-${order.id}-${++feedKey.current}`,
@@ -233,31 +245,31 @@ function usePainel() {
         from:    STATUS_LABEL[prev] || prev,
         to:      order.statusLabel,
         client:  order.client,
-        isNew:   true,
       });
     }
 
-    // Atualiza snapshot
+    // Atualiza snapshot para o próximo poll
     prevStatusMap.current = currentMap;
 
     if (changeEntries.length > 0) {
       setFeed((prev) => [...changeEntries, ...prev].slice(0, 40));
 
+      // Popup apenas para mudanças ainda não exibidas
       const candidate = changeEntries.find(
-        (e) => shownStatus.current[e.orderId] !== e.to,
+        (e) => shownStatus.current.get(e.orderId) !== e.to,
       );
       if (candidate) {
-        shownStatus.current[candidate.orderId] = candidate.to;
+        shownStatus.current.set(candidate.orderId, candidate.to);
+        pruneShownStatus();
         setPopup(candidate);
         clearTimeout(popupTimer.current);
         popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
       }
     }
 
-    ordersRef.current = data;
     setOrders(data);
     setLastRefresh(new Date());
-  }, []); // estável — sem dependências externas
+  }, []); // estável — sem dependências de estado externas
 
   useEffect(() => {
     poll();
@@ -308,7 +320,6 @@ function StepTrack({ statusLabel }: { statusLabel: string }) {
         const cfg       = STATUS_CFG[statusLabel] ?? STATUS_CFG['AVALIAÇÃO'];
         return (
           <React.Fragment key={s}>
-            {/* Dot */}
             <div
               title={s}
               className="rounded-full shrink-0 transition-all duration-300"
@@ -319,12 +330,11 @@ function StepTrack({ statusLabel }: { statusLabel: string }) {
                 boxShadow:  isCurrent ? `0 0 7px ${cfg.accent}` : undefined,
               }}
             />
-            {/* Conector */}
             {i < STEPS.length - 1 && (
               <div
                 className="h-px shrink-0"
                 style={{
-                  width: 8,
+                  width:      8,
                   background: isDone ? 'hsl(171,100%,40%)' : 'hsl(214,32%,85%)',
                 }}
               />
@@ -343,7 +353,6 @@ function OrderCard({ order }: { order: PainelOrder }) {
       className="bg-card rounded-xl shadow-card border border-border p-4 flex flex-col gap-3 transition-shadow hover:shadow-card-hover"
       style={{ borderLeftWidth: 3, borderLeftColor: cfg.accent }}
     >
-      {/* Cabeçalho */}
       <div className="flex items-start justify-between gap-2">
         <div className="flex-1 min-w-0">
           <p className="font-extrabold text-[15px] font-mono text-foreground leading-none">
@@ -354,10 +363,8 @@ function OrderCard({ order }: { order: PainelOrder }) {
         <StatusBadge label={order.statusLabel} />
       </div>
 
-      {/* Progresso */}
       <StepTrack statusLabel={order.statusLabel} />
 
-      {/* Rodapé */}
       <div className="flex items-center justify-between">
         <p className="text-xs text-muted-foreground truncate max-w-[55%]">
           {repShort(order.rep)}
@@ -381,22 +388,21 @@ function StatsBar({
   activeFilters: Set<string>;
   onToggle: (label: string) => void;
 }) {
-  const total = Object.values(counts).reduce((a, b) => a + b, 0);
+  // TOTAL inclui todos os labels, inclusive AVALIAÇÃO (aguardando_avaliacao)
+  const total    = Object.values(counts).reduce((a, b) => a + b, 0);
   const hasFilter = activeFilters.size > 0;
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      {/* Total geral */}
       <div className="flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-bold tracking-wider bg-foreground text-background mr-1">
         <span>TOTAL</span>
         <span className="rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-extrabold bg-white/20">
-          {total}
+          {total.toLocaleString('pt-BR')}
         </span>
       </div>
 
       <div className="h-4 w-px bg-border mx-0.5" />
 
-      {/* Badge por status — clicável para filtrar */}
       {Object.entries(counts)
         .sort((a, b) => b[1] - a[1])
         .map(([label, count]) => {
@@ -409,10 +415,10 @@ function StatsBar({
               onClick={() => onToggle(label)}
               className="flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-bold tracking-wider transition-all"
               style={{
-                background: cfg.bg,
-                color:      cfg.fg,
-                opacity:    isDimmed ? 0.35 : 1,
-                outline:    isActive ? `2px solid ${cfg.accent}` : undefined,
+                background:    cfg.bg,
+                color:         cfg.fg,
+                opacity:       isDimmed ? 0.35 : 1,
+                outline:       isActive ? `2px solid ${cfg.accent}` : undefined,
                 outlineOffset: isActive ? 2 : undefined,
               }}
             >
@@ -421,13 +427,12 @@ function StatsBar({
                 className="rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-extrabold"
                 style={{ background: 'rgba(255,255,255,0.25)', color: cfg.fg }}
               >
-                {count}
+                {count.toLocaleString('pt-BR')}
               </span>
             </button>
           );
         })}
 
-      {/* Botão limpar filtro */}
       {hasFilter && (
         <button
           onClick={() => onToggle('__clear__')}
@@ -456,20 +461,20 @@ function FeedPanel({ feed }: { feed: FeedEntry[] }) {
             <div
               key={entry.key}
               className="bg-card rounded-lg p-2.5 border border-border shadow-card"
-              style={{ borderLeftWidth: 3, borderLeftColor: entry.isNew ? 'hsl(214,32%,85%)' : cfg.accent }}
+              style={{ borderLeftWidth: 3, borderLeftColor: cfg.accent }}
             >
               <p className="text-[10px] text-muted-foreground mb-1">{fmtTime(entry.time)}</p>
               <p className="text-xs font-bold font-mono text-foreground">#{entry.orderId}</p>
               <p className="text-[10px] text-muted-foreground truncate">{entry.client}</p>
-              {entry.isNew ? (
-                <p className="text-[10px] text-muted-foreground mt-1 italic">Entrou no painel</p>
-              ) : (
-                <div className="flex items-center gap-1 mt-1 flex-wrap">
-                  <span className="text-[10px] text-muted-foreground">{entry.from}</span>
-                  <span className="text-[10px] text-muted-foreground">→</span>
-                  <span className="text-[10px] font-bold" style={{ color: cfg.accent }}>{entry.to}</span>
-                </div>
-              )}
+              <div className="flex items-center gap-1 mt-1 flex-wrap">
+                {entry.from && (
+                  <>
+                    <span className="text-[10px] text-muted-foreground">{entry.from}</span>
+                    <span className="text-[10px] text-muted-foreground">→</span>
+                  </>
+                )}
+                <span className="text-[10px] font-bold" style={{ color: cfg.accent }}>{entry.to}</span>
+              </div>
             </div>
           );
         })}
@@ -571,11 +576,11 @@ function UpdatePopup({ entry, onClose }: { entry: FeedEntry; onClose: () => void
                       <div
                         className="rounded-full transition-all duration-300"
                         style={{
-                          width:       isCurrent ? 20 : wasFrom ? 14 : 10,
-                          height:      isCurrent ? 20 : wasFrom ? 14 : 10,
-                          background:  isCurrent ? cfg.accent : isDone ? 'hsl(171,100%,40%)' : 'hsl(214,32%,85%)',
-                          boxShadow:   isCurrent ? `0 0 12px ${cfg.accent}` : undefined,
-                          outline:     wasFrom && !isCurrent ? '2px solid hsl(27,90%,65%)' : undefined,
+                          width:         isCurrent ? 20 : wasFrom ? 14 : 10,
+                          height:        isCurrent ? 20 : wasFrom ? 14 : 10,
+                          background:    isCurrent ? cfg.accent : isDone ? 'hsl(171,100%,40%)' : 'hsl(214,32%,85%)',
+                          boxShadow:     isCurrent ? `0 0 12px ${cfg.accent}` : undefined,
+                          outline:       wasFrom && !isCurrent ? '2px solid hsl(27,90%,65%)' : undefined,
                           outlineOffset: 3,
                         }}
                       />
@@ -636,7 +641,7 @@ const PainelTV: React.FC = () => {
   return (
     <div className="flex flex-col h-screen bg-background text-foreground overflow-hidden font-display">
 
-      {/* Header — igual à sidebar do app */}
+      {/* Header */}
       <header className="bg-primary text-primary-foreground px-6 py-0 flex items-center justify-between shrink-0 h-16 shadow-md">
         <div className="flex items-center gap-4">
           <img src={logoSidebar} alt="Concrem" className="h-8 object-contain" />
