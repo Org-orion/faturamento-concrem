@@ -415,13 +415,14 @@ function usePainel() {
         for (const order of delta) {
           const prev = prevStatusMap.current.get(order.id);
           prevStatusMap.current.set(order.id, order.statusRaw);
-          if (prev === undefined || prev === order.statusRaw) continue;
+          // Pula apenas se o status não mudou (prev conhecido e igual)
+          if (prev !== undefined && prev === order.statusRaw) continue;
           if (shownStatus.current.get(order.id) === order.statusLabel) continue;
           changeEntries.push({
             key:     `diff-${order.id}-${++feedKey.current}`,
             time:    new Date(),
             orderId: order.id,
-            from:    STATUS_LABEL[prev] || prev,
+            from:    prev ? (STATUS_LABEL[prev] || prev) : null, // null = pedido novo no painel
             to:      order.statusLabel,
             client:  order.client,
           });
