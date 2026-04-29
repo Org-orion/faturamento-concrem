@@ -513,7 +513,7 @@ function StatsBar({
     <div className="flex items-center gap-2 flex-wrap">
       <div className="flex items-center gap-1.5 rounded-md px-3 py-1 text-[11px] font-bold tracking-wider bg-foreground text-background mr-1">
         <span>TOTAL</span>
-        <span className="rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-extrabold bg-white/20">
+        <span className="rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center text-[11px] font-extrabold bg-white/20">
           {total.toLocaleString('pt-BR')}
         </span>
       </div>
@@ -541,7 +541,7 @@ function StatsBar({
             >
               <span>{label}</span>
               <span
-                className="rounded-full w-5 h-5 flex items-center justify-center text-[11px] font-extrabold"
+                className="rounded-full min-w-[20px] h-5 px-1 flex items-center justify-center text-[11px] font-extrabold"
                 style={{ background: 'rgba(255,255,255,0.25)', color: cfg.fg }}
               >
                 {count.toLocaleString('pt-BR')}
