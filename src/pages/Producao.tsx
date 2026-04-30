@@ -1,11 +1,11 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import Modal from '@/components/Modal';
-import { btnPrimary, btnSecondary, btnDanger, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
+import { btnPrimary, btnSecondary, btnDanger, formatCurrency, inputClass } from '@/components/shared';
 import { ProductionSchedule, Order, SupportOrder, PedidoStatusRow } from '@/types';
 import { Calendar, Eye, Play, CheckCircle2, Printer, Plus, Pencil, RotateCcw } from 'lucide-react';
 import { desfazerProducaoConcluido, insertProducaoConcluido, listProducaoConcluidos } from '@/lib/opsRepo';
-import { supabaseOps } from '@/lib/supabase';
+import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
@@ -22,14 +22,30 @@ function calcItemsTotal(items: { quantity: number; unitPrice: number }[]) {
   return items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
 }
 
-function scheduleTotal(orders: Order[], supportOrders: SupportOrder[], orderIds?: string[]) {
+function scheduleTotal(erpValorMap: Map<string, number>, orderIds?: string[]) {
   if (!orderIds) return 0;
-  return orderIds.reduce((s, id) => {
-    const o = orders.find((x) => x.id === id);
-    if (o) return s + getOrderTotal(o);
-    const sup = supportOrders.find((x) => x.id === id);
-    return s + (sup && sup.items ? calcItemsTotal(sup.items) : 0);
-  }, 0);
+  return orderIds.reduce((s, id) => s + (erpValorMap.get(id) || 0), 0);
+}
+
+const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+
+async function fetchErpValores(ids: string[]): Promise<Map<string, number>> {
+  const map = new Map<string, number>();
+  if (!supabasePedidos || !ids.length) return map;
+  const unique = [...new Set(ids)];
+  const BATCH = 200;
+  const chunks: string[][] = [];
+  for (let i = 0; i < unique.length; i += BATCH) chunks.push(unique.slice(i, i + BATCH));
+  const results = await Promise.all(
+    chunks.map(batch =>
+      supabasePedidos!.from(ERP_TABLE).select('numero_pedido, total_pedido_venda').in('numero_pedido', batch).then(({ data }) => data || [])
+    )
+  );
+  for (const row of results.flat()) {
+    const v = Number(row.total_pedido_venda) || 0;
+    map.set(String(row.numero_pedido), v);
+  }
+  return map;
 }
 
 function isOverdue(plannedDate: string, status: ProductionSchedule['status']) {
@@ -96,6 +112,7 @@ const Producao = () => {
   const [editSelected, setEditSelected] = useState<string[]>([]);
 
   const [printId, setPrintId] = useState<string | null>(null);
+  const [erpValorMap, setErpValorMap] = useState<Map<string, number>>(new Map());
 
   // Filtros para tabela de concluídos
   const [qConcluidoPedido, setQConcluidoPedido] = useState('');
@@ -158,6 +175,17 @@ const Producao = () => {
     if (st) return st === 'liberado_producao';
     return o.status === 'Liberado p/ Produção';
   };
+
+  // Busca total_pedido_venda do ERP para todos os pedidos dos cronogramas
+  useEffect(() => {
+    const allIds = [
+      ...productionSchedules.flatMap(s => s.orderIds || []),
+      ...orders.map(o => o.id),
+      ...supportOrders.map(o => o.id),
+    ];
+    if (!allIds.length) return;
+    fetchErpValores(allIds).then(setErpValorMap);
+  }, [productionSchedules, orders, supportOrders]);
 
   const eligibleOrders = useMemo(() => {
     const sale = orders.filter((o) => isLiberadoProducao(o) && !o.carregamentoId);
@@ -259,7 +287,7 @@ const Producao = () => {
     num: (s: ProductionSchedule) => s.num,
     plannedDate: (s: ProductionSchedule) => s.plannedDate,
     qtdPedidos: (s: ProductionSchedule) => s.orderIds?.length || 0,
-    valorTotal: (s: ProductionSchedule) => scheduleTotal(orders, supportOrders, s.orderIds),
+    valorTotal: (s: ProductionSchedule) => scheduleTotal(erpValorMap, s.orderIds),
     createdBy: (s: ProductionSchedule) => s.createdBy,
     status: (s: ProductionSchedule) => s.status,
   }), [orders, supportOrders]);
@@ -285,7 +313,7 @@ const Producao = () => {
     num: (x: ConcludedItem) => x.schedule?.num || x.carregamentoId,
     plannedDate: (x: ConcludedItem) => x.schedule?.plannedDate || (x.row?.data_conclusao ? String(x.row.data_conclusao).slice(0, 10) : ''),
     qtdPedidos: (x: ConcludedItem) => x.schedule?.orderIds?.length || 0,
-    valorTotal: (x: ConcludedItem) => x.schedule ? scheduleTotal(orders, supportOrders, x.schedule.orderIds) : 0,
+    valorTotal: (x: ConcludedItem) => x.schedule ? scheduleTotal(erpValorMap, x.schedule.orderIds) : 0,
     createdBy: (x: ConcludedItem) => x.schedule?.createdBy || (x.row?.criado_por ? String(x.row.criado_por) : ''),
     status: (x: ConcludedItem) => x.schedule?.status || 'Concluído',
   }), [orders, supportOrders]);
@@ -446,7 +474,7 @@ const Producao = () => {
           <tbody className="divide-y divide-border/50">
             {visiblePending.map((s) => {
               const overdue = isOverdue(s.plannedDate, s.status);
-              const total = scheduleTotal(orders, supportOrders, s.orderIds);
+              const total = scheduleTotal(erpValorMap, s.orderIds);
               return (
                 <tr
                   key={s.id}
@@ -581,7 +609,7 @@ const Producao = () => {
             )}
             {!loadingConcluidos && visibleConcluded.map((x) => {
               const s = x.schedule;
-              const total = s ? scheduleTotal(orders, supportOrders, s.orderIds) : 0;
+              const total = s ? scheduleTotal(erpValorMap, s.orderIds) : 0;
               const planned = s?.plannedDate || (x.row?.data_conclusao ? String(x.row.data_conclusao).slice(0, 10) : todayBR());
               return (
                 <tr key={x.carregamentoId} className="hover:bg-muted/20 transition-colors">
@@ -795,7 +823,7 @@ const Producao = () => {
                         )}
                         <td className="py-2 px-4 font-mono-data font-bold text-primary">{o.id}</td>
                         <td className="py-2 px-4">{('clientName' in o ? o.clientName : null) || ('clientCode' in o ? o.clientCode : null) || '-'}</td>
-                        <td className="py-2 px-4 text-right font-mono-data">{formatCurrency(calcItemsTotal(o.items))}</td>
+                        <td className="py-2 px-4 text-right font-mono-data">{formatCurrency(erpValorMap.get(o.id) || 0)}</td>
                         <td className="py-2 px-4 text-right font-mono-data">{'totalQtd' in o ? (o.totalQtd || '-') : '-'}</td>
                       </tr>
                     ))}
@@ -830,7 +858,7 @@ const Producao = () => {
                           </td>
                           <td className="py-2 px-4 font-mono-data font-bold text-primary">{o.id}</td>
                           <td className="py-2 px-4">{('clientName' in o ? o.clientName : null) || ('clientCode' in o ? o.clientCode : null) || '-'}</td>
-                          <td className="py-2 px-4 text-right font-mono-data">{formatCurrency(calcItemsTotal(o.items))}</td>
+                          <td className="py-2 px-4 text-right font-mono-data">{formatCurrency(erpValorMap.get(o.id) || 0)}</td>
                           <td className="py-2 px-4 text-right font-mono-data">{'totalQtd' in o ? (o.totalQtd || '-') : '-'}</td>
                         </tr>
                       ))}
@@ -899,7 +927,7 @@ const Producao = () => {
                     </td>
                     <td className="py-3 px-4 font-mono-data font-bold text-primary">{o.id}</td>
                     <td className="py-3 px-4">{'representativeName' in o ? (o.representativeName || '-') : '-'}</td>
-                    <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency('items' in o ? calcItemsTotal(o.items) : 0)}</td>
+                    <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(erpValorMap.get(o.id) || 0)}</td>
                   </tr>
                 ))}
                 {eligibleOrders.length === 0 && (
@@ -932,7 +960,7 @@ const Producao = () => {
                 return null;
               })
               .filter(Boolean) as Array<{ id: string; representativeName: string; items: { name: string; quantity: number; unitPrice: number }[]; note: string }>;
-            const total = scheduleTotal(orders, supportOrders, s.orderIds);
+            const total = scheduleTotal(erpValorMap, s.orderIds);
             return (
               <div className="p-8">
                 <div className="flex items-start justify-between">
