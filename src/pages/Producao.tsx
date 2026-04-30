@@ -77,6 +77,7 @@ const Producao = () => {
     createProductionSchedule,
     updateProductionSchedule,
     startProductionSchedule,
+    revertProductionSchedule,
     concludeProductionSchedule,
     user,
   } = useApp();
@@ -357,13 +358,14 @@ const Producao = () => {
 
   const editEligibleOrders = useMemo(() => {
     if (!editing) return [];
+    const editingIdSet = new Set((editing.orderIds || []).map(String));
 
     const sale = orders.filter((o) => {
-      if ((editing.orderIds || []).includes(o.id)) return true;
+      if (editingIdSet.has(String(o.id))) return true;
       return isLiberadoProducao(o) && !o.carregamentoId;
     });
     const sup = supportOrders.filter((o) => {
-      if ((editing.orderIds || []).includes(o.id)) return true;
+      if (editingIdSet.has(String(o.id))) return true;
       return isLiberadoProducao(o) && !o.carregamentoId;
     });
 
@@ -399,7 +401,7 @@ const Producao = () => {
     setEditId(s.id);
     setEditPlannedDate(s.plannedDate);
     setEditObs(s.obs || '');
-    setEditSelected([...(s.orderIds || [])]);
+    setEditSelected([...(s.orderIds || [])].map(String));
     setOpenEdit(true);
   };
 
@@ -871,13 +873,20 @@ const Producao = () => {
               </div>
             )}
 
-            <div className="flex items-center justify-end gap-3">
-              <button className={btnDanger} onClick={() => setOpenEdit(false)}>
-                Cancelar
-              </button>
-              <button className={btnPrimary} onClick={saveEdit} disabled={canEditOrders && editSelected.length === 0}>
-                Salvar
-              </button>
+            <div className="flex items-center justify-between gap-3">
+              {editing?.status === 'Em Produção' && (
+                <button
+                  className={btnSecondary}
+                  onClick={() => { revertProductionSchedule(editing.id); setOpenEdit(false); }}
+                >
+                  <RotateCcw className="h-4 w-4" />
+                  Reverter para Aguardando Início
+                </button>
+              )}
+              <div className="flex gap-3 ml-auto">
+                <button className={btnDanger} onClick={() => setOpenEdit(false)}>Cancelar</button>
+                <button className={btnPrimary} onClick={saveEdit} disabled={canEditOrders && editSelected.length === 0}>Salvar</button>
+              </div>
             </div>
           </div>
         )}

@@ -67,6 +67,7 @@ interface AppState {
   createProductionSchedule: (data: { plannedDate: string; obs: string; orderIds: string[]; kind: 'CRN' | 'AVL' }) => void;
   updateProductionSchedule: (id: string, patch: { plannedDate?: string; obs?: string; orderIds?: string[]; status?: ProductionSchedule['status'] }) => void;
   startProductionSchedule: (id: string) => void;
+  revertProductionSchedule: (id: string) => void;
   concludeProductionSchedule: (id: string) => void;
   addExpenseType: (t: Omit<ExpenseType, 'id'>) => void;
   updateExpenseType: (id: string, patch: Partial<Omit<ExpenseType, 'id'>>) => void;
@@ -1217,6 +1218,40 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     );
   }, [orders, productionSchedules, supportOrders, user?.username]);
 
+  const revertProductionSchedule = useCallback((id: string) => {
+    const schedule = productionSchedules.find((s) => s.id === id);
+    if (!schedule || schedule.status !== 'Em Produção') return;
+
+    setProductionSchedules((prev) => prev.map((s) => (s.id === id ? { ...s, status: 'Aguardando Início' } : s)));
+
+    setLoads((prev) =>
+      prev.map((l) => {
+        if (l.id !== id) return l;
+        const next = { ...l, productionStatus: 'Aguardando Início' as const };
+        void upsertProgramacaoCarregamento(next);
+        return next;
+      }),
+    );
+
+    const orderIds = schedule.orderIds || [];
+    void Promise.all(
+      orderIds.map(async (pedidoId) => {
+        const o = allOrdersByIdRef.current.get(pedidoId);
+        const clienteNome = (o as any)?.clientName || (o as any)?.clientCode || 'Cliente';
+        await setPedidoStatusWithOptionalNotify({
+          pedidoId,
+          numeroPedido: pedidoId,
+          statusNovo: 'liberado_producao',
+          alteradoPor: user?.username || null,
+          observacao: 'Produção revertida para Aguardando Início',
+          notifyRepresentante: false,
+          representantePhoneRaw: null,
+          clienteNome,
+        });
+      }),
+    );
+  }, [productionSchedules, user?.username]);
+
   const concludeProductionSchedule = useCallback((id: string) => {
     const schedule = productionSchedules.find((s) => s.id === id);
     if (!schedule) return;
@@ -1347,7 +1382,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       addLoad, updateLoad, deleteLoad,
       addInvoice, updateInvoiceStatus,
       addSupportOrder, updateSupportOrder, deleteSupportOrder,
-      createProductionSchedule, updateProductionSchedule, startProductionSchedule, concludeProductionSchedule,
+      createProductionSchedule, updateProductionSchedule, startProductionSchedule, revertProductionSchedule, concludeProductionSchedule,
       addExpenseType, updateExpenseType,
       addFreightEntry, updateFreightEntry, deleteFreightEntry, setFreightEntryStatus,
       isAuthenticated, user, login, logout,
