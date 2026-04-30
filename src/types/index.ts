@@ -131,6 +131,7 @@ export type PedidoStatusRow = {
   atualizado_em: string;
   atualizado_por: string | null;
   criado_em: string;
+  mes_programacao?: string | null;
 };
 
 export type PedidoStatusHistoricoRow = {

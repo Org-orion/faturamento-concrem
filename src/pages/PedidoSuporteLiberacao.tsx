@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { btnPrimary } from '@/components/shared';
+import { currentMonthYYYYMM } from '@/lib/pedidosStatusRepo';
+import { ConfirmarLiberacaoModal } from '@/components/pedidos/ConfirmarLiberacaoModal';
 import { ArrowLeft, CheckCircle2, Plus, Trash2 } from 'lucide-react';
 import { SupportOrder } from '@/types';
 import type { FilterCondition, FilterField } from '@/lib/filters';
@@ -40,6 +42,8 @@ const PedidoSuporteLiberacao = () => {
 
   const [loadIds, setLoadIds] = useState<string[]>([]);
   const [session3Selected, setSession3Selected] = useState<string[]>([]);
+  const [showLiberarModal, setShowLiberarModal] = useState(false);
+  const [mesProgramacaoInput, setMesProgramacaoInput] = useState('');
 
   // Orders fetched directly from pedidos_status with liberado_comercial
   const [suporteOrders, setSuporteOrders] = useState<SupportOrder[]>([]);
@@ -234,12 +238,13 @@ const PedidoSuporteLiberacao = () => {
     setSession3Selected((prev) => prev.filter((x) => x !== id));
   };
 
-  const confirmarLiberacao = async () => {
+  const confirmarLiberacao = async (mesProgramacao: string) => {
     if (!loadIds.length) {
       showToast('Nenhum pedido na carga', 'error');
       return;
     }
     const username = user?.username || null;
+    const mes = mesProgramacao.trim() || currentMonthYYYYMM();
 
     for (const id of loadIds) {
       await updatePedidoStatus({
@@ -248,6 +253,7 @@ const PedidoSuporteLiberacao = () => {
         statusNovo: 'liberado_producao',
         alteradoPor: username,
         observacao: 'Suporte liberado para produção pelo comercial',
+        mesProgramacao: mes,
       });
     }
 
@@ -259,6 +265,18 @@ const PedidoSuporteLiberacao = () => {
 
   return (
     <div className="space-y-6">
+      <ConfirmarLiberacaoModal
+        open={showLiberarModal}
+        quantidadePedidos={loadIds.length}
+        mesProgramacao={mesProgramacaoInput}
+        onChange={setMesProgramacaoInput}
+        onCancel={() => setShowLiberarModal(false)}
+        onConfirm={() => {
+          setShowLiberarModal(false);
+          void confirmarLiberacao(mesProgramacaoInput);
+        }}
+      />
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div className="flex flex-col gap-2">
           <button onClick={() => navigate(-1)} className="flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors w-fit">
@@ -341,7 +359,14 @@ const PedidoSuporteLiberacao = () => {
       <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Liberados para Produção</h2>
-          <button className={btnPrimary} onClick={() => void confirmarLiberacao()}>
+          <button
+            className={btnPrimary}
+            disabled={!loadIds.length}
+            onClick={() => {
+              setMesProgramacaoInput(currentMonthYYYYMM());
+              setShowLiberarModal(true);
+            }}
+          >
             <CheckCircle2 className="h-4 w-4" />
             Confirmar Liberação
           </button>

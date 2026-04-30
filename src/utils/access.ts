@@ -13,6 +13,7 @@ export type AppRouteKey =
   | 'programacao'
   | 'programacao-cronograma'
   | 'programacao-dashboard'
+  | 'programacao-comercial'
   | 'financeiro'
   | 'painel-pedidos'
   | 'atualizacao-status'
@@ -66,6 +67,7 @@ export const routeLabels: Record<AppRouteKey, string> = {
   programacao: 'Carregamento',
   'programacao-cronograma': 'Cronograma Carregamento',
   'programacao-dashboard': 'Dashboard Carregamento',
+  'programacao-comercial': 'Programação',
   financeiro: 'Financeiro',
   'painel-pedidos': 'Painel de Pedidos',
   'atualizacao-status': 'Atualização de Status',
@@ -96,6 +98,7 @@ export const availableActionsForRoute: Partial<Record<AppRouteKey, Array<'edit' 
   programacao:                 ['edit'],
   'programacao-cronograma':    ['edit'],
   'programacao-dashboard':     ['edit'],
+  'programacao-comercial':     ['edit'],
   financeiro:                  ['edit'],
   'atualizacao-status':        ['execute'],
   prioridades:                 ['edit'],
@@ -104,7 +107,7 @@ export const availableActionsForRoute: Partial<Record<AppRouteKey, Array<'edit' 
 /** Routes grouped for the Users page UI */
 export const routeGroups: Array<{ label: string; routes: AppRouteKey[] }> = [
   { label: 'Geral',       routes: ['dashboard', 'pedidos', 'painel-pedidos', 'atualizacao-status', 'prioridades', 'painel-tv'] },
-  { label: 'Comercial',   routes: ['comercial', 'comercial-liberacao', 'pedido-suporte', 'pedido-suporte-liberacao'] },
+  { label: 'Comercial',   routes: ['comercial', 'comercial-liberacao', 'pedido-suporte', 'pedido-suporte-liberacao', 'programacao-comercial'] },
   { label: 'Operacional', routes: ['producao', 'programacao', 'programacao-cronograma', 'programacao-dashboard', 'financeiro'] },
   { label: 'Cadastro',    routes: ['representantes', 'motoristas', 'usuarios'] },
 ];
@@ -120,6 +123,7 @@ const ROLE_DEFAULTS: Record<Exclude<UserRole, 'ADMIN'>, RoleDefault[]> = {
     { route: 'programacao',             extra: ['edit'] },
     { route: 'programacao-cronograma',  extra: [] },
     { route: 'programacao-dashboard',   extra: [] },
+    { route: 'programacao-comercial',   extra: [] },
     { route: 'financeiro',              extra: ['edit'] },
     { route: 'representantes', extra: ['edit'] },
     { route: 'motoristas',     extra: ['edit'] },
@@ -132,6 +136,7 @@ const ROLE_DEFAULTS: Record<Exclude<UserRole, 'ADMIN'>, RoleDefault[]> = {
     { route: 'comercial-liberacao',        extra: ['execute'] },
     { route: 'pedido-suporte',             extra: ['edit', 'execute'] },
     { route: 'pedido-suporte-liberacao',   extra: ['execute'] },
+    { route: 'programacao-comercial',      extra: ['edit'] },
     { route: 'prioridades',               extra: ['edit'] },
     { route: 'painel-tv',                 extra: [] },
   ],
@@ -198,6 +203,7 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   if (path === '/pedido-suporte') return 'pedido-suporte';
   if (path === '/producao') return 'producao';
   if (path.startsWith('/carregamento')) return 'programacao';
+  if (path === '/programacao') return 'programacao-comercial';
   if (path === '/financeiro') return 'financeiro';
   if (path.startsWith('/painel-pedidos')) return 'painel-pedidos';
   if (path.startsWith('/atualizacao-status')) return 'atualizacao-status';
@@ -220,7 +226,7 @@ export function canAccessRoute(
     const hubRoutes: AppRouteKey[] = [
       'pedidos', 'comercial', 'comercial-liberacao',
       'pedido-suporte', 'pedido-suporte-liberacao',
-      'painel-pedidos', 'atualizacao-status',
+      'painel-pedidos', 'atualizacao-status', 'programacao-comercial',
     ];
     return hubRoutes.some((r) => canDo(role, permissions ?? null, r, 'view'));
   }
@@ -240,7 +246,7 @@ export function canAccessRoute(
 const PEDIDOS_HUB_ROUTES: Set<AppRouteKey> = new Set([
   'pedidos', 'comercial', 'comercial-liberacao',
   'pedido-suporte', 'pedido-suporte-liberacao',
-  'painel-pedidos', 'atualizacao-status',
+  'painel-pedidos', 'atualizacao-status', 'programacao-comercial',
 ]);
 
 // Routes that live inside the /carregamento hub — collapse to single sidebar entry
@@ -439,6 +445,7 @@ export const routeAccess: Record<AppRouteKey, UserRole[]> = {
   programacao: ['ADMIN', 'FATURAMENTO'],
   'programacao-cronograma': ['ADMIN', 'FATURAMENTO'],
   'programacao-dashboard': ['ADMIN', 'FATURAMENTO'],
+  'programacao-comercial': ['ADMIN', 'FATURAMENTO', 'COMERCIAL'],
   financeiro: ['ADMIN', 'FATURAMENTO'],
   'painel-pedidos': ['ADMIN', 'FATURAMENTO', 'COMERCIAL', 'PRODUCAO'],
   'atualizacao-status': ['ADMIN', 'LOGISTICA'],

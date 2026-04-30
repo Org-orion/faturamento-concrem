@@ -15,9 +15,18 @@ type StatusUpdateInput = {
   notificadoEm?: string | null;
   notificacaoProviderId?: string | null;
   notificacaoErro?: string | null;
+  mesProgramacao?: string | null;
 };
 
-const STATUS_ROW_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em';
+const STATUS_ROW_COLS = 'id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em, mes_programacao';
+
+export function currentMonthYYYYMM(): string {
+  const now = new Date();
+  const br = new Intl.DateTimeFormat('pt-BR', { timeZone: 'America/Sao_Paulo', year: 'numeric', month: '2-digit' }).format(now);
+  // br format: "MM/YYYY"
+  const [month, year] = br.split('/');
+  return `${year}-${month}`;
+}
 const STATUS_HIST_COLS = 'id, pedido_id, numero_pedido, status_anterior, status_novo, alterado_em, alterado_por, observacao, notificado_representante, notificado_em';
 
 export async function getPedidoStatus(pedidoId: string): Promise<PedidoStatusRow | null> {
@@ -194,11 +203,16 @@ export async function ensurePedidosStatusInitializedBatch(
 
   for (const p of leroyToUpgrade) {
     try {
-      const res = await supabaseOps.from('concrem_pedidos_status').update({
+      const leroyExisting = existing.find((r: any) => String(r.pedido_id) === String(p.pedidoId)) as any;
+      const leroyUpdatePayload: Record<string, unknown> = {
         status_atual: LEROY_TARGET,
         atualizado_em: now,
         atualizado_por: userName,
-      }).eq('pedido_id', p.pedidoId);
+      };
+      if (!leroyExisting?.mes_programacao) {
+        leroyUpdatePayload.mes_programacao = currentMonthYYYYMM();
+      }
+      const res = await supabaseOps.from('concrem_pedidos_status').update(leroyUpdatePayload).eq('pedido_id', p.pedidoId);
       if (res.error) {
         console.error('[Supabase OPS] ensurePedidosStatusInitializedBatch upgrade leroy:', res.error.message);
         continue;
@@ -272,13 +286,17 @@ export async function ensurePedidosStatusInitializedBatch(
             const status: PedidoStatusValue = isLeroy(p.clienteNome, p.representanteNome)
               ? 'liberado_producao'
               : isRevenda(p.grupoCliente) ? 'liberado_comercial' : 'aguardando_avaliacao';
-            return {
+            const row: Record<string, unknown> = {
               pedido_id: p.pedidoId,
               numero_pedido: p.numeroPedido,
               status_atual: status,
               atualizado_em: now,
               atualizado_por: userName,
             };
+            if (status === 'liberado_producao') {
+              row.mes_programacao = currentMonthYYYYMM();
+            }
+            return row;
           }) as any,
           { onConflict: 'pedido_id', ignoreDuplicates: true },
         );
@@ -347,14 +365,22 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
 
   if (shouldAdvance) {
   try {
+    const upsertPayload: Record<string, unknown> = {
+      pedido_id: input.pedidoId,
+      numero_pedido: input.numeroPedido,
+      status_atual: input.statusNovo,
+      atualizado_em: alteradoEm,
+      atualizado_por: input.alteradoPor,
+    };
+    if (input.statusNovo === 'liberado_producao') {
+      if (input.mesProgramacao && input.mesProgramacao !== current?.mes_programacao) {
+        upsertPayload.mes_programacao = input.mesProgramacao;
+      } else if (!current?.mes_programacao) {
+        upsertPayload.mes_programacao = currentMonthYYYYMM();
+      }
+    }
     const { error: upsertErr } = await supabaseOps.from('concrem_pedidos_status').upsert(
-      {
-        pedido_id: input.pedidoId,
-        numero_pedido: input.numeroPedido,
-        status_atual: input.statusNovo,
-        atualizado_em: alteradoEm,
-        atualizado_por: input.alteradoPor,
-      } as any,
+      upsertPayload as any,
       { onConflict: 'pedido_id' },
     );
     if (upsertErr) {
@@ -464,14 +490,18 @@ export async function setPedidoStatusWithOptionalNotify(params: {
   }
 
   if (shouldAdvance) {
+    const upsertPayload: Record<string, unknown> = {
+      pedido_id: params.pedidoId,
+      numero_pedido: params.numeroPedido,
+      status_atual: params.statusNovo,
+      atualizado_em: alteradoEm,
+      atualizado_por: params.alteradoPor,
+    };
+    if (params.statusNovo === 'liberado_producao' && !current?.mes_programacao) {
+      upsertPayload.mes_programacao = currentMonthYYYYMM();
+    }
     const { error: upsertErr } = await supabaseOps.from('concrem_pedidos_status').upsert(
-      {
-        pedido_id: params.pedidoId,
-        numero_pedido: params.numeroPedido,
-        status_atual: params.statusNovo,
-        atualizado_em: alteradoEm,
-        atualizado_por: params.alteradoPor,
-      } as any,
+      upsertPayload as any,
       { onConflict: 'pedido_id' },
     );
     if (upsertErr) {
@@ -665,6 +695,12 @@ export async function runMigrationSuporteLiberadoProducao(
         .from('concrem_pedidos_status')
         .update({ status_atual: TARGET, atualizado_em: now, atualizado_por: userName })
         .in('pedido_id', batch);
+      // Fill mes_programacao only where still null
+      await supabaseOps
+        .from('concrem_pedidos_status')
+        .update({ mes_programacao: currentMonthYYYYMM() })
+        .in('pedido_id', batch)
+        .is('mes_programacao', null);
       if (error) { console.error('[Migration] update:', error.message); continue; }
 
       const { error: histErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert(
@@ -695,6 +731,7 @@ export async function runMigrationSuporteLiberadoProducao(
             status_atual: TARGET,
             atualizado_em: now,
             atualizado_por: userName,
+            mes_programacao: currentMonthYYYYMM(),
           })) as any,
           { onConflict: 'pedido_id', ignoreDuplicates: true },
         );

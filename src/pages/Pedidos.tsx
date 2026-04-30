@@ -6,25 +6,28 @@ import Commercial from '@/pages/Commercial';
 import PedidoSuporte from '@/pages/PedidoSuporte';
 import AtualizacaoStatus from '@/pages/AtualizacaoStatus';
 import PainelPedidos from '@/pages/PainelPedidos';
+import Programacao from '@/pages/Programacao';
 import { canDo, type UserRole, type AppRouteKey } from '@/utils/access';
 
-type TabKey = 'venda' | 'suporte' | 'status' | 'painel';
+type TabKey = 'venda' | 'suporte' | 'status' | 'painel' | 'programacao';
 
 const TAB_ROUTE: Record<TabKey, AppRouteKey> = {
-  'venda':   'comercial',
-  'suporte': 'pedido-suporte',
-  'status':  'atualizacao-status',
-  'painel':  'painel-pedidos',
+  'venda':        'comercial',
+  'suporte':      'pedido-suporte',
+  'status':       'atualizacao-status',
+  'painel':       'painel-pedidos',
+  'programacao':  'programacao-comercial',
 };
 
 const TAB_LABELS: Record<TabKey, string> = {
-  'venda':   'Pedidos Venda',
-  'suporte': 'Pedidos Suporte',
-  'status':  'Status Pedido',
-  'painel':  'Painel de Pedidos',
+  'venda':        'Pedidos Venda',
+  'suporte':      'Pedidos Suporte',
+  'status':       'Status Pedido',
+  'painel':       'Painel de Pedidos',
+  'programacao':  'Programação',
 };
 
-const ALL_TABS: TabKey[] = ['venda', 'suporte', 'status', 'painel'];
+const ALL_TABS: TabKey[] = ['venda', 'suporte', 'status', 'painel', 'programacao'];
 
 const Pedidos = () => {
   const { user } = useApp();
@@ -69,10 +72,11 @@ const Pedidos = () => {
         </div>
       </div>
 
-      {activeTab === 'venda'   && <Commercial />}
-      {activeTab === 'suporte' && <PedidoSuporte />}
-      {activeTab === 'status'  && <AtualizacaoStatus />}
-      {activeTab === 'painel'  && <PainelPedidos />}
+      {activeTab === 'venda'        && <Commercial />}
+      {activeTab === 'suporte'      && <PedidoSuporte />}
+      {activeTab === 'status'       && <AtualizacaoStatus />}
+      {activeTab === 'painel'       && <PainelPedidos />}
+      {activeTab === 'programacao'  && <Programacao />}
     </div>
   );
 };

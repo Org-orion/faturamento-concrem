@@ -17,7 +17,8 @@ import { applyFilters } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 
 
-import { normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
+import { normalizePhoneToE164, isLeroy, currentMonthYYYYMM } from '@/lib/pedidosStatusRepo';
+import { ConfirmarLiberacaoModal } from '@/components/pedidos/ConfirmarLiberacaoModal';
 import { fmtDate, currentHourBR } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { findRepresentanteContato, listComercialPedidosMeta, upsertComercialPedidoMeta } from '@/lib/opsRepo';
@@ -90,7 +91,7 @@ const ComercialLiberacao = () => {
       while (true) {
         const { data: page, error: statusErr } = await supabaseOps!
           .from('concrem_pedidos_status')
-          .select('pedido_id, status_atual, numero_pedido, atualizado_em')
+          .select('pedido_id, status_atual, numero_pedido, atualizado_em, mes_programacao')
           .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia'])
           .order('atualizado_em', { ascending: false })
           .range(offset, offset + PAGE - 1);
@@ -137,6 +138,10 @@ const ComercialLiberacao = () => {
   const [pedidoMetaMap, setPedidoMetaMap] = useState<Record<string, { observacao?: string | null }>>({});
   const [editingObsId, setEditingObsId] = useState<string | null>(null);
   const [editingObsValue, setEditingObsValue] = useState('');
+  const [showLiberarModal, setShowLiberarModal] = useState(false);
+  const [mesProgramacaoInput, setMesProgramacaoInput] = useState('');
+  const [quantidadeProgramados, setQuantidadeProgramados] = useState(0);
+  const [mesProgramacaoExistente, setMesProgramacaoExistente] = useState<string | null>(null);
 
   const startEditObs = (id: string) => {
     setEditingObsId(id);
@@ -431,10 +436,11 @@ const ComercialLiberacao = () => {
     setLoadIds(prev => prev.filter(x => x !== id));
   };
 
-  const liberarParaProducao = async () => {
+  const liberarParaProducao = async (mesProgramacao: string) => {
     if (!loadIds.length || !supabaseOps) { showToast('Nenhum pedido na carga', 'error'); return; }
     const username = user?.username || null;
     const now = new Date().toISOString();
+    const mes = mesProgramacao.trim() || currentMonthYYYYMM();
 
     // Phase 1: pre-fetch unique rep contacts in parallel
     const directOrdersById = new Map(directOrders.map(o => [o.id, o]));
@@ -457,10 +463,17 @@ const ComercialLiberacao = () => {
     // Phase 2: batch status upsert + bulk history insert (parallel)
     const [upsertRes, histRes] = await Promise.all([
       supabaseOps.from('concrem_pedidos_status').upsert(
-        loadIds.map(id => ({
-          pedido_id: id, numero_pedido: id,
-          status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: username,
-        })),
+        loadIds.map(id => {
+          const existingMes = statusRowsDirect.get(id)?.mes_programacao ?? null;
+          const row: Record<string, unknown> = {
+            pedido_id: id, numero_pedido: id,
+            status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: username,
+          };
+          if (!existingMes || existingMes !== mes) {
+            row.mes_programacao = mes;
+          }
+          return row;
+        }),
         { onConflict: 'pedido_id' },
       ),
       supabaseOps.from('concrem_pedidos_status_historico').insert(
@@ -761,6 +774,20 @@ const ComercialLiberacao = () => {
           ))}
         </div>
       </div>
+
+      <ConfirmarLiberacaoModal
+        open={showLiberarModal}
+        quantidadePedidos={loadIds.length}
+        mesProgramacao={mesProgramacaoInput}
+        onChange={setMesProgramacaoInput}
+        onCancel={() => setShowLiberarModal(false)}
+        onConfirm={() => {
+          setShowLiberarModal(false);
+          void liberarParaProducao(mesProgramacaoInput);
+        }}
+        quantidadeProgramados={quantidadeProgramados}
+        mesProgramacaoExistente={mesProgramacaoExistente}
+      />
 
       {showExportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
@@ -1131,7 +1158,21 @@ const ComercialLiberacao = () => {
               <Printer className="h-4 w-4" />
               Exportar PDF
             </button>
-            <button className={btnPrimary} onClick={() => void liberarParaProducao()}>
+            <button
+              className={btnPrimary}
+              disabled={!loadIds.length}
+              onClick={() => {
+                const months = loadIds
+                  .map((id) => statusRowsDirect.get(id)?.mes_programacao)
+                  .filter(Boolean) as string[];
+                const uniqueMonths = [...new Set(months)];
+                const allSame = months.length === loadIds.length && uniqueMonths.length === 1;
+                setMesProgramacaoInput(allSame ? months[0] : currentMonthYYYYMM());
+                setQuantidadeProgramados(months.length);
+                setMesProgramacaoExistente(uniqueMonths.length === 1 ? uniqueMonths[0] : null);
+                setShowLiberarModal(true);
+              }}
+            >
               <CheckCircle2 className="h-4 w-4" />
               Confirmar Liberação
             </button>
