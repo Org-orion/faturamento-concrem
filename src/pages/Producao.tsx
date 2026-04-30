@@ -407,13 +407,7 @@ const Producao = () => {
 
   const saveEdit = () => {
     if (!editing) return;
-
-    if (canEditOrders) {
-      updateProductionSchedule(editing.id, { plannedDate: editPlannedDate, obs: editObs, orderIds: editSelected });
-    } else {
-      updateProductionSchedule(editing.id, { plannedDate: editPlannedDate, obs: editObs });
-    }
-
+    updateProductionSchedule(editing.id, { plannedDate: editPlannedDate, obs: editObs });
     setOpenEdit(false);
   };
 
@@ -796,82 +790,45 @@ const Producao = () => {
               <textarea className={inputClass + ' mt-1'} rows={3} value={editObs} onChange={(e) => setEditObs(e.target.value)} />
             </div>
 
-            {/* Pedidos já incluídos no cronograma */}
+            {/* Pedidos do cronograma — somente visualização */}
             <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <p className="text-sm font-semibold text-foreground">Pedidos incluídos ({editSelected.length})</p>
-                {!canEditOrders && (
-                  <p className="text-xs text-muted-foreground">Lista bloqueada após início.</p>
-                )}
-              </div>
-              <div className="bg-card rounded-xl border border-border overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border bg-muted/30">
-                      {canEditOrders && <th className="text-left py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Remover</th>}
-                      <th className="text-left py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
-                      <th className="text-left py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
-                      <th className="text-right py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
-                      <th className="text-right py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Qtd Kits</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border/50">
-                    {editEligibleOrders.filter(o => editSelected.includes(o.id)).map((o) => (
-                      <tr key={o.id} className="bg-primary/5">
-                        {canEditOrders && (
-                          <td className="py-2 px-4">
-                            <input type="checkbox" checked onChange={() => setEditSelected(prev => prev.filter(x => x !== o.id))} />
-                          </td>
-                        )}
-                        <td className="py-2 px-4 font-mono-data font-bold text-primary">{o.id}</td>
-                        <td className="py-2 px-4">{('clientName' in o ? o.clientName : null) || ('clientCode' in o ? o.clientCode : null) || '-'}</td>
-                        <td className="py-2 px-4 text-right font-mono-data">{formatCurrency(erpValorMap.get(o.id) || 0)}</td>
-                        <td className="py-2 px-4 text-right font-mono-data">{'totalQtd' in o ? (o.totalQtd || '-') : '-'}</td>
-                      </tr>
-                    ))}
-                    {editSelected.length === 0 && (
-                      <tr><td colSpan={canEditOrders ? 5 : 4} className="py-6 text-center text-muted-foreground text-xs">Nenhum pedido incluído.</td></tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            {/* Pedidos disponíveis para adicionar */}
-            {canEditOrders && (
-              <div className="space-y-2">
-                <p className="text-sm font-semibold text-foreground">Adicionar pedidos</p>
-                <div className="bg-card rounded-xl border border-border overflow-x-auto max-h-72 overflow-y-auto">
+              <p className="text-sm font-semibold text-foreground">
+                Pedidos incluídos ({(editing?.orderIds || []).length})
+              </p>
+              <div className="rounded-xl border border-border overflow-hidden">
+                <div className="overflow-y-auto max-h-72">
                   <table className="w-full text-sm">
-                    <thead className="sticky top-0">
+                    <thead>
                       <tr className="border-b border-border bg-muted/30">
-                        <th className="text-left py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Adicionar</th>
                         <th className="text-left py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Pedido</th>
                         <th className="text-left py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cliente</th>
                         <th className="text-right py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor</th>
                         <th className="text-right py-2 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Qtd Kits</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-border/50">
-                      {editEligibleOrders.filter(o => !editSelected.includes(o.id)).map((o) => (
-                        <tr key={o.id} className="hover:bg-muted/20 transition-colors">
-                          <td className="py-2 px-4">
-                            <input type="checkbox" checked={false} onChange={() => setEditSelected(prev => [...prev, o.id])} />
-                          </td>
-                          <td className="py-2 px-4 font-mono-data font-bold text-primary">{o.id}</td>
-                          <td className="py-2 px-4">{('clientName' in o ? o.clientName : null) || ('clientCode' in o ? o.clientCode : null) || '-'}</td>
-                          <td className="py-2 px-4 text-right font-mono-data">{formatCurrency(erpValorMap.get(o.id) || 0)}</td>
-                          <td className="py-2 px-4 text-right font-mono-data">{'totalQtd' in o ? (o.totalQtd || '-') : '-'}</td>
-                        </tr>
-                      ))}
-                      {editEligibleOrders.filter(o => !editSelected.includes(o.id)).length === 0 && (
-                        <tr><td colSpan={5} className="py-6 text-center text-muted-foreground text-xs">Nenhum pedido disponível para adicionar.</td></tr>
+                    <tbody className="divide-y divide-border/50 bg-card">
+                      {(editing?.orderIds || []).map((rawId) => {
+                        const id = String(rawId);
+                        const o = orders.find(x => String(x.id) === id) || supportOrders.find(x => String(x.id) === id);
+                        const clienteName = o ? (('clientName' in o ? o.clientName : null) || ('clientCode' in o ? o.clientCode : null) || '-') : '-';
+                        const qtdKits = o && 'totalQtd' in o ? (o.totalQtd || '-') : '-';
+                        return (
+                          <tr key={id} className="hover:bg-muted/20 transition-colors">
+                            <td className="py-2 px-4 font-mono-data font-bold text-primary">{id}</td>
+                            <td className="py-2 px-4">{clienteName}</td>
+                            <td className="py-2 px-4 text-right font-mono-data">{formatCurrency(erpValorMap.get(id) || 0)}</td>
+                            <td className="py-2 px-4 text-right font-mono-data">{qtdKits}</td>
+                          </tr>
+                        );
+                      })}
+                      {(editing?.orderIds || []).length === 0 && (
+                        <tr><td colSpan={4} className="py-6 text-center text-muted-foreground text-xs">Nenhum pedido incluído.</td></tr>
                       )}
                     </tbody>
                   </table>
                 </div>
               </div>
-            )}
+            </div>
 
             <div className="flex items-center justify-between gap-3">
               {editing?.status === 'Em Produção' && (
@@ -885,7 +842,7 @@ const Producao = () => {
               )}
               <div className="flex gap-3 ml-auto">
                 <button className={btnDanger} onClick={() => setOpenEdit(false)}>Cancelar</button>
-                <button className={btnPrimary} onClick={saveEdit} disabled={canEditOrders && editSelected.length === 0}>Salvar</button>
+                <button className={btnPrimary} onClick={saveEdit}>Salvar</button>
               </div>
             </div>
           </div>
