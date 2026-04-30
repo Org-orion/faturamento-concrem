@@ -78,11 +78,9 @@ export function StatusUpdateDialog({
       const leroy = isLeroy(pedido.cliente, pedido.representante);
       const shouldNotify = Boolean(notify) && !leroy;
 
-      const today = todayBR();
+      const now = new Date();
       const alteradoEm = dataAlteracao
-        ? dataAlteracao === today
-          ? new Date().toISOString()
-          : new Date(dataAlteracao + 'T12:00:00').toISOString()
+        ? new Date(`${dataAlteracao}T${now.toTimeString().slice(0, 8)}`).toISOString()
         : undefined;
 
       const res = await setPedidoStatusWithOptionalNotify({
