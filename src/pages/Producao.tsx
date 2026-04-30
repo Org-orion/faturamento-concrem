@@ -17,6 +17,7 @@ import { SortableHeader } from '@/components/table/SortableHeader';
 import { QuickFilterBar } from '@/components/table/QuickFilterBar';
 import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFilterRow';
 import { todayBR, fmtDate, currentYearMonthBR } from '@/lib/dateUtils';
+import logoProgramacao from '@/assets/logo-programacao.png';
 
 function calcItemsTotal(items: { quantity: number; unitPrice: number }[]) {
   return items.reduce((s, it) => s + (Number(it.quantity) || 0) * (Number(it.unitPrice) || 0), 0);
@@ -29,23 +30,32 @@ function scheduleTotal(erpValorMap: Map<string, number>, orderIds?: string[]) {
 
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
-async function fetchErpValores(ids: string[]): Promise<Map<string, number>> {
-  const map = new Map<string, number>();
-  if (!supabasePedidos || !ids.length) return map;
+type ErpMaps = { valorMap: Map<string, number>; clienteMap: Map<string, string>; qtdMap: Map<string, number | null>; previsaoMap: Map<string, string> };
+
+async function fetchErpValores(ids: string[]): Promise<ErpMaps> {
+  const valorMap = new Map<string, number>();
+  const clienteMap = new Map<string, string>();
+  const qtdMap = new Map<string, number | null>();
+  const previsaoMap = new Map<string, string>();
+  if (!supabasePedidos || !ids.length) return { valorMap, clienteMap, qtdMap, previsaoMap };
   const unique = [...new Set(ids)];
   const BATCH = 200;
   const chunks: string[][] = [];
   for (let i = 0; i < unique.length; i += BATCH) chunks.push(unique.slice(i, i + BATCH));
   const results = await Promise.all(
     chunks.map(batch =>
-      supabasePedidos!.from(ERP_TABLE).select('numero_pedido, total_pedido_venda').in('numero_pedido', batch).then(({ data }) => data || [])
+      supabasePedidos!.from(ERP_TABLE).select('numero_pedido, total_pedido_venda, total_produtos, cliente_nome, total_qtd, previsao_embarque').in('numero_pedido', batch).then(({ data }) => data || [])
     )
   );
   for (const row of results.flat()) {
-    const v = Number(row.total_pedido_venda) || 0;
-    map.set(String(row.numero_pedido), v);
+    const key = String(row.numero_pedido);
+    const venda = Number(row.total_pedido_venda) || 0;
+    valorMap.set(key, venda > 0 ? venda : (Number(row.total_produtos) || 0));
+    clienteMap.set(key, String(row.cliente_nome || ''));
+    qtdMap.set(key, row.total_qtd != null ? Number(row.total_qtd) : null);
+    if (row.previsao_embarque) previsaoMap.set(key, String(row.previsao_embarque).slice(0, 10));
   }
-  return map;
+  return { valorMap, clienteMap, qtdMap, previsaoMap };
 }
 
 function isOverdue(plannedDate: string, status: ProductionSchedule['status']) {
@@ -112,8 +122,18 @@ const Producao = () => {
   const [editObs, setEditObs] = useState('');
   const [editSelected, setEditSelected] = useState<string[]>([]);
 
-  const [printId, setPrintId] = useState<string | null>(null);
+  const [bulkSelected, setBulkSelected] = useState<Set<string>>(new Set());
+  const toggleBulk = (id: string) => setBulkSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+
   const [erpValorMap, setErpValorMap] = useState<Map<string, number>>(new Map());
+  const [erpClienteMap, setErpClienteMap] = useState<Map<string, string>>(new Map());
+  const [erpQtdMap, setErpQtdMap] = useState<Map<string, number | null>>(new Map());
+  const [erpPrevisaoMap, setErpPrevisaoMap] = useState<Map<string, string>>(new Map());
 
   // Filtros para tabela de concluídos
   const [qConcluidoPedido, setQConcluidoPedido] = useState('');
@@ -185,7 +205,12 @@ const Producao = () => {
       ...supportOrders.map(o => o.id),
     ];
     if (!allIds.length) return;
-    fetchErpValores(allIds).then(setErpValorMap);
+    fetchErpValores(allIds).then(({ valorMap, clienteMap, qtdMap, previsaoMap }) => {
+      setErpValorMap(valorMap);
+      setErpClienteMap(clienteMap);
+      setErpQtdMap(qtdMap);
+      setErpPrevisaoMap(previsaoMap);
+    });
   }, [productionSchedules, orders, supportOrders]);
 
   const eligibleOrders = useMemo(() => {
@@ -302,6 +327,16 @@ const Producao = () => {
     return pendingSort.sortItems(filtered, pendingSortGetters);
   }, [pendingSchedules, pendingFilter, pendingTextGetters, pendingSort, pendingSortGetters]);
 
+  const allPendingSelected = visiblePending.length > 0 && visiblePending.every(s => bulkSelected.has(s.id));
+  const toggleAllPending = () => {
+    if (allPendingSelected) {
+      setBulkSelected(prev => { const next = new Set(prev); visiblePending.forEach(s => next.delete(s.id)); return next; });
+    } else {
+      setBulkSelected(prev => { const next = new Set(prev); visiblePending.forEach(s => next.add(s.id)); return next; });
+    }
+  };
+  const printBulk = () => openPrintWindow(visiblePending.filter(s => bulkSelected.has(s.id)));
+
   // --- Concluded table: text getters, sort getters, pipeline ---
   const concludedTextGetters = useMemo(() => [
     (x: ConcludedItem) => x.schedule?.num || x.carregamentoId,
@@ -372,17 +407,129 @@ const Producao = () => {
     return [...sale, ...sup].sort((a, b) => a.id.localeCompare(b.id));
   }, [editing, orders, supportOrders, statusByPedidoId]);
 
-  useEffect(() => {
-    const onAfterPrint = () => setPrintId(null);
-    window.addEventListener('afterprint', onAfterPrint);
-    return () => window.removeEventListener('afterprint', onAfterPrint);
-  }, []);
+  const buildCronogramaBlock = (s: ProductionSchedule, fmtCurrency: (v: number) => string, fmtDateLocal: (iso: string) => string) => {
+    let totalValor = 0;
+    let totalQtd = 0;
+    const rows = (s.orderIds || []).map((rawId) => {
+      const id = String(rawId);
+      const valor = erpValorMap.get(id) || 0;
+      const cliente = erpClienteMap.get(id) || '-';
+      const qtdRaw = erpQtdMap.get(id);
+      const previsao = erpPrevisaoMap.get(id);
+      totalValor += valor;
+      totalQtd += qtdRaw != null ? qtdRaw : 0;
+      return `<tr>
+        <td style="font-weight:700">${id}</td>
+        <td>${cliente}</td>
+        <td style="text-align:center">${qtdRaw != null ? qtdRaw : '-'}</td>
+        <td style="text-align:right">${fmtCurrency(valor)}</td>
+        <td style="text-align:center">${previsao ? fmtDateLocal(previsao) : '-'}</td>
+      </tr>`;
+    }).join('');
 
-  useEffect(() => {
-    if (!printId) return;
-    const t = window.setTimeout(() => window.print(), 100);
-    return () => window.clearTimeout(t);
-  }, [printId]);
+    const orderCount = (s.orderIds || []).length;
+    const showTotal = orderCount > 1;
+
+    return `<div class="schedule-block">
+  <div class="schedule-id">
+    <span class="schedule-num">${s.num}</span>
+    <span>Prev. ${fmtDateLocal(s.plannedDate)}</span>
+    <span>por ${s.createdBy}</span>
+    <span>${orderCount} pedido(s)</span>
+    ${showTotal ? `<span style="margin-left:auto">${fmtCurrency(totalValor)}</span>` : ''}
+  </div>
+  <table>
+    <thead><tr>
+      <th style="text-align:left">Nº Pedido</th>
+      <th style="text-align:left">Cliente</th>
+      <th style="text-align:center">Qtd Kits</th>
+      <th style="text-align:right">Valor</th>
+      <th style="text-align:center">Prev. Embarque</th>
+    </tr></thead>
+    <tbody>${rows}${showTotal ? `<tr class="total-row">
+      <td colspan="2" style="text-align:right">TOTAL</td>
+      <td style="text-align:center">${totalQtd || '-'}</td>
+      <td style="text-align:right">${fmtCurrency(totalValor)}</td>
+      <td></td>
+    </tr>` : ''}</tbody>
+  </table>
+  ${s.obs ? `<div class="obs-row">Obs.: ${s.obs}</div>` : ''}
+</div>`;
+  };
+
+  const openPrintWindow = (schedules: ProductionSchedule[]) => {
+    if (!schedules.length) return;
+    const now = new Date();
+    const fmtCurrency = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    const fmtDateLocal = (iso: string) => new Date(iso.slice(0, 10) + 'T00:00:00').toLocaleDateString('pt-BR');
+    const emissao = `${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+
+    const blocks = schedules.map(s => buildCronogramaBlock(s, fmtCurrency, fmtDateLocal)).join('\n');
+
+    const fullHtml = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Cronograma de Produção</title>
+<style>
+  @page { size: A4 portrait; margin: 12mm 14mm; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: 'Segoe UI', Arial, sans-serif; color: #1a1a1a; font-size: 11px; }
+
+  /* Outer wrapper table — thead repeats natively on every printed page */
+  .outer { width: 100%; border-collapse: collapse; }
+  .outer thead td { padding-bottom: 10px; border-bottom: 3px solid #0a2315; }
+  .outer tbody > tr > td { padding-top: 8px; vertical-align: top; }
+  .page-header { display: flex; align-items: center; justify-content: space-between; }
+  .page-header img { height: 44px; }
+  .page-header .ph-title { text-align: right; }
+  .page-header .ph-title h1 { font-size: 15px; color: #0a2315; font-weight: 800; text-transform: uppercase; letter-spacing: 1px; }
+  .page-header .ph-title p { font-size: 9px; color: #888; margin-top: 2px; }
+
+  /* Per-schedule compact identifier */
+  .schedule-block { margin-bottom: 14px; }
+  .schedule-id {
+    display: flex; align-items: center; gap: 14px;
+    background: #f0f5f0; border-left: 4px solid #0a2315;
+    padding: 5px 10px; margin-bottom: 3px;
+    font-size: 10px; color: #333;
+  }
+  .schedule-num { font-weight: 800; font-size: 11px; color: #0a2315; }
+
+  table { width: 100%; border-collapse: collapse; }
+  thead th { background: #0a2315; color: #fff; padding: 6px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
+  tbody td { padding: 5px 10px; border-bottom: 1px solid #e0e0e0; font-size: 11px; }
+  tbody tr:nth-child(even) { background: #f5f7f5; }
+  .total-row td { padding: 7px 10px; font-weight: 800; font-size: 11px; border-top: 2px solid #0a2315; background: #f0f2f0; white-space: nowrap; }
+  .obs-row { margin-top: 6px; padding: 6px 10px; background: #fff5f5; border-left: 4px solid #dc2626; border-radius: 3px; font-size: 10px; color: #dc2626; font-weight: 600; }
+
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style>
+<script>window.onload = () => { window.focus(); window.print(); };</script>
+</head><body>
+<table class="outer">
+  <thead>
+    <tr><td>
+      <div class="page-header">
+        <img src="${logoProgramacao}" alt="Concrem" />
+        <div class="ph-title">
+          <h1>Cronograma de Produção</h1>
+          <p>Emissão: ${emissao} &nbsp;·&nbsp; ${schedules.length} carregamento(s)</p>
+        </div>
+      </div>
+    </td></tr>
+  </thead>
+  <tbody>
+    <tr><td>${blocks}</td></tr>
+  </tbody>
+</table>
+</body></html>`;
+
+    const w = window.open('', '_blank', 'width=1000,height=700');
+    if (!w) return;
+    w.document.open();
+    w.document.write(fullHtml);
+    w.document.close();
+  };
+
+  const handlePrintCronograma = (s: ProductionSchedule) => openPrintWindow([s]);
 
   const resetCreate = () => {
     setPlannedDate(todayBR());
@@ -445,7 +592,27 @@ const Producao = () => {
 
       <div className="bg-card rounded-xl border border-border overflow-x-auto no-print">
         <div className="p-4 border-b border-border space-y-4">
-          <h2 className="text-sm font-bold font-display uppercase tracking-wider text-foreground">Carregamentos Pendentes</h2>
+          <div className="flex items-center justify-between gap-4">
+            <h2 className="text-sm font-bold font-display uppercase tracking-wider text-foreground">Carregamentos Pendentes</h2>
+            {bulkSelected.size > 0 && (
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">{bulkSelected.size} selecionado(s)</span>
+                <button
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors"
+                  onClick={printBulk}
+                >
+                  <Printer className="h-3.5 w-3.5" />
+                  Imprimir selecionados
+                </button>
+                <button
+                  className="text-xs text-muted-foreground hover:text-foreground underline"
+                  onClick={() => setBulkSelected(new Set())}
+                >
+                  Limpar
+                </button>
+              </div>
+            )}
+          </div>
           <QuickFilterBar
             query={pendingFilter.query}
             onQueryChange={pendingFilter.setQuery}
@@ -458,6 +625,14 @@ const Producao = () => {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border bg-muted/30">
+              <th className="py-3 px-4 w-10">
+                <input
+                  type="checkbox"
+                  checked={allPendingSelected}
+                  onChange={toggleAllPending}
+                  className="rounded border-border cursor-pointer"
+                />
+              </th>
               <SortableHeader columnKey="num" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-left">Nº</SortableHeader>
               <SortableHeader columnKey="plannedDate" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-left">Data Prevista</SortableHeader>
               <SortableHeader columnKey="qtdPedidos" sortState={pendingSort.sortState} onToggle={pendingSort.toggleSort} className="text-right">Qtd Pedidos</SortableHeader>
@@ -477,9 +652,19 @@ const Producao = () => {
                   className={
                     overdue
                       ? 'bg-orange-50 hover:bg-orange-100/40 transition-colors'
-                      : 'hover:bg-muted/20 transition-colors'
+                      : bulkSelected.has(s.id)
+                        ? 'bg-primary/5 hover:bg-primary/10 transition-colors'
+                        : 'hover:bg-muted/20 transition-colors'
                   }
                 >
+                  <td className="py-3 px-4 w-10">
+                    <input
+                      type="checkbox"
+                      checked={bulkSelected.has(s.id)}
+                      onChange={() => toggleBulk(s.id)}
+                      className="rounded border-border cursor-pointer"
+                    />
+                  </td>
                   <td className="py-3 px-4 font-mono-data font-bold text-primary">{s.num}</td>
                   <td className="py-3 px-4 font-mono-data text-muted-foreground">
                     <span className="inline-flex items-center gap-2">
@@ -548,7 +733,7 @@ const Producao = () => {
                       )}
                       <button
                         className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                        onClick={() => setPrintId(s.id)}
+                        onClick={() => handlePrintCronograma(s)}
                         title="Imprimir"
                       >
                         <Printer className="h-4 w-4" />
@@ -560,7 +745,7 @@ const Producao = () => {
             })}
             {visiblePending.length === 0 && (
               <tr>
-                <td colSpan={7} className="py-10 text-center text-muted-foreground">Nenhum carregamento pendente.</td>
+                <td colSpan={8} className="py-10 text-center text-muted-foreground">Nenhum carregamento pendente.</td>
               </tr>
             )}
           </tbody>
@@ -647,7 +832,7 @@ const Producao = () => {
                       {s && (
                         <button
                           className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                          onClick={() => setPrintId(s.id)}
+                          onClick={() => s && handlePrintCronograma(s)}
                           title="Imprimir"
                         >
                           <Printer className="h-4 w-4" />
@@ -755,7 +940,7 @@ const Producao = () => {
                   Concluir Produção
                 </button>
               )}
-              <button className={btnPrimary} onClick={() => setPrintId(details.id)}>Imprimir Cronograma</button>
+              <button className={btnPrimary} onClick={() => handlePrintCronograma(details)}>Imprimir Cronograma</button>
             </div>
           </div>
         )}
@@ -809,9 +994,9 @@ const Producao = () => {
                     <tbody className="divide-y divide-border/50 bg-card">
                       {(editing?.orderIds || []).map((rawId) => {
                         const id = String(rawId);
-                        const o = orders.find(x => String(x.id) === id) || supportOrders.find(x => String(x.id) === id);
-                        const clienteName = o ? (('clientName' in o ? o.clientName : null) || ('clientCode' in o ? o.clientCode : null) || '-') : '-';
-                        const qtdKits = o && 'totalQtd' in o ? (o.totalQtd || '-') : '-';
+                        const clienteName = erpClienteMap.get(id) || '-';
+                        const qtdRaw = erpQtdMap.get(id);
+                        const qtdKits = qtdRaw != null ? qtdRaw : '-';
                         return (
                           <tr key={id} className="hover:bg-muted/20 transition-colors">
                             <td className="py-2 px-4 font-mono-data font-bold text-primary">{id}</td>
@@ -911,82 +1096,6 @@ const Producao = () => {
           </div>
         </div>
       </Modal>
-
-      {printId && (
-        <div className="print-only">
-          {(() => {
-            const s = productionSchedules.find((x) => x.id === printId);
-            if (!s) return null;
-            const sOrders = (s.orderIds || [])
-              .map((id) => {
-                const o = orders.find((x) => x.id === id);
-                if (o) return { id: o.id, representativeName: o.representativeName || '-', items: o.items, note: o.notes || '' };
-                const sup = supportOrders.find((x) => x.id === id);
-                if (sup) return { id: sup.id, representativeName: sup.representativeName, items: sup.items, note: sup.obs || '' };
-                return null;
-              })
-              .filter(Boolean) as Array<{ id: string; representativeName: string; items: { name: string; quantity: number; unitPrice: number }[]; note: string }>;
-            const total = scheduleTotal(erpValorMap, s.orderIds);
-            return (
-              <div className="p-8">
-                <div className="flex items-start justify-between">
-                  <div>
-                    <div className="text-lg font-bold">CONCREM — Portas Premium</div>
-                    <div className="text-sm font-semibold mt-1">CRONOGRAMA DE PRODUÇÃO</div>
-                  </div>
-                  <div className="text-right text-sm">
-                    <div><span className="font-semibold">Nº:</span> {s.num}</div>
-                    <div><span className="font-semibold">Data Prevista:</span> {fmtDate(s.plannedDate)}</div>
-                    <div><span className="font-semibold">Enviado por:</span> {s.createdBy}</div>
-                    <div><span className="font-semibold">Emitido em:</span> {fmtDate(new Date().toISOString())}</div>
-                  </div>
-                </div>
-
-                <div className="mt-6 border border-border rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-muted/30 border-b border-border">
-                        <th className="text-left py-2 px-3">Nº Pedido</th>
-                        <th className="text-left py-2 px-3">Representante</th>
-                        <th className="text-right py-2 px-3">Qtd Itens</th>
-                        <th className="text-left py-2 px-3">Observação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sOrders.map((o) => (
-                        <tr key={o.id} className="border-b border-border/50">
-                          <td className="py-2 px-3 font-mono-data font-semibold">{o.id}</td>
-                          <td className="py-2 px-3">{o.representativeName || '-'}</td>
-                          <td className="py-2 px-3 text-right font-mono-data">{o.items.length}</td>
-                          <td className="py-2 px-3">{o.note || '—'}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="mt-6">
-                  <div className="text-sm"><span className="font-semibold">Observações Gerais:</span> {s.obs || '—'}</div>
-                  <div className="text-sm mt-1">
-                    <span className="font-semibold">Total de Pedidos:</span> {s.orderIds?.length || 0} · <span className="font-semibold">Valor Total:</span> {formatCurrency(total)}
-                  </div>
-                </div>
-
-                <div className="mt-10 grid grid-cols-2 gap-12">
-                  <div>
-                    <div className="border-b border-foreground/40 h-10" />
-                    <div className="text-xs text-muted-foreground mt-2">Assinatura Produção</div>
-                  </div>
-                  <div>
-                    <div className="border-b border-foreground/40 h-10" />
-                    <div className="text-xs text-muted-foreground mt-2">Assinatura Supervisão</div>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-        </div>
-      )}
 
       <FilterConfiguratorDialog
         open={filtersOpen}
