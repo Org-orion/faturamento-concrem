@@ -342,6 +342,57 @@ const CarregamentoDashboard = () => {
     };
   }, [weekDays, loadsByDate, weekOrderValueMap]);
 
+  // ── busca valores dos pedidos do mês diretamente no ERP ──
+  const [monthOrderValueMap, setMonthOrderValueMap] = useState<Map<string, number>>(new Map());
+  const lastMonthFetchKey = useRef('');
+
+  const monthOrderIds = useMemo(() => {
+    const mLoads = calendarCells
+      .filter((d) => d.startsWith(monthStr))
+      .flatMap((d) => loadsByDate.get(d) || []);
+    return [...new Set(mLoads.flatMap((l) => l.orderIds))];
+  }, [calendarCells, monthStr, loadsByDate]);
+
+  useEffect(() => {
+    const fetchKey = monthOrderIds.join(',');
+    if (!fetchKey || fetchKey === lastMonthFetchKey.current || !supabasePedidos) return;
+    lastMonthFetchKey.current = fetchKey;
+
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const BATCH = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < monthOrderIds.length; i += BATCH) chunks.push(monthOrderIds.slice(i, i + BATCH));
+
+    Promise.all(
+      chunks.map((batch) =>
+        supabasePedidos!.from(table)
+          .select('numero_pedido, total_pedido_venda, total_produtos, frete')
+          .in('numero_pedido', batch)
+          .then(({ data }) => data || [])
+      )
+    ).then((results) => {
+      const m = new Map<string, number>();
+      for (const row of results.flat()) {
+        const orderVal = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
+        const frete = row.frete || 0;
+        m.set(String(row.numero_pedido), orderVal + frete);
+      }
+      setMonthOrderValueMap(m);
+    });
+  }, [monthOrderIds]);
+
+  // ── month totals ──
+  const monthTotals = useMemo(() => {
+    const mLoads = calendarCells
+      .filter((d) => d.startsWith(monthStr))
+      .flatMap((d) => loadsByDate.get(d) || []);
+    return {
+      count: mLoads.length,
+      orders: mLoads.reduce((s, l) => s + l.orderIds.length, 0),
+      total: mLoads.reduce((s, l) => s + l.orderIds.reduce((a, id) => a + (monthOrderValueMap.get(id) || 0), 0), 0),
+    };
+  }, [calendarCells, monthStr, loadsByDate, monthOrderValueMap]);
+
   return (
     <div className="space-y-4">
       {/* Toolbar */}
@@ -408,6 +459,15 @@ const CarregamentoDashboard = () => {
             <Chip icon={Truck} value={String(weekTotals.count)} label="carreg." />
             <Chip icon={Package} value={String(weekTotals.orders)} label="pedidos" />
             <Chip icon={DollarSign} value={formatCurrency(weekTotals.total)} label="total" color="text-emerald-600" />
+          </div>
+        )}
+
+        {/* Month summary chips */}
+        {view === 'mes' && monthTotals.count > 0 && (
+          <div className="flex gap-2">
+            <Chip icon={Truck} value={String(monthTotals.count)} label="carreg." />
+            <Chip icon={Package} value={String(monthTotals.orders)} label="pedidos" />
+            <Chip icon={DollarSign} value={formatCurrency(monthTotals.total)} label="total" color="text-emerald-600" />
           </div>
         )}
       </div>
