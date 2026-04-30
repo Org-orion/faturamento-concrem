@@ -592,7 +592,7 @@ const ComercialLiberacao = () => {
   thead th { background: #0a2315; color: #fff; padding: 8px 10px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 700; white-space: nowrap; }
   tbody td { padding: 6px 10px; border-bottom: 1px solid #e0e0e0; font-size: 11px; }
   tbody tr:nth-child(even) { background: #f5f7f5; }
-  tfoot td { padding: 10px; font-weight: 800; font-size: 12px; border-top: 3px solid #0a2315; background: #f0f2f0; }
+  .total-row td { padding: 10px; font-weight: 800; font-size: 12px; border-top: 3px solid #0a2315; background: #f0f2f0; }
   .info { display: flex; gap: 24px; font-size: 10px; color: #555; margin-bottom: 8px; }
   .info span { font-weight: 600; color: #0a2315; }
   @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
@@ -622,14 +622,13 @@ const ComercialLiberacao = () => {
     <th style="text-align:center">Nº Pedido</th>
     <th style="text-align:center">Qtd Kits</th>
   </tr></thead>
-  <tbody>${rows}</tbody>
-  <tfoot><tr>
+  <tbody>${rows}<tr class="total-row">
     <td colspan="4" style="text-align:right">TOTAL</td>
     <td></td>
     <td style="text-align:right">${fmtCurrency(totalValor)}</td>
     <td></td>
-    <td style="text-align:center">${totalQtdKits || '-'}</td>
-  </tr></tfoot>
+    <td></td>
+  </tr></tbody>
 </table>
 </body></html>`;
 
@@ -659,7 +658,8 @@ const ComercialLiberacao = () => {
       return `<tr>
         <td>${mesRef}</td>
         <td style="text-align:center;font-weight:700">${o.id}</td>
-        <td>${o.clientName || o.clientCode || '-'}</td>
+        <td>${escHtml(o.clientName || o.clientCode || '-')}</td>
+        <td>${escHtml(o.representativeName || '-')}</td>
         <td style="text-align:right">${fmtCurrency(o.totalPedidoVenda)}</td>
         <td>${escHtml(obs)}</td>
       </tr>`;
@@ -703,15 +703,15 @@ const ComercialLiberacao = () => {
     <th style="text-align:left">Mês Referência</th>
     <th style="text-align:center">Nº Pedido</th>
     <th style="text-align:left">Cliente</th>
+    <th style="text-align:left">Representante</th>
     <th style="text-align:right">Valor</th>
     <th style="text-align:left">Observação</th>
   </tr></thead>
-  <tbody>${rows}</tbody>
-  <tfoot><tr>
-    <td colspan="3" style="text-align:right;font-weight:800;border-top:3px solid #0a2315;padding:10px">TOTAL</td>
+  <tbody>${rows}<tr>
+    <td colspan="4" style="text-align:right;font-weight:800;border-top:3px solid #0a2315;padding:10px">TOTAL</td>
     <td style="text-align:right;font-weight:800;border-top:3px solid #0a2315;padding:10px">${fmtCurrency(totalValor)}</td>
     <td style="border-top:3px solid #0a2315"></td>
-  </tr></tfoot>
+  </tr></tbody>
 </table>
 </body></html>`;
 
