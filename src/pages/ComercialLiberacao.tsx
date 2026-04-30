@@ -7,10 +7,9 @@ import { btnPrimary, btnSecondary, inputClass } from '@/components/shared';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { tableColumns } from '@/contexts/AppContext';
 import { rowToOrder } from '@/lib/pedidoMapper';
-import { ArrowLeft, CheckCircle2, FileSpreadsheet, Printer, Plus, Trash2 } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, Printer, Plus, Trash2 } from 'lucide-react';
 import logoProgramacao from '@/assets/logo-programacao.png';
 import { Order, SupportOrder } from '@/types';
-import { createBrandedWorkbook, downloadBuffer } from '@/lib/excelBranded';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { applyFilters } from '@/lib/filters';
 // applyFilters used in s3CandProcessed
@@ -288,9 +287,6 @@ const ComercialLiberacao = () => {
     return s3Sort.sortItems(filtered, sortGetters);
   }, [s3LoadOrders, s3ColFilter.filterItems, baseColDefs, s3Filter.filterItems, s3Sort.sortItems]);
 
-  // --- Export ---
-  const [showExportModal, setShowExportModal] = useState(false);
-  const [exportMes, setExportMes] = useState('');
 
   // --- PDF Programação ---
   const [showPdfModal, setShowPdfModal] = useState(false);
@@ -312,47 +308,6 @@ const ComercialLiberacao = () => {
   const [showPdfGerenciaModal, setShowPdfGerenciaModal] = useState(false);
   const [pdfGerenciaMesRef, setPdfGerenciaMesRef] = useState('');
   const [pdfGerenciaObs, setPdfGerenciaObs] = useState<Record<string, string>>({});
-
-  const handleExportLiberacao = async () => {
-    const mesLabel = exportMes.trim() || 'REF';
-    const rows = s2Orders.map(o => ({
-      mes: mesLabel,
-      cliente: [o.clientCode, o.clientName].filter(Boolean).join(' - ') || '-',
-      valor: o.totalPedidoVenda ?? 0,
-      carregamento: o.previsaoCarregamento ? formatDateBR(o.previsaoCarregamento) : '-',
-      cidade: o.clientCity || '-',
-      pedido: o.id,
-      kits: o.totalQtdM3 ?? '',
-      obs: '',
-    }));
-
-    const totalValor = s2Orders.reduce((acc, o) => acc + (o.totalPedidoVenda ?? 0), 0);
-
-    const buffer = await createBrandedWorkbook({
-      sheetName: 'Liberação',
-      logoLayout: 'merged',
-      dataRowHeight: 15,
-      headerHeight: 22.5,
-      columns: [
-        { header: 'Mês Referência', key: 'mes', width: 23, align: 'center' },
-        { header: 'Cliente', key: 'cliente', width: 81.71 },
-        { header: 'Valor Total', key: 'valor', width: 17.29, numFmt: '"R$ "#,##0.00' },
-        { header: 'Prev. Embarque', key: 'carregamento', width: 24.43, align: 'center' },
-        { header: 'Cidade', key: 'cidade', width: 23.29 },
-        { header: 'Nº Pedido', key: 'pedido', width: 13.29, align: 'center' },
-        { header: 'Volume m³', key: 'kits', width: 11.29, align: 'center' },
-        { header: 'Observação', key: 'obs', width: 57.57 },
-      ],
-      rows,
-      totalRow: {
-        mes: '', cliente: `${s2Orders.length} pedido(s)`, valor: totalValor, carregamento: '', cidade: '', pedido: 'TOTAL', kits: '', obs: '',
-      },
-    });
-
-    const slug = mesLabel.replace(/\s+/g, '-').toLowerCase();
-    downloadBuffer(buffer, `planilha-liberacao-${slug}.xlsx`);
-    setShowExportModal(false);
-  };
 
   // --- Actions ---
 
@@ -746,12 +701,6 @@ const ComercialLiberacao = () => {
           <h1 className="text-2xl font-bold font-display text-foreground">Liberação de Pedidos</h1>
           <p className="text-sm text-muted-foreground">Confirme, monte a carga e libere para a produção</p>
         </div>
-        <div className="flex items-center gap-3">
-          <button onClick={() => setShowExportModal(true)} className={btnSecondary}>
-            <FileSpreadsheet className="h-4 w-4" />
-            Exportar Planilha
-          </button>
-        </div>
       </div>
 
       {/* Abas */}
@@ -788,28 +737,6 @@ const ComercialLiberacao = () => {
         quantidadeProgramados={quantidadeProgramados}
         mesProgramacaoExistente={mesProgramacaoExistente}
       />
-
-      {showExportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-md p-6 space-y-5">
-            <h2 className="text-lg font-bold font-display text-foreground">Exportar Planilha de Liberação</h2>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider mb-1">Mês de Referência</label>
-                <input className={inputClass} placeholder="ex: Março/2025" value={exportMes} onChange={(e) => setExportMes(e.target.value)} />
-              </div>
-              <p className="text-xs text-muted-foreground">Serão exportados <strong>{s2Orders.length}</strong> pedido(s) aguardando gerência.</p>
-            </div>
-            <div className="flex justify-end gap-3 pt-2">
-              <button className={btnSecondary} onClick={() => setShowExportModal(false)}>Cancelar</button>
-              <button className={btnPrimary} onClick={() => void handleExportLiberacao()}>
-                <FileSpreadsheet className="h-4 w-4" />
-                Exportar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {showPdfModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
