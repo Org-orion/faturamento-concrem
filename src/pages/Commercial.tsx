@@ -6,7 +6,6 @@ import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
 import { btnDanger, btnPrimary, btnSecondary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
 import { CheckCircle2, Eye, Plus } from 'lucide-react';
-import { StatusBadge } from '@/components/shared';
 import { useDebounce } from '@/hooks/useDebounce';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { tableColumns, vendasOr, getDataCorte } from '@/contexts/AppContext';
@@ -32,11 +31,6 @@ type ScheduleCandidate = {
   representativeName: string;
   total: number;
   kind: 'VENDA' | 'SUPORTE';
-};
-
-const commercialStatusColors: Record<string, string> = {
-  'Aguardando Avaliação': 'bg-status-warning/15 text-status-warning',
-  'Liberado p/ Produção': 'bg-status-success/15 text-status-success',
 };
 
 const Commercial = () => {
@@ -706,7 +700,6 @@ const Commercial = () => {
               <div className="bg-muted/20 border border-border rounded-lg p-4">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Representante</p>
                 <p className="mt-1 font-semibold text-foreground">{selectedOrderDetails.representativeName || '-'}</p>
-                <p className="text-xs text-muted-foreground mt-1">Código: {selectedOrderDetails.representativeId || '-'}</p>
                 <p className="text-xs text-muted-foreground mt-2">Data Emissão: {selectedOrderDetails.date ? fmtDate(selectedOrderDetails.date) : '-'}</p>
                 <p className="text-xs text-muted-foreground">Validade: {selectedOrderDetails.expiryDate ? fmtDate(selectedOrderDetails.expiryDate) : '-'}</p>
                 {selectedOrderDetails.pedCompraCliente && <p className="text-xs text-muted-foreground mt-1">Identificação: <span className="font-semibold text-foreground">{selectedOrderDetails.pedCompraCliente}</span></p>}
@@ -715,7 +708,7 @@ const Commercial = () => {
               <div className="bg-muted/20 border border-border rounded-lg p-4">
                 <p className="text-xs font-bold text-muted-foreground uppercase tracking-wider">Status</p>
                 <div className="mt-2">
-                  <StatusBadge status={selectedOrderDetails.status} colorMap={commercialStatusColors} />
+                  <PedidoStatusBadge value={statusByPedidoId.get(selectedOrderDetails.id)?.status_atual || 'aguardando_avaliacao'} />
                 </div>
                 {selectedOrderDetails.previsaoCarregamento && <p className="text-xs text-muted-foreground mt-3">Previsão de Embarque: <span className="font-semibold text-foreground">{selectedOrderDetails.previsaoCarregamento}</span></p>}
                 <p className="text-xs text-muted-foreground mt-3">Valor total: <span className="font-mono-data font-bold text-foreground">{formatCurrency(getOrderTotal(selectedOrderDetails))}</span></p>
