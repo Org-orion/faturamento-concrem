@@ -15,7 +15,7 @@ import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
-import { listPedidosStatusByPedidoIds, updatePedidoStatus, isLeroy } from '@/lib/pedidosStatusRepo';
+import { listPedidosStatusByPedidoIds, updatePedidoStatus, isLeroy, listPedidosStatusHistorico } from '@/lib/pedidosStatusRepo';
 import { getPedidoStatusDef, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
 
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
@@ -474,6 +474,17 @@ const Commercial = () => {
           setSelectedOrderDetails((prev) => (prev ? { ...prev, previsaoCarregamento: v } : null));
         }
       }
+
+      const histRows = await listPedidosStatusHistorico(id);
+      const history = histRows.map((h) => ({
+        at: h.alterado_em,
+        by: h.alterado_por || '-',
+        action: h.status_anterior
+          ? `${getPedidoStatusDef(h.status_anterior).label} → ${getPedidoStatusDef(h.status_novo).label}`
+          : getPedidoStatusDef(h.status_novo).label,
+        note: h.observacao || undefined,
+      }));
+      setSelectedOrderDetails((prev) => (prev ? { ...prev, history } : null));
     } finally {
       setLoadingDetails(false);
     }
