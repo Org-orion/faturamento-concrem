@@ -31,11 +31,31 @@ const sortOptions = [
   { value: 'atualizado_em', label: 'Atualização' },
 ] as const;
 
+const PINNED_KEY = 'concrem_pinned_pedidos';
+const DEFAULT_PINNED = ['42674', '18708', '710'];
+
 const AtualizacaoStatus = () => {
   const { orders, supportOrders, user } = useApp();
   const { showToast } = useToast();
   const presetId = useQueryParam('pedido');
   const canAtualizar = can(user, 'atualizacao_status.atualizar', 'atualizacao-status', 'execute');
+
+  const [pinnedIds, setPinnedIds] = useState<Set<string>>(() => {
+    try {
+      const stored = localStorage.getItem(PINNED_KEY);
+      const parsed = stored ? (JSON.parse(stored) as string[]) : null;
+      if (Array.isArray(parsed) && parsed.length > 0) return new Set(parsed);
+    } catch {}
+    return new Set(DEFAULT_PINNED);
+  });
+  const togglePin = useCallback((id: string) => {
+    setPinnedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try { localStorage.setItem(PINNED_KEY, JSON.stringify([...next])); } catch {}
+      return next;
+    });
+  }, []);
 
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
   const [hasMoreStatus, setHasMoreStatus] = useState(false);
@@ -231,6 +251,11 @@ const AtualizacaoStatus = () => {
     void refresh();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Pré-carrega pedidos fixados ao montar
+  useEffect(() => {
+    for (const id of pinnedIds) void searchErpByNumero(id);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Realtime subscription: auto-refresh when pedidos_status changes externally
   useEffect(() => {
     if (!supabaseOps) return;
@@ -326,11 +351,12 @@ const AtualizacaoStatus = () => {
   const logisticaPedidos = useMemo(() => {
     return allPedidosComStatus.filter((p) => {
       if (p.id === selectedId) return true; // nunca oculta o pedido em foco
+      if (pinnedIds.has(p.id)) return true; // nunca oculta pedidos fixados
       const st = statusByPedidoId.get(p.id)?.status_atual;
       if (!st) return false;
       return st !== 'finalizado';
     });
-  }, [allPedidosComStatus, statusByPedidoId, selectedId]);
+  }, [allPedidosComStatus, statusByPedidoId, selectedId, pinnedIds]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(logisticaPedidos.map((p) => p.cliente).filter((c) => c && c !== '-'));
@@ -364,13 +390,17 @@ const AtualizacaoStatus = () => {
       activeStatus,
       colFilterStatus: colFilter.values.status,
     });
+    // Pedidos fixados sempre no topo, mesmo que não passem pelos filtros ativos
+    const pinnedNotInResult = logisticaPedidos.filter((p) => pinnedIds.has(p.id) && !result.some((r) => r.id === p.id));
+    const withPinned = pinnedNotInResult.length > 0 ? [...pinnedNotInResult, ...result] : result;
+
     // Garante que o pedido em foco nunca desaparece da lista por efeito de filtros
-    if (selectedId && !result.some((p) => p.id === selectedId)) {
-      const pinned = logisticaPedidos.find((p) => p.id === selectedId);
-      if (pinned) return [pinned, ...result];
+    if (selectedId && !withPinned.some((p) => p.id === selectedId)) {
+      const focused = logisticaPedidos.find((p) => p.id === selectedId);
+      if (focused) return [focused, ...withPinned];
     }
-    return result;
-  }, [logisticaPedidos, filterItems, statusByPedidoId, colFilter.filterItems, colDefs, selectedId]);
+    return withPinned;
+  }, [logisticaPedidos, filterItems, statusByPedidoId, colFilter.filterItems, colDefs, selectedId, pinnedIds]);
 
   const sortedFiltered = useMemo(() => {
     return sortItems(filtered, {
@@ -549,6 +579,8 @@ const AtualizacaoStatus = () => {
             statusByPedidoId={statusByPedidoId}
             selectedId={selectedId}
             onSelect={setSelectedId}
+            pinnedIds={pinnedIds}
+            onTogglePin={togglePin}
           />
           {hasMoreStatus && (
             <div className="mt-3 text-center">
