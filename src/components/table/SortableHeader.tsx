@@ -21,7 +21,7 @@ export function SortableHeader({
     <th
       onClick={() => onToggle(columnKey)}
       className={cn(
-        'py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] cursor-pointer select-none hover:text-foreground transition-colors',
+        'text-left py-3 px-4 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] cursor-pointer select-none hover:text-foreground transition-colors',
         className,
       )}
     >

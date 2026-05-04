@@ -27,7 +27,8 @@ import { Link, useLocation } from 'react-router-dom';
 import logo from '@/assets/logo-sidebar.png';
 import logoMini from '@/assets/logo-mini.png';
 import { useApp } from '@/contexts/AppContext';
-import { getMenuForRole, MenuItem, UserRole, roleLabel } from '@/utils/access';
+import { getMenuForRole, getMenuByFuncionalidades, MenuItem, UserRole, roleLabel } from '@/utils/access';
+import { Funcionalidade } from '@/types/permissions';
 import { LucideIcon } from 'lucide-react';
 
 const iconMap = {
@@ -48,8 +49,10 @@ type MenuLink = { title: string; href: string; icon: LucideIcon };
 type MenuGroup = { title: string; icon: LucideIcon; children: MenuChild[] };
 type SidebarNavItem = MenuLink | MenuGroup;
 
-const asMenuItems = (role: UserRole | undefined, permissions?: import('@/utils/access').PagePermission[] | null): SidebarNavItem[] => {
-  const items: MenuItem[] = getMenuForRole(role || 'ADMIN', permissions);
+const asMenuItems = (role: UserRole | undefined, permissions?: import('@/utils/access').PagePermission[] | null, funcionalidades?: Funcionalidade[] | null): SidebarNavItem[] => {
+  const items: MenuItem[] = (funcionalidades && role !== 'ADMIN')
+    ? getMenuByFuncionalidades(funcionalidades)
+    : getMenuForRole(role || 'ADMIN', permissions);
   return items.map((it): SidebarNavItem => {
     if (it.type === 'link') {
       return { title: it.label, href: it.href, icon: iconMap[it.icon] };
@@ -66,7 +69,7 @@ export const Sidebar: React.FC = () => {
   const { isCollapsed, toggleSidebar } = useSidebar();
   const { user, logout } = useApp();
   const location = useLocation();
-  const menuItems = asMenuItems(user?.role, user?.permissions);
+  const menuItems = asMenuItems(user?.role, user?.permissions, user?.funcionalidades);
   // All sections open by default; only collapse when user explicitly toggles
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({});
 

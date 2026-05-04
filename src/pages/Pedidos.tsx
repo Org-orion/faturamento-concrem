@@ -7,7 +7,8 @@ import PedidoSuporte from '@/pages/PedidoSuporte';
 import AtualizacaoStatus from '@/pages/AtualizacaoStatus';
 import PainelPedidos from '@/pages/PainelPedidos';
 import Programacao from '@/pages/Programacao';
-import { canDo, type UserRole, type AppRouteKey } from '@/utils/access';
+import { can, canFazer, canDo, type UserRole, type AppRouteKey } from '@/utils/access';
+import type { Funcionalidade } from '@/types/permissions';
 
 type TabKey = 'venda' | 'suporte' | 'status' | 'painel' | 'programacao';
 
@@ -17,6 +18,14 @@ const TAB_ROUTE: Record<TabKey, AppRouteKey> = {
   'status':       'atualizacao-status',
   'painel':       'painel-pedidos',
   'programacao':  'programacao-comercial',
+};
+
+const TAB_FUNCIONALIDADE: Record<TabKey, Funcionalidade> = {
+  'venda':       'comercial.view',
+  'suporte':     'suporte.view',
+  'status':      'atualizacao_status.view',
+  'painel':      'painel_pedidos.view',
+  'programacao': 'programacao_comercial.view',
 };
 
 const TAB_LABELS: Record<TabKey, string> = {
@@ -34,10 +43,12 @@ const Pedidos = () => {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const visibleTabs = useMemo(
-    () => ALL_TABS.filter((t) =>
-      user?.role && canDo(user.role as UserRole, user.permissions ?? null, TAB_ROUTE[t], 'view')
-    ),
-    [user?.role, user?.permissions],
+    () => ALL_TABS.filter((t) => {
+      if (!user?.role) return false;
+      if (user.funcionalidades != null) return canFazer(user.funcionalidades, TAB_FUNCIONALIDADE[t]);
+      return canDo(user.role as UserRole, user.permissions ?? null, TAB_ROUTE[t], 'view');
+    }),
+    [user?.role, user?.permissions, user?.funcionalidades],
   );
 
   const activeTab = useMemo<TabKey>(() => {

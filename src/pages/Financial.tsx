@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp, getDataCorte } from '@/contexts/AppContext';
+import { can } from '@/utils/access';
 import Modal from '@/components/Modal';
 import { useToast } from '@/components/ToastProvider';
 import { btnDanger, btnPrimary, btnSecondary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
@@ -24,8 +25,14 @@ function monthKey(iso: string) {
 }
 
 const Financial = () => {
-  const { orders, loads, drivers, freightEntries, expenseTypes, addExpenseType, updateExpenseType, addFreightEntry, updateFreightEntry, setFreightEntryStatus, deleteFreightEntry } = useApp();
+  const { orders, loads, drivers, freightEntries, expenseTypes, addExpenseType, updateExpenseType, addFreightEntry, updateFreightEntry, setFreightEntryStatus, deleteFreightEntry, user } = useApp();
   const { showToast } = useToast();
+
+  const canCriarEditar      = can(user, 'financeiro.criar_editar',            'financeiro', 'execute');
+  const canExcluir          = can(user, 'financeiro.excluir',                 'financeiro', 'execute');
+  const canMarcarConferido  = can(user, 'financeiro.marcar_lancado_conferido','financeiro', 'execute');
+  const canImprimirFin      = can(user, 'financeiro.imprimir',                'financeiro', 'view');
+  const canGerenciarTipos   = can(user, 'financeiro.gerenciar_tipos',         'financeiro', 'execute');
 
   const { sortState: sortPending, toggleSort: togglePending, sortItems: sortPendingItems } = useTableSort();
   const { query: qPending, setQuery: setQPending, filterItems: filterPendingItems } = useQuickFilter();
@@ -363,22 +370,26 @@ const Financial = () => {
           <p className="text-sm text-muted-foreground">Controle de despesas de frete por pedido</p>
         </div>
         <div className="flex items-center gap-3">
-          <button className={btnSecondary} onClick={() => setOpenTypes(true)}>
-            <Settings2 className="h-4 w-4" />
-            Gerenciar Tipos de Despesa
-          </button>
-          <button
-            className={btnPrimary}
-            onClick={() => {
-              const first = pendingLoads[0];
-              if (!first) return;
-              openNewForLoad(first);
-            }}
-            disabled={pendingLoads.length === 0}
-          >
-            <Plus className="h-4 w-4" />
-            Novo Lançamento
-          </button>
+          {canGerenciarTipos && (
+            <button className={btnSecondary} onClick={() => setOpenTypes(true)}>
+              <Settings2 className="h-4 w-4" />
+              Gerenciar Tipos de Despesa
+            </button>
+          )}
+          {canCriarEditar && (
+            <button
+              className={btnPrimary}
+              onClick={() => {
+                const first = pendingLoads[0];
+                if (!first) return;
+                openNewForLoad(first);
+              }}
+              disabled={pendingLoads.length === 0}
+            >
+              <Plus className="h-4 w-4" />
+              Novo Lançamento
+            </button>
+          )}
         </div>
       </div>
 
@@ -450,7 +461,7 @@ const Financial = () => {
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-status-warning/15 text-status-warning">Pendente</span>
                     </td>
                     <td className="py-4 px-6 text-right">
-                      <button className={btnPrimary} onClick={() => openNewForLoad(l)}>Lançar</button>
+                      {canCriarEditar && <button className={btnPrimary} onClick={() => openNewForLoad(l)}>Lançar</button>}
                     </td>
                   </tr>
                 );
@@ -545,30 +556,36 @@ const Financial = () => {
                         >
                           <Eye className="h-4 w-4" />
                         </button>
-                        <button
-                          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                          onClick={() => setPrintId(e.id)}
-                          title="Imprimir"
-                        >
-                          <Printer className="h-4 w-4" />
-                        </button>
-                        <button
-                          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-blue-600"
-                          onClick={() => openEditEntry(e)}
-                          title="Editar"
-                        >
-                          <Edit className="h-4 w-4" />
-                        </button>
-                        <button
-                          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-red-600"
-                          onClick={() => {
-                            setEditingId(e.id);
-                            setOpenDeleteConfirm(true);
-                          }}
-                          title="Excluir"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
+                        {canImprimirFin && (
+                          <button
+                            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                            onClick={() => setPrintId(e.id)}
+                            title="Imprimir"
+                          >
+                            <Printer className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canCriarEditar && (
+                          <button
+                            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-blue-600"
+                            onClick={() => openEditEntry(e)}
+                            title="Editar"
+                          >
+                            <Edit className="h-4 w-4" />
+                          </button>
+                        )}
+                        {canExcluir && (
+                          <button
+                            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-red-600"
+                            onClick={() => {
+                              setEditingId(e.id);
+                              setOpenDeleteConfirm(true);
+                            }}
+                            title="Excluir"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -845,22 +862,26 @@ const Financial = () => {
                 Saldo: <span className="font-mono-data font-bold text-foreground">{formatCurrency(details.freightValue - details.driverValue - sumExpenses(details.expenses))}</span>
               </div>
               <div className="flex items-center gap-3">
-                <button className={btnSecondary} onClick={() => setPrintId(details.id)}>
-                  <Printer className="h-4 w-4" />
-                  Imprimir
-                </button>
-                <button
-                  className={btnPrimary}
-                  onClick={() => {
-                    setFreightEntryStatus(details.id, 'Conferido');
-                    showToast('Marcado como Conferido');
-                    setOpenDetails(false);
-                  }}
-                  disabled={details.status === 'Conferido'}
-                >
-                  <CheckCircle2 className="h-4 w-4" />
-                  Marcar como Conferido
-                </button>
+                {canImprimirFin && (
+                  <button className={btnSecondary} onClick={() => setPrintId(details.id)}>
+                    <Printer className="h-4 w-4" />
+                    Imprimir
+                  </button>
+                )}
+                {canMarcarConferido && (
+                  <button
+                    className={btnPrimary}
+                    onClick={() => {
+                      setFreightEntryStatus(details.id, 'Conferido');
+                      showToast('Marcado como Conferido');
+                      setOpenDetails(false);
+                    }}
+                    disabled={details.status === 'Conferido'}
+                  >
+                    <CheckCircle2 className="h-4 w-4" />
+                    Marcar como Conferido
+                  </button>
+                )}
               </div>
             </div>
           </div>

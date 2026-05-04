@@ -3,13 +3,10 @@ import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
 import { FormField, inputClass, btnPrimary, btnDanger, btnSecondary } from '@/components/shared';
-import {
-  UserRole, roleLabel,
-  AppRouteKey, PageAction, PagePermission,
-  defaultPermissionsForRole, routeLabels, routeGroups,
-  availableActionsForRoute, actionLabels,
-} from '@/utils/access';
+import { UserRole, can } from '@/utils/access';
+import { isSuperAdmin, Funcionalidade, funcionalidadeLabels, funcionalidadeSections } from '@/types/permissions';
 import { deleteUsuario, insertUsuario, listUsuarios, updateUsuario, UsuarioPerfilAcesso } from '@/lib/cadastrosOps';
+import { listGrupos, GrupoRow } from '@/lib/gruposRepo';
 import { hashPassword } from '@/lib/password';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
@@ -22,11 +19,11 @@ type UserForm = {
   name: string;
   username: string;
   role: UserRole;
-  /** null = use role defaults; array = custom permissions */
-  customPerms: PagePermission[] | null;
+  grupoId: string | null;
+  customFuncs: Set<Funcionalidade> | null;
 };
 
-const emptyForm: UserForm = { name: '', username: '', role: 'COMERCIAL', customPerms: null };
+const emptyForm: UserForm = { name: '', username: '', role: 'COMERCIAL', grupoId: null, customFuncs: null };
 
 type UserItem = {
   id: string;
@@ -34,7 +31,8 @@ type UserItem = {
   username: string;
   role: UserRole;
   ativo: boolean;
-  paginas_acesso: PagePermission[] | null;
+  grupoId: string | null;
+  funcionalidades: Funcionalidade[] | null;
 };
 
 const roleToPerfil = (r: UserRole): UsuarioPerfilAcesso => {
@@ -53,40 +51,58 @@ const perfilToRole = (p: UsuarioPerfilAcesso | null): UserRole => {
   return 'COMERCIAL';
 };
 
-// ---- permission helpers ----
-const effectivePerms = (f: UserForm): PagePermission[] =>
-  f.customPerms ?? defaultPermissionsForRole(f.role);
+// ---- permission matrix sub-component ----
+const PermMatrix = ({ value, onChange }: { value: Set<Funcionalidade>; onChange: (next: Set<Funcionalidade>) => void }) => {
+  const toggle = (key: Funcionalidade) => {
+    const next = new Set(value);
+    if (next.has(key)) next.delete(key); else next.add(key);
+    onChange(next);
+  };
 
-const isRouteEnabled = (f: UserForm, route: AppRouteKey) =>
-  effectivePerms(f).some((p) => p.route === route);
+  const toggleSection = (keys: Funcionalidade[]) => {
+    const allOn = keys.every((k) => value.has(k));
+    const next = new Set(value);
+    if (allOn) keys.forEach((k) => next.delete(k)); else keys.forEach((k) => next.add(k));
+    onChange(next);
+  };
 
-const getActions = (f: UserForm, route: AppRouteKey): PageAction[] =>
-  effectivePerms(f).find((p) => p.route === route)?.actions ?? [];
-
-const isActionEnabled = (f: UserForm, route: AppRouteKey, action: PageAction) =>
-  getActions(f, route).includes(action);
-
-const toggleRoute = (f: UserForm, route: AppRouteKey): UserForm => {
-  const current = effectivePerms(f);
-  const enabled = current.some((p) => p.route === route);
-  const next = enabled
-    ? current.filter((p) => p.route !== route)
-    : [...current, { route, actions: ['view', ...(availableActionsForRoute[route] ?? [])] } as PagePermission];
-  return { ...f, customPerms: next };
-};
-
-const toggleAction = (f: UserForm, route: AppRouteKey, action: PageAction): UserForm => {
-  const current = effectivePerms(f);
-  const perm = current.find((p) => p.route === route);
-  if (!perm) return f;
-  const hasAction = perm.actions.includes(action);
-  const newActions: PageAction[] = hasAction
-    ? perm.actions.filter((a) => a !== action)
-    : [...perm.actions, action];
-  // Always keep 'view' if the route is enabled
-  const safeActions = newActions.includes('view') ? newActions : ['view', ...newActions] as PageAction[];
-  const next = current.map((p) => p.route === route ? { ...p, actions: safeActions } : p);
-  return { ...f, customPerms: next };
+  return (
+    <div className="border border-border rounded-lg overflow-hidden divide-y divide-border max-h-[50vh] overflow-y-auto">
+      {funcionalidadeSections.map((section) => {
+        const allOn = section.keys.every((k) => value.has(k));
+        const someOn = !allOn && section.keys.some((k) => value.has(k));
+        return (
+          <div key={section.label} className="px-3 py-2.5 space-y-1.5">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={allOn}
+                ref={(el) => { if (el) el.indeterminate = someOn; }}
+                onChange={() => toggleSection(section.keys)}
+                className="w-3.5 h-3.5 rounded accent-primary cursor-pointer shrink-0"
+              />
+              <span className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{section.label}</span>
+            </label>
+            <div className="pl-5 grid grid-cols-2 gap-x-4 gap-y-0.5">
+              {section.keys.map((key) => (
+                <label key={key} className="flex items-center gap-1.5 cursor-pointer select-none py-0.5">
+                  <input
+                    type="checkbox"
+                    checked={value.has(key)}
+                    onChange={() => toggle(key)}
+                    className="w-3 h-3 rounded accent-primary cursor-pointer shrink-0"
+                  />
+                  <span className={`text-[11px] ${value.has(key) ? 'text-foreground' : 'text-muted-foreground'}`}>
+                    {funcionalidadeLabels[key]}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 };
 
 const UsersPage = () => {
@@ -94,9 +110,10 @@ const UsersPage = () => {
   const { showToast } = useToast();
 
   const [items, setItems] = useState<UserItem[]>([]);
+  const [grupos, setGrupos] = useState<GrupoRow[]>([]);
   const [loading, setLoading] = useState(false);
   const { sortState, toggleSort, sortItems } = useTableSort();
-  const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<UserItem>();
+  const { query, setQuery, filterItems } = useQuickFilter<UserItem>();
   const colFilter = useColumnFilters();
   const [modalOpen, setModalOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
@@ -110,21 +127,26 @@ const UsersPage = () => {
   const [resetError, setResetError] = useState<string | null>(null);
 
   const isAdmin = currentUser?.role === 'ADMIN';
+  const canCriarEditar = can(currentUser, 'usuarios.criar_editar', 'usuarios', 'execute');
+  const canExcluir     = can(currentUser, 'usuarios.excluir',      'usuarios', 'execute');
+  const useCustomFuncs = form.customFuncs !== null;
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
       setLoading(true);
       try {
-        const rows = await listUsuarios();
+        const [rows, gruposData] = await Promise.all([listUsuarios(), listGrupos()]);
         if (cancelled) return;
+        setGrupos(gruposData);
         setItems(rows.map((r) => ({
           id: r.id,
           name: r.nome || '',
           username: r.email || '',
           role: perfilToRole(r.perfil_acesso),
           ativo: Boolean(r.ativo),
-          paginas_acesso: Array.isArray(r.paginas_acesso) ? (r.paginas_acesso as PagePermission[]) : null,
+          grupoId: r.grupo_id ?? null,
+          funcionalidades: Array.isArray(r.funcionalidades) ? r.funcionalidades as Funcionalidade[] : null,
         })));
       } catch (e: any) {
         showToast(e?.message || 'Falha ao carregar usuários.', 'error');
@@ -136,41 +158,55 @@ const UsersPage = () => {
     return () => { cancelled = true; };
   }, [showToast]);
 
-  const textGetters: Array<(u: UserItem) => unknown> = [(u) => u.name, (u) => u.username, (u) => roleLabel[u.role]];
-  const sortGetters: Record<string, (u: UserItem) => unknown> = { name: (u) => u.name, username: (u) => u.username, role: (u) => roleLabel[u.role] };
-  const userStatusButtons = [
-    { value: 'ADMIN', label: 'Admin' }, { value: 'FATURAMENTO', label: 'Faturamento' },
-    { value: 'COMERCIAL', label: 'Comercial' }, { value: 'PRODUCAO', label: 'Produção' }, { value: 'LOGISTICA', label: 'Logística' },
-  ];
+  const textGetters: Array<(u: UserItem) => unknown> = [(u) => u.name, (u) => u.username];
+  const sortGetters: Record<string, (u: UserItem) => unknown> = { name: (u) => u.name, username: (u) => u.username };
   const colDefs: ColDef<UserItem>[] = [
     { key: 'name', getter: (u) => u.name }, { key: 'username', getter: (u) => u.username },
-    { key: 'role', getter: (u) => u.role, match: 'exact' as const },
   ];
   const colFilterSlots: ColFilterSlot[] = [
     { key: 'name', type: 'text', placeholder: 'Nome...' },
     { key: 'username', type: 'text', placeholder: 'Usuário...' },
-    { key: 'role', type: 'select', options: [
-      { value: 'ADMIN', label: 'Admin' }, { value: 'FATURAMENTO', label: 'Faturamento' },
-      { value: 'COMERCIAL', label: 'Comercial' }, { value: 'PRODUCAO', label: 'Produção' }, { value: 'LOGISTICA', label: 'Logística' },
-    ]},
     { type: 'none' }, { type: 'none' },
   ];
   const filtered = useMemo(
-    () => sortItems(filterItems(colFilter.filterItems(items, colDefs), textGetters, (u) => u.role), sortGetters),
+    () => sortItems(filterItems(colFilter.filterItems(items, colDefs), textGetters), sortGetters),
     [items, filterItems, sortItems, colFilter.filterItems],
   );
+
+  const resolveGrupoLabel = (u: UserItem): string => {
+    if (isSuperAdmin(u.username)) return 'Administrador';
+    if (u.funcionalidades && u.funcionalidades.length > 0) return `Personalizado (${u.funcionalidades.length} funções)`;
+    if (u.grupoId) return grupos.find((g) => g.id === u.grupoId)?.nome ?? '—';
+    return '—';
+  };
+
+  const resolveGrupoIsCustom = (u: UserItem) =>
+    !isSuperAdmin(u.username) && u.funcionalidades && u.funcionalidades.length > 0;
 
   const openNew = () => { setEditingId(null); setForm(emptyForm); setErrors({}); setModalOpen(true); };
   const openEdit = (id: string) => {
     const u = items.find((x) => x.id === id);
     if (!u) return;
     setEditingId(id);
-    setForm({ name: u.name, username: u.username, role: u.role, customPerms: u.paginas_acesso });
+    setForm({
+      name: u.name,
+      username: u.username,
+      role: u.role,
+      grupoId: u.grupoId,
+      customFuncs: u.funcionalidades ? new Set(u.funcionalidades) : null,
+    });
     setErrors({});
     setModalOpen(true);
   };
 
-  const handleRoleChange = (role: UserRole) => setForm((p) => ({ ...p, role, customPerms: null }));
+  const enableCustomFuncs = () => {
+    const base = form.grupoId
+      ? (grupos.find((g) => g.id === form.grupoId)?.funcionalidades ?? [])
+      : [];
+    setForm((p) => ({ ...p, customFuncs: new Set(base) }));
+  };
+
+  const disableCustomFuncs = () => setForm((p) => ({ ...p, customFuncs: null }));
 
   const validate = (): boolean => {
     const e: Record<string, string> = {};
@@ -184,12 +220,20 @@ const UsersPage = () => {
 
   const save = () => {
     if (!validate()) return;
-    const paginas_acesso = form.customPerms && form.customPerms.length > 0 ? form.customPerms : null;
+    const funcionalidades = form.customFuncs ? [...form.customFuncs] : null;
     if (editingId) {
       void (async () => {
         try {
-          const row = await updateUsuario(editingId, { nome: form.name.trim(), email: form.username.trim(), perfil_acesso: roleToPerfil(form.role), paginas_acesso: paginas_acesso as any });
-          setItems((prev) => prev.map((u) => u.id === editingId ? { ...u, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo), paginas_acesso: Array.isArray(row.paginas_acesso) ? (row.paginas_acesso as PagePermission[]) : null } : u));
+          const row = await updateUsuario(editingId, {
+            nome: form.name.trim(),
+            email: form.username.trim(),
+            perfil_acesso: roleToPerfil(form.role),
+            grupo_id: form.grupoId,
+            funcionalidades: funcionalidades as any,
+          });
+          setItems((prev) => prev.map((u) => u.id === editingId
+            ? { ...u, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo), grupoId: row.grupo_id ?? null, funcionalidades: Array.isArray(row.funcionalidades) ? row.funcionalidades as Funcionalidade[] : null }
+            : u));
           showToast('Usuário atualizado com sucesso!');
           setModalOpen(false);
         } catch (e: any) { showToast(e?.message || 'Falha ao salvar.', 'error'); }
@@ -198,8 +242,16 @@ const UsersPage = () => {
       void (async () => {
         try {
           const senha_hash = await hashPassword('1234');
-          const row = await insertUsuario({ nome: form.name.trim(), email: form.username.trim(), senha_hash, perfil_acesso: roleToPerfil(form.role), ativo: true, paginas_acesso: paginas_acesso as any });
-          setItems((prev) => [...prev, { id: row.id, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo), paginas_acesso: Array.isArray(row.paginas_acesso) ? (row.paginas_acesso as PagePermission[]) : null }]);
+          const row = await insertUsuario({
+            nome: form.name.trim(),
+            email: form.username.trim(),
+            senha_hash,
+            perfil_acesso: roleToPerfil(form.role),
+            ativo: true,
+            grupo_id: form.grupoId,
+            funcionalidades: funcionalidades as any,
+          });
+          setItems((prev) => [...prev, { id: row.id, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo), grupoId: row.grupo_id ?? null, funcionalidades: Array.isArray(row.funcionalidades) ? row.funcionalidades as Funcionalidade[] : null }]);
           showToast('Usuário cadastrado com sucesso!');
           setModalOpen(false);
         } catch (e: any) { showToast(e?.message || 'Falha ao salvar.', 'error'); }
@@ -239,30 +291,22 @@ const UsersPage = () => {
 
   const deletingUser = deletingId ? items.find((u) => u.id === deletingId) : null;
   const isDeletingSelf = Boolean(deletingUser && currentUser && deletingUser.username === currentUser.username);
-
-  const isUsingDefaults = form.customPerms === null;
-
-  // summary for table column
-  const permSummary = (u: UserItem) => {
-    if (u.role === 'ADMIN') return 'Acesso total';
-    if (!u.paginas_acesso) return 'Padrão do perfil';
-    const routes = u.paginas_acesso.length;
-    const hasCustomEdit = u.paginas_acesso.some((p) => p.actions.includes('edit'));
-    const hasCustomExec = u.paginas_acesso.some((p) => p.actions.includes('execute'));
-    return `${routes} tela(s)${hasCustomEdit ? ' · editar' : ''}${hasCustomExec ? ' · executar' : ''}`;
-  };
+  const editingUser = editingId ? items.find((u) => u.id === editingId) : null;
+  const isEditingSuperAdmin = Boolean(editingUser && isSuperAdmin(editingUser.username));
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold font-display text-foreground">Usuários</h1>
-        <button className={btnPrimary} onClick={openNew}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          Novo Usuário
-        </button>
+        {canCriarEditar && (
+          <button className={btnPrimary} onClick={openNew}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Novo Usuário
+          </button>
+        )}
       </div>
 
-      <QuickFilterBar query={query} onQueryChange={setQuery} placeholder="Buscar por nome, usuário ou perfil..." statuses={userStatusButtons} activeStatus={activeStatus} onStatusChange={setActiveStatus} />
+      <QuickFilterBar query={query} onQueryChange={setQuery} placeholder="Buscar por nome ou usuário..." />
 
       <div className="bg-card rounded-lg shadow-sm border border-border overflow-x-auto">
         <table className="w-full text-sm">
@@ -271,41 +315,49 @@ const UsersPage = () => {
             <tr className="border-b border-border bg-muted/30">
               <SortableHeader columnKey="name" sortState={sortState} onToggle={toggleSort}>Nome</SortableHeader>
               <SortableHeader columnKey="username" sortState={sortState} onToggle={toggleSort}>Usuário</SortableHeader>
-              <SortableHeader columnKey="role" sortState={sortState} onToggle={toggleSort}>Perfil</SortableHeader>
-              <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Acessos</th>
+              <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Grupo / Permissões</th>
               <th className="text-left py-3 px-4 font-display font-medium text-muted-foreground">Ações</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((u, i) => (
-              <tr key={u.id} className={`border-b border-border/50 hover:bg-muted/50 transition-colors ${i % 2 ? 'bg-muted/20' : ''}`}>
-                <td className="py-3 px-4 font-display font-medium">{u.name}</td>
-                <td className="py-3 px-4 font-mono-data">{u.username}</td>
-                <td className="py-3 px-4">
-                  <span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-bold bg-muted text-foreground">{roleLabel[u.role]}</span>
-                </td>
-                <td className="py-3 px-4">
-                  <span className={`text-xs ${u.paginas_acesso ? 'text-primary font-medium' : 'text-muted-foreground'}`}>{permSummary(u)}</span>
-                </td>
-                <td className="py-3 px-4">
-                  <div className="flex gap-2">
-                    <button onClick={() => openEdit(u.id)} className="text-muted-foreground hover:text-primary transition-colors" aria-label="Editar">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                    </button>
-                    {isAdmin && (
-                      <button onClick={() => requestResetPassword(u.id)} className="text-muted-foreground hover:text-primary transition-colors" aria-label="Redefinir senha">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M20 17V9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/></svg>
-                      </button>
-                    )}
-                    <button onClick={() => requestDelete(u.id)} className="text-muted-foreground hover:text-destructive transition-colors" aria-label="Excluir">
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
-                    </button>
-                  </div>
-                </td>
-              </tr>
-            ))}
+            {filtered.map((u, i) => {
+              const locked = isSuperAdmin(u.username);
+              return (
+                <tr key={u.id} className={`border-b border-border/50 hover:bg-muted/50 transition-colors ${i % 2 ? 'bg-muted/20' : ''}`}>
+                  <td className="py-3 px-4 font-display font-medium">
+                    {u.name}
+                    {locked && <span className="ml-2 text-[10px] bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold">SUPER ADMIN</span>}
+                  </td>
+                  <td className="py-3 px-4 font-mono-data">{u.username}</td>
+                  <td className="py-3 px-4">
+                    <span className={`text-sm ${resolveGrupoIsCustom(u) ? 'text-primary font-medium' : 'text-foreground'}`}>
+                      {resolveGrupoLabel(u)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4">
+                    <div className="flex gap-2">
+                      {canCriarEditar && (
+                        <button onClick={() => openEdit(u.id)} disabled={locked} className="text-muted-foreground hover:text-primary transition-colors disabled:opacity-30" aria-label="Editar">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
+                      )}
+                      {isAdmin && (
+                        <button onClick={() => requestResetPassword(u.id)} className="text-muted-foreground hover:text-primary transition-colors" aria-label="Redefinir senha">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 17a2 2 0 1 0 0-4 2 2 0 0 0 0 4z"/><path d="M20 17V9a2 2 0 0 0-2-2h-1V6a5 5 0 0 0-10 0v1H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2z"/></svg>
+                        </button>
+                      )}
+                      {canExcluir && (
+                        <button onClick={() => requestDelete(u.id)} disabled={locked} className="text-muted-foreground hover:text-destructive transition-colors disabled:opacity-30" aria-label="Excluir">
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+                        </button>
+                      )}
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
-              <tr><td colSpan={5} className="py-8 text-center text-muted-foreground font-display">Nenhum usuário encontrado.</td></tr>
+              <tr><td colSpan={4} className="py-8 text-center text-muted-foreground font-display">Nenhum usuário encontrado.</td></tr>
             )}
           </tbody>
         </table>
@@ -314,125 +366,87 @@ const UsersPage = () => {
 
       {/* ---- Modal cadastro/edição ---- */}
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingId ? 'Editar Usuário' : 'Novo Usuário'}>
-        <div className="space-y-4">
-          <FormField label="Nome" error={errors.name}>
-            <input className={inputClass} value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
-          </FormField>
-          <FormField label="Usuário" error={errors.username}>
-            <input className={inputClass} value={form.username} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))} />
-          </FormField>
-          {!editingId && (
-            <FormField label="Senha (padrão)">
-              <input className={inputClass} type="password" value="1234" disabled />
+        {isEditingSuperAdmin ? (
+          <div className="space-y-4">
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-sm text-amber-800">
+              O usuário <span className="font-semibold">kmz</span> é super-admin e não pode ser modificado.
+            </div>
+            <div className="flex justify-end">
+              <button className={btnSecondary} onClick={() => setModalOpen(false)}>Fechar</button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <FormField label="Nome" error={errors.name}>
+              <input className={inputClass} value={form.name} onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))} />
             </FormField>
-          )}
-          <FormField label="Perfil">
-            <select className={inputClass} value={form.role} onChange={(e) => handleRoleChange(e.target.value as UserRole)}>
-              <option value="ADMIN">ADMIN</option>
-              <option value="FATURAMENTO">FATURAMENTO</option>
-              <option value="COMERCIAL">COMERCIAL</option>
-              <option value="PRODUCAO">PRODUÇÃO</option>
-              <option value="LOGISTICA">LOGÍSTICA</option>
-            </select>
-          </FormField>
+            <FormField label="Usuário" error={errors.username}>
+              <input className={inputClass} value={form.username} onChange={(e) => setForm((p) => ({ ...p, username: e.target.value }))} />
+            </FormField>
+            {!editingId && (
+              <FormField label="Senha (padrão)">
+                <input className={inputClass} type="password" value="1234" disabled />
+              </FormField>
+            )}
+            <FormField label="Perfil">
+              <select className={inputClass} value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value as UserRole }))}>
+                <option value="ADMIN">ADMIN</option>
+                <option value="FATURAMENTO">FATURAMENTO</option>
+                <option value="COMERCIAL">COMERCIAL</option>
+                <option value="PRODUCAO">PRODUÇÃO</option>
+                <option value="LOGISTICA">LOGÍSTICA</option>
+              </select>
+            </FormField>
 
-          {/* ---- Permissões por tela ---- */}
-          {form.role !== 'ADMIN' ? (
+            {/* ── Permissões ── */}
             <div className="space-y-2 pt-1">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-foreground">Permissões por tela</span>
-                {!isUsingDefaults && (
-                  <button type="button" onClick={() => setForm((p) => ({ ...p, customPerms: null }))} className="text-xs text-primary hover:underline">
-                    Restaurar padrões do perfil
+                <span className="text-sm font-semibold text-foreground">Permissões</span>
+              </div>
+
+              {!useCustomFuncs ? (
+                <>
+                  <FormField label="Grupo de permissões">
+                    <select className={inputClass} value={form.grupoId ?? ''} onChange={(e) => setForm((p) => ({ ...p, grupoId: e.target.value || null }))}>
+                      <option value="">— Sem grupo —</option>
+                      {grupos.map((g) => (
+                        <option key={g.id} value={g.id}>{g.nome}</option>
+                      ))}
+                    </select>
+                  </FormField>
+                  <button
+                    type="button"
+                    onClick={enableCustomFuncs}
+                    className="text-xs text-primary hover:underline"
+                  >
+                    + Personalizar permissões para este usuário
                   </button>
-                )}
-              </div>
-              {isUsingDefaults && (
-                <p className="text-xs text-muted-foreground">
-                  Usando padrões do perfil <span className="font-semibold">{roleLabel[form.role]}</span>. Altere qualquer opção para customizar.
-                </p>
-              )}
-
-              <div className="border border-border rounded-lg overflow-hidden divide-y divide-border">
-                {routeGroups.map((group) => (
-                  <div key={group.label} className="px-3 py-2.5 space-y-2">
-                    <p className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{group.label}</p>
-                    {group.routes.map((route) => {
-                      const enabled = isRouteEnabled(form, route);
-                      const extraActions = availableActionsForRoute[route] ?? [];
-                      const isDefault = defaultPermissionsForRole(form.role).some((p) => p.route === route);
-
-                      return (
-                        <div key={route} className={`rounded-md transition-colors ${enabled ? 'bg-primary/5' : ''}`}>
-                          {/* Route toggle */}
-                          <label className="flex items-center gap-2.5 cursor-pointer select-none px-2 py-1.5">
-                            <input
-                              type="checkbox"
-                              checked={enabled}
-                              onChange={() => setForm((p) => toggleRoute(p, route))}
-                              className="w-3.5 h-3.5 rounded accent-primary cursor-pointer shrink-0"
-                            />
-                            <span className={`text-xs font-medium ${enabled ? 'text-foreground' : 'text-muted-foreground'}`}>
-                              {routeLabels[route]}
-                            </span>
-                            {isDefault && (
-                              <span className="ml-auto text-[9px] font-bold text-primary/50 uppercase tracking-wide">padrão</span>
-                            )}
-                          </label>
-
-                          {/* Action toggles — only when route is enabled and has extra actions */}
-                          {enabled && extraActions.length > 0 && (
-                            <div className="flex gap-3 px-7 pb-1.5">
-                              {/* view is always on, show as static badge */}
-                              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                                <span className="w-2 h-2 rounded-full bg-primary/40 shrink-0" />
-                                {actionLabels.view}
-                              </span>
-                              {extraActions.map((action) => {
-                                const checked = isActionEnabled(form, route, action);
-                                return (
-                                  <label key={action} className="inline-flex items-center gap-1 cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={checked}
-                                      onChange={() => setForm((p) => toggleAction(p, route, action))}
-                                      className="w-3 h-3 rounded accent-primary cursor-pointer shrink-0"
-                                    />
-                                    <span className={`text-[10px] ${checked ? 'text-foreground' : 'text-muted-foreground'}`}>
-                                      {actionLabels[action]}
-                                    </span>
-                                  </label>
-                                );
-                              })}
-                            </div>
-                          )}
-                          {/* Routes without extra actions: just show "Visualizar" */}
-                          {enabled && extraActions.length === 0 && (
-                            <div className="px-7 pb-1.5">
-                              <span className="inline-flex items-center gap-1 text-[10px] text-muted-foreground">
-                                <span className="w-2 h-2 rounded-full bg-primary/40 shrink-0" />
-                                {actionLabels.view}
-                              </span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                  {!form.grupoId && (
+                    <p className="text-xs text-muted-foreground">Sem grupo: acesso baseado no perfil.</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs text-primary font-medium">Permissões personalizadas (override do grupo)</span>
+                    <button type="button" onClick={disableCustomFuncs} className="text-xs text-muted-foreground hover:text-destructive hover:underline">
+                      Remover personalização
+                    </button>
                   </div>
-                ))}
-              </div>
+                  <PermMatrix
+                    value={form.customFuncs!}
+                    onChange={(next) => setForm((p) => ({ ...p, customFuncs: next }))}
+                  />
+                </>
+              )}
             </div>
-          ) : (
-            <div className="px-3 py-2.5 rounded-lg border border-border bg-muted/30 text-xs text-muted-foreground">
-              Usuários ADMIN sempre têm acesso total ao sistema — todas as telas e todas as ações.
-            </div>
-          )}
-        </div>
 
-        <div className="flex justify-end gap-3 mt-6">
-          <button className={btnSecondary} onClick={() => setModalOpen(false)}>Cancelar</button>
-          <button className={btnPrimary} onClick={save}>Salvar</button>
-        </div>
+            <div className="flex justify-end gap-3 mt-6">
+              <button className={btnSecondary} onClick={() => setModalOpen(false)}>Cancelar</button>
+              <button className={btnPrimary} onClick={save}>Salvar</button>
+            </div>
+          </div>
+        )}
       </Modal>
 
       {/* ---- Modal redefinir senha ---- */}

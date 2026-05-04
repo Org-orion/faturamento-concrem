@@ -17,6 +17,7 @@ export function AtualizacaoStatusDetails({
   historyLoading,
   onOpenUpdate,
   observacao,
+  canUpdate = true,
 }: {
   pedido: UnifiedPedido | null;
   statusAtual: PedidoStatusValue | null;
@@ -24,6 +25,7 @@ export function AtualizacaoStatusDetails({
   historyLoading: boolean;
   onOpenUpdate: () => void;
   observacao?: string | null;
+  canUpdate?: boolean;
 }) {
   const { map: prioMap } = usePrioridades();
   const prio = pedido ? prioMap.get(pedido.id) : undefined;
@@ -41,17 +43,19 @@ export function AtualizacaoStatusDetails({
     <div className="bg-card rounded-xl border border-border shadow-card p-5">
       <div className="flex items-center justify-between">
         <div className="text-sm font-bold font-display">Detalhes</div>
-        <button
-          type="button"
-          onClick={onOpenUpdate}
-          disabled={!pedido || !statusAtual}
-          className={cn(
-            'inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-semibold',
-            (!pedido || !statusAtual) && 'opacity-40 cursor-not-allowed',
-          )}
-        >
-          Atualizar Status
-        </button>
+        {canUpdate && (
+          <button
+            type="button"
+            onClick={onOpenUpdate}
+            disabled={!pedido || !statusAtual}
+            className={cn(
+              'inline-flex items-center gap-2 px-3 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-semibold',
+              (!pedido || !statusAtual) && 'opacity-40 cursor-not-allowed',
+            )}
+          >
+            Atualizar Status
+          </button>
+        )}
       </div>
 
       {!pedido || !statusAtual ? (

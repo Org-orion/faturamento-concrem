@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { canDo, type UserRole } from '@/utils/access';
+import { can, canDo, type UserRole } from '@/utils/access';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
@@ -490,7 +490,10 @@ const Commercial = () => {
     }
   };
 
-  const canDecide = user ? canDo(user.role as UserRole, user.permissions ?? null, 'comercial', 'execute') : false;
+  const canDecide    = can(user, 'comercial.liberar_producao',  'comercial', 'execute');
+  const canDetalhes  = can(user, 'comercial.detalhes',          'comercial', 'view');
+  const canMoverSup  = can(user, 'comercial.mover_suporte',     'comercial', 'execute');
+  const canAtualizar = can(user, 'comercial.atualizar_status',  'comercial', 'execute');
   const canCreateSchedule = canDecide;
 
   const saveSchedule = () => {
@@ -551,14 +554,16 @@ const Commercial = () => {
           <p className="text-sm text-muted-foreground">Libere pedidos de venda para o comercial</p>
         </div>
         <div className="flex items-center gap-2">
-          <button
-            className={btnSecondary}
-            onClick={() => { if (allOrderIds.length) void refreshStatusRows(allOrderIds); }}
-            title="Sincronizar status com o banco"
-          >
-            <CheckCircle2 className="h-4 w-4" />
-            Atualizar Status
-          </button>
+          {canAtualizar && (
+            <button
+              className={btnSecondary}
+              onClick={() => { if (allOrderIds.length) void refreshStatusRows(allOrderIds); }}
+              title="Sincronizar status com o banco"
+            >
+              <CheckCircle2 className="h-4 w-4" />
+              Atualizar Status
+            </button>
+          )}
           {canCreateSchedule && (
             <button className={btnPrimary} onClick={() => navigate('/comercial/liberacao')}>
               <Plus className="h-4 w-4" />
@@ -660,13 +665,15 @@ const Commercial = () => {
                         <PedidoStatusBadge value={statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao'} />
                       </td>
                       <td className="py-4 px-6 text-right">
-                        <button
-                          onClick={() => void openDetails(o.id)}
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
-                        >
-                          <Eye className="h-3 w-3" />
-                          Detalhes
-                        </button>
+                        {canDetalhes && (
+                          <button
+                            onClick={() => void openDetails(o.id)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
+                          >
+                            <Eye className="h-3 w-3" />
+                            Detalhes
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -787,14 +794,16 @@ const Commercial = () => {
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
-              <button
-                onClick={() => void moveToSupport()}
-                className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors font-semibold"
-              >
-                Mover para Pedido Suporte
-              </button>
-            </div>
+            {canMoverSup && (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+                <button
+                  onClick={() => void moveToSupport()}
+                  className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors font-semibold"
+                >
+                  Mover para Pedido Suporte
+                </button>
+              </div>
+            )}
 
           </div>
         )}

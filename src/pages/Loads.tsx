@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp, tableColumns } from '@/contexts/AppContext';
+import { can } from '@/utils/access';
 import { formatCurrency, getOrderTotal, loadStatusColors, StatusBadge, btnSecondary } from '@/components/shared';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
@@ -66,7 +67,9 @@ const shipmentStatuses = [
 ];
 
 const LoadsPage = () => {
-  const { loads, drivers, orders, supportOrders } = useApp();
+  const { loads, drivers, orders, supportOrders, user } = useApp();
+  const canCriarEditar = can(user, 'carregamento.criar_editar', 'programacao', 'execute');
+  const canExcluirCarg = can(user, 'carregamento.excluir',      'programacao', 'execute');
   const { map: prioMap } = usePrioridades();
   const { map: atencaoMap } = useAtencao();
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -377,12 +380,14 @@ const LoadsPage = () => {
               </button>
             </>
           )}
-          <Link to="/carregamento/novo">
-            <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-display text-sm font-medium hover:opacity-90 active:opacity-80 transition-opacity">
-              <Plus className="h-4 w-4" />
-              Nova Programação
-            </button>
-          </Link>
+          {canCriarEditar && (
+            <Link to="/carregamento/novo">
+              <button className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg bg-primary text-primary-foreground font-display text-sm font-medium hover:opacity-90 active:opacity-80 transition-opacity">
+                <Plus className="h-4 w-4" />
+                Nova Programação
+              </button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -503,13 +508,15 @@ const LoadsPage = () => {
                           <Eye className="h-3 w-3" />
                           Ver
                         </button>
-                        <Link
-                          to={`/carregamento/editar/${load.id}`}
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
-                        >
-                          <Edit2 className="h-3 w-3" />
-                          Editar
-                        </Link>
+                        {canCriarEditar && (
+                          <Link
+                            to={`/carregamento/editar/${load.id}`}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
+                          >
+                            <Edit2 className="h-3 w-3" />
+                            Editar
+                          </Link>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -626,10 +633,12 @@ const LoadsPage = () => {
               {/* Footer */}
               <div className="flex items-center justify-end gap-3 p-4 border-t border-border">
                 <button type="button" onClick={() => setQuickViewLoad(null)} className="px-4 py-2 rounded-lg border border-border text-sm font-semibold hover:bg-muted transition-colors">Fechar</button>
-                <Link to={`/carregamento/editar/${quickViewLoad.id}`} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity">
-                  <Edit2 className="h-3.5 w-3.5" />
-                  Editar
-                </Link>
+                {canCriarEditar && (
+                  <Link to={`/carregamento/editar/${quickViewLoad.id}`} className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:opacity-90 transition-opacity">
+                    <Edit2 className="h-3.5 w-3.5" />
+                    Editar
+                  </Link>
+                )}
               </div>
             </div>
           </div>

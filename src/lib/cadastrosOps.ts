@@ -1,4 +1,5 @@
 import { supabaseOps } from '@/lib/supabase';
+import { Funcionalidade } from '@/types/permissions';
 
 export type RepresentanteRow = {
   id: string;
@@ -37,6 +38,8 @@ export type UsuarioRow = {
   perfil_acesso: UsuarioPerfilAcesso | null;
   ativo: boolean;
   paginas_acesso: Array<{ route: string; actions: string[] }> | null;
+  grupo_id: string | null;
+  funcionalidades: Funcionalidade[] | null;
   criado_em: string;
   atualizado_em: string;
 };
@@ -135,17 +138,17 @@ export async function listUsuarios() {
   // Try with paginas_acesso first; fall back if the column doesn't exist yet
   const { data, error } = await supabaseOps
     .from('concrem_usuarios')
-    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
+    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,grupo_id,funcionalidades,criado_em,atualizado_em')
     .order('nome', { ascending: true });
   if (error) {
     if (error.message?.includes('paginas_acesso')) {
       // Column not yet created — fetch without it
       const fallback = await supabaseOps
         .from('concrem_usuarios')
-        .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+        .select('id,nome,email,senha_hash,perfil_acesso,ativo,grupo_id,criado_em,atualizado_em')
         .order('nome', { ascending: true });
       if (fallback.error) throw new Error(fallback.error.message);
-      return ((fallback.data || []) as any[]).map((r) => ({ ...r, paginas_acesso: null })) as UsuarioRow[];
+      return ((fallback.data || []) as any[]).map((r) => ({ ...r, paginas_acesso: null, grupo_id: null, funcionalidades: null })) as UsuarioRow[];
     }
     throw new Error(error.message);
   }
@@ -157,7 +160,7 @@ export async function insertUsuario(payload: Partial<UsuarioRow>) {
   const { data, error } = await supabaseOps
     .from('concrem_usuarios')
     .insert([payload])
-    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
+    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,grupo_id,funcionalidades,criado_em,atualizado_em')
     .single();
   if (error) {
     if (error.message?.includes('paginas_acesso')) {
@@ -165,10 +168,10 @@ export async function insertUsuario(payload: Partial<UsuarioRow>) {
       const fallback = await supabaseOps
         .from('concrem_usuarios')
         .insert([rest])
-        .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+        .select('id,nome,email,senha_hash,perfil_acesso,ativo,grupo_id,criado_em,atualizado_em')
         .single();
       if (fallback.error) throw new Error(fallback.error.message);
-      return { ...(fallback.data as any), paginas_acesso: null } as UsuarioRow;
+      return { ...(fallback.data as any), paginas_acesso: null, grupo_id: null, funcionalidades: null } as UsuarioRow;
     }
     throw new Error(error.message);
   }
@@ -181,7 +184,7 @@ export async function updateUsuario(id: string, payload: Partial<UsuarioRow>) {
     .from('concrem_usuarios')
     .update(payload)
     .eq('id', id)
-    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,criado_em,atualizado_em')
+    .select('id,nome,email,senha_hash,perfil_acesso,ativo,paginas_acesso,grupo_id,funcionalidades,criado_em,atualizado_em')
     .single();
   if (error) {
     if (error.message?.includes('paginas_acesso')) {
@@ -190,10 +193,10 @@ export async function updateUsuario(id: string, payload: Partial<UsuarioRow>) {
         .from('concrem_usuarios')
         .update(rest)
         .eq('id', id)
-        .select('id,nome,email,senha_hash,perfil_acesso,ativo,criado_em,atualizado_em')
+        .select('id,nome,email,senha_hash,perfil_acesso,ativo,grupo_id,criado_em,atualizado_em')
         .single();
       if (fallback.error) throw new Error(fallback.error.message);
-      return { ...(fallback.data as any), paginas_acesso: null } as UsuarioRow;
+      return { ...(fallback.data as any), paginas_acesso: null, grupo_id: null, funcionalidades: null } as UsuarioRow;
     }
     throw new Error(error.message);
   }

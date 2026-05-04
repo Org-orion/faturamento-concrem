@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardCheck } from 'lucide-react';
 import { useApp, tableColumns } from '@/contexts/AppContext';
+import { can } from '@/utils/access';
 import { useToast } from '@/components/ToastProvider';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
@@ -34,6 +35,7 @@ const AtualizacaoStatus = () => {
   const { orders, supportOrders, user } = useApp();
   const { showToast } = useToast();
   const presetId = useQueryParam('pedido');
+  const canAtualizar = can(user, 'atualizacao_status.atualizar', 'atualizacao-status', 'execute');
 
   const [statusRows, setStatusRows] = useState<PedidoStatusRow[]>([]);
   const [hasMoreStatus, setHasMoreStatus] = useState(false);
@@ -570,6 +572,7 @@ const AtualizacaoStatus = () => {
             historyLoading={historyLoading}
             onOpenUpdate={() => setOpenUpdate(true)}
             observacao={pedidoObs}
+            canUpdate={canAtualizar}
           />
         </div>
       </div>

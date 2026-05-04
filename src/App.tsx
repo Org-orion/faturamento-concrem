@@ -26,6 +26,7 @@ const PainelPedidosPage = lazy(() => import('@/pages/PainelPedidos'));
 const PedidosPage = lazy(() => import('@/pages/Pedidos'));
 const AtualizacaoStatusPage = lazy(() => import('@/pages/AtualizacaoStatus'));
 const UsersPage = lazy(() => import('@/pages/Users'));
+const PermissoesPage = lazy(() => import('@/pages/Permissoes'));
 const PrioridadesPage = lazy(() => import('@/pages/Prioridades'));
 const AccessDenied = lazy(() => import('@/pages/AccessDenied'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
@@ -39,7 +40,7 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
     return <Navigate to="/login" replace />;
   }
 
-  if (user && !canAccessRoute(user.role, location.pathname, user.permissions)) {
+  if (user && !canAccessRoute(user.role, location.pathname, user.permissions, user.funcionalidades)) {
     return <Navigate to="/acesso-negado" replace />;
   }
 
@@ -71,6 +72,7 @@ const AppRoutes = () => {
         <Route path="/financeiro" element={<ProtectedRoute><FinancialPage /></ProtectedRoute>} />
         <Route path="/prioridades" element={<ProtectedRoute><PrioridadesPage /></ProtectedRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
+        <Route path="/permissoes" element={<ProtectedRoute><PermissoesPage /></ProtectedRoute>} />
         <Route path="/painel-tv" element={<PainelTVPage />} />
         <Route path="*" element={<NotFound />} />
       </Routes>

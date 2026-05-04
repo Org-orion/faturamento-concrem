@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
+import { can } from '@/utils/access';
 import Modal from '@/components/Modal';
 import { btnPrimary, btnSecondary, btnDanger, formatCurrency, inputClass } from '@/components/shared';
 import { ProductionSchedule, Order, SupportOrder, PedidoStatusRow } from '@/types';
@@ -91,6 +92,13 @@ const Producao = () => {
     concludeProductionSchedule,
     user,
   } = useApp();
+
+  const canCriarAvulsa     = can(user, 'producao.criar_avulsa',      'producao', 'execute');
+  const canIniciar         = can(user, 'producao.iniciar',           'producao', 'execute');
+  const canConcluir        = can(user, 'producao.concluir',          'producao', 'execute');
+  const canReverter        = can(user, 'producao.reverter',          'producao', 'execute');
+  const canDesfazerConc    = can(user, 'producao.desfazer_conclusao','producao', 'execute');
+  const canImprimir        = can(user, 'producao.imprimir',          'producao', 'view');
 
   const [concluidos, setConcluidos] = useState<ConcluidoRow[]>([]);
   const [loadingConcluidos, setLoadingConcluidos] = useState(false);
@@ -565,10 +573,12 @@ const Producao = () => {
           <h1 className="text-2xl font-bold font-display text-foreground">Produção</h1>
           <p className="text-sm text-muted-foreground">Cronogramas e fila de produção</p>
         </div>
-        <button className={btnPrimary} onClick={() => setOpenCreate(true)}>
-          <Plus className="h-4 w-4" />
-          Montar Produção Avulsa
-        </button>
+        {canCriarAvulsa && (
+          <button className={btnPrimary} onClick={() => setOpenCreate(true)}>
+            <Plus className="h-4 w-4" />
+            Montar Produção Avulsa
+          </button>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 no-print">
@@ -704,7 +714,7 @@ const Producao = () => {
                       >
                         <Pencil className="h-4 w-4" />
                       </button>
-                      {s.status === 'Aguardando Início' && (
+                      {canIniciar && s.status === 'Aguardando Início' && (
                         <button
                           className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                           onClick={() => startProductionSchedule(s.id)}
@@ -713,7 +723,7 @@ const Producao = () => {
                           <Play className="h-4 w-4" />
                         </button>
                       )}
-                      {s.status === 'Em Produção' && (
+                      {canConcluir && s.status === 'Em Produção' && (
                         <button
                           className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                           onClick={async () => {
@@ -731,13 +741,15 @@ const Producao = () => {
                           <CheckCircle2 className="h-4 w-4" />
                         </button>
                       )}
-                      <button
-                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
-                        onClick={() => handlePrintCronograma(s)}
-                        title="Imprimir"
-                      >
-                        <Printer className="h-4 w-4" />
-                      </button>
+                      {canImprimir && (
+                        <button
+                          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                          onClick={() => handlePrintCronograma(s)}
+                          title="Imprimir"
+                        >
+                          <Printer className="h-4 w-4" />
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -818,18 +830,20 @@ const Producao = () => {
                           <Eye className="h-4 w-4" />
                         </button>
                       )}
-                      <button
-                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-orange-600"
-                        onClick={async () => {
-                          await desfazerProducaoConcluido(x.carregamentoId);
-                          if (s) updateProductionSchedule(s.id, { status: 'Em Produção' });
-                          await refreshConcluidos();
-                        }}
-                        title="Desfazer OK"
-                      >
-                        <RotateCcw className="h-4 w-4" />
-                      </button>
-                      {s && (
+                      {canDesfazerConc && (
+                        <button
+                          className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-orange-600"
+                          onClick={async () => {
+                            await desfazerProducaoConcluido(x.carregamentoId);
+                            if (s) updateProductionSchedule(s.id, { status: 'Em Produção' });
+                            await refreshConcluidos();
+                          }}
+                          title="Desfazer OK"
+                        >
+                          <RotateCcw className="h-4 w-4" />
+                        </button>
+                      )}
+                      {canImprimir && s && (
                         <button
                           className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
                           onClick={() => s && handlePrintCronograma(s)}
@@ -920,10 +934,10 @@ const Producao = () => {
               >
                 Editar
               </button>
-              {details.status === 'Aguardando Início' && (
+              {canIniciar && details.status === 'Aguardando Início' && (
                 <button className={btnPrimary} onClick={() => startProductionSchedule(details.id)}>Iniciar Produção</button>
               )}
-              {details.status === 'Em Produção' && (
+              {canConcluir && details.status === 'Em Produção' && (
                 <button
                   className={btnPrimary}
                   onClick={async () => {
@@ -940,7 +954,9 @@ const Producao = () => {
                   Concluir Produção
                 </button>
               )}
-              <button className={btnPrimary} onClick={() => handlePrintCronograma(details)}>Imprimir Cronograma</button>
+              {canImprimir && (
+                <button className={btnPrimary} onClick={() => handlePrintCronograma(details)}>Imprimir Cronograma</button>
+              )}
             </div>
           </div>
         )}
@@ -1016,7 +1032,7 @@ const Producao = () => {
             </div>
 
             <div className="flex items-center justify-between gap-3">
-              {editing?.status === 'Em Produção' && (
+              {canReverter && editing?.status === 'Em Produção' && (
                 <button
                   className={btnSecondary}
                   onClick={() => { revertProductionSchedule(editing.id); setOpenEdit(false); }}

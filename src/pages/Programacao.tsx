@@ -7,6 +7,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import type { PedidoStatusValue } from '@/types';
 import { btnPrimary, btnSecondary } from '@/components/shared';
+import { canFazer } from '@/utils/access';
 
 const YYYYMM_RE = /^\d{4}-\d{2}$/;
 
@@ -449,7 +450,9 @@ const Programacao: React.FC = () => {
 
   // ── Permission ────────────────────────────────────────────────────────────────
   const canEdit =
-    user?.role === 'ADMIN' || user?.role === 'COMERCIAL' || user?.role === 'FATURAMENTO';
+    user?.role === 'ADMIN' ||
+    canFazer(user?.funcionalidades, 'programacao_comercial.editar_mes') ||
+    (!user?.funcionalidades && (user?.role === 'COMERCIAL' || user?.role === 'FATURAMENTO'));
 
   // ── Accordion ────────────────────────────────────────────────────────────────
   const toggleMonth = useCallback((mes: string) => {

@@ -1,3 +1,6 @@
+import { Funcionalidade, ALL_FUNCIONALIDADES } from '@/types/permissions';
+export { isSuperAdmin } from '@/types/permissions';
+
 export type UserRole = 'ADMIN' | 'FATURAMENTO' | 'COMERCIAL' | 'PRODUCAO' | 'LOGISTICA';
 
 export type AppRouteKey =
@@ -5,6 +8,7 @@ export type AppRouteKey =
   | 'representantes'
   | 'motoristas'
   | 'usuarios'
+  | 'permissoes'
   | 'comercial'
   | 'comercial-liberacao'
   | 'pedido-suporte'
@@ -59,6 +63,7 @@ export const routeLabels: Record<AppRouteKey, string> = {
   representantes: 'Representantes',
   motoristas: 'Motoristas',
   usuarios: 'Usuários',
+  permissoes: 'Permissões',
   comercial: 'Pedidos de Venda',
   'comercial-liberacao': 'Liberar Pedidos p/ Produção',
   'pedido-suporte': 'Pedidos de Suporte',
@@ -109,7 +114,7 @@ export const routeGroups: Array<{ label: string; routes: AppRouteKey[] }> = [
   { label: 'Geral',       routes: ['dashboard', 'pedidos', 'painel-pedidos', 'atualizacao-status', 'prioridades', 'painel-tv'] },
   { label: 'Comercial',   routes: ['comercial', 'comercial-liberacao', 'pedido-suporte', 'pedido-suporte-liberacao', 'programacao-comercial'] },
   { label: 'Operacional', routes: ['producao', 'programacao', 'programacao-cronograma', 'programacao-dashboard', 'financeiro'] },
-  { label: 'Cadastro',    routes: ['representantes', 'motoristas', 'usuarios'] },
+  { label: 'Cadastro',    routes: ['representantes', 'motoristas', 'usuarios', 'permissoes'] },
 ];
 
 // ---------------------------------------------------------------------------
@@ -197,6 +202,7 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   if (path === '/representantes') return 'representantes';
   if (path === '/motoristas') return 'motoristas';
   if (path === '/usuarios') return 'usuarios';
+  if (path === '/permissoes') return 'permissoes';
   if (path === '/comercial/liberacao') return 'comercial-liberacao';
   if (path === '/comercial' || path === '/comercial/confirmacao') return 'comercial';
   if (path === '/pedido-suporte/liberacao') return 'pedido-suporte-liberacao';
@@ -212,14 +218,71 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   return null;
 }
 
+// Which funcionalidades grant viewing access to each route
+export const routeToFuncionalidades: Partial<Record<AppRouteKey, Funcionalidade[]>> = {
+  dashboard:                  ['dashboard.view'],
+  representantes:             ['representantes.view'],
+  motoristas:                 ['motoristas.view'],
+  usuarios:                   ['usuarios.view'],
+  permissoes:                 ['usuarios.gerenciar_grupos'],
+  comercial:                  ['comercial.view'],
+  'comercial-liberacao':      ['comercial.liberar_producao', 'comercial.liberar_gerencia', 'comercial.confirmar_gerencia'],
+  'pedido-suporte':           ['suporte.view'],
+  'pedido-suporte-liberacao': ['suporte.liberar_producao'],
+  producao:                   ['producao.view'],
+  programacao:                ['carregamento.view'],
+  'programacao-cronograma':   ['carregamento.cronograma'],
+  'programacao-dashboard':    ['carregamento.dashboard'],
+  'programacao-comercial':    ['programacao_comercial.view'],
+  financeiro:                 ['financeiro.view'],
+  'painel-pedidos':           ['painel_pedidos.view'],
+  'atualizacao-status':       ['atualizacao_status.view'],
+  pedidos:                    ['comercial.view', 'suporte.view', 'painel_pedidos.view', 'atualizacao_status.view', 'programacao_comercial.view'],
+  prioridades:                ['prioridades.view'],
+  'painel-tv':                ['painel_tv.view'],
+};
+
+/** Check if a user can perform a specific named action (new group-based system) */
+export function canFazer(funcionalidades: Funcionalidade[] | null | undefined, key: Funcionalidade): boolean {
+  if (!funcionalidades) return false;
+  return funcionalidades.includes(key);
+}
+
+/** Unified check: uses funcionalidades when set, otherwise falls back to role-based canDo */
+export function can(
+  user: { role?: string | null; permissions?: PagePermission[] | null; funcionalidades?: Funcionalidade[] | null } | null | undefined,
+  key: Funcionalidade,
+  fallbackRoute: AppRouteKey,
+  fallbackPerm: PageAction = 'execute',
+): boolean {
+  if (!user) return false;
+  if (user.funcionalidades != null) return canFazer(user.funcionalidades, key);
+  return canDo((user.role as UserRole) ?? 'COMERCIAL', user.permissions ?? null, fallbackRoute, fallbackPerm);
+}
+
 export function canAccessRoute(
   role: UserRole,
   pathname: string,
   permissions?: PagePermission[] | null,
+  funcionalidades?: Funcionalidade[] | null,
 ): boolean {
   if (role === 'ADMIN') return true;
   const path = pathname.split('?')[0].split('#')[0];
   if (path === '/acesso-negado' || path === '/login') return true;
+
+  if (funcionalidades) {
+    const funcSet = new Set(funcionalidades);
+    if (path === '/pedidos') {
+      const hubFuncs: Funcionalidade[] = ['comercial.view', 'suporte.view', 'painel_pedidos.view', 'atualizacao_status.view', 'programacao_comercial.view'];
+      return hubFuncs.some((f) => funcSet.has(f));
+    }
+    if (path.startsWith('/carregamento')) return funcSet.has('carregamento.view');
+    const routeKey = pathnameToRouteKey(path);
+    if (routeKey === null) return true;
+    const required = routeToFuncionalidades[routeKey];
+    if (!required) return false;
+    return required.some((f) => funcSet.has(f));
+  }
 
   // /pedidos is the hub — allow access if the user can view any of its sub-routes
   if (path === '/pedidos') {
@@ -306,7 +369,50 @@ const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
   { routeKey: 'representantes',          label: 'Representantes',           href: '/representantes',            icon: 'users', group: 'Cadastro' },
   { routeKey: 'motoristas',              label: 'Motoristas',               href: '/motoristas',                icon: 'users', group: 'Cadastro' },
   { routeKey: 'usuarios',               label: 'Usuários',                 href: '/usuarios',                  icon: 'users', group: 'Cadastro' },
+  { routeKey: 'permissoes',             label: 'Permissões',               href: '/permissoes',                icon: 'users', group: 'Cadastro' },
 ];
+
+/** Build sidebar menu from a group's funcionalidades (new permission system) */
+export function getMenuByFuncionalidades(funcionalidades: Funcionalidade[]): MenuItem[] {
+  const funcSet = new Set(funcionalidades);
+  const links: MenuItem[] = [];
+  const groups: Record<string, { label: string; href: string }[]> = {};
+  let hasPedidosHub = false;
+  let hasCarregamentoHub = false;
+
+  for (const def of ALL_MENU_ITEM_DEFS) {
+    const required = routeToFuncionalidades[def.routeKey];
+    if (!required) continue;
+    if (!required.some((f) => funcSet.has(f))) continue;
+
+    if (PEDIDOS_HUB_ROUTES.has(def.routeKey)) { hasPedidosHub = true; continue; }
+    if (CARREGAMENTO_HUB_ROUTES.has(def.routeKey)) { hasCarregamentoHub = true; continue; }
+
+    if (def.group) {
+      if (!groups[def.group]) groups[def.group] = [];
+      groups[def.group].push({ label: def.label, href: def.href });
+    } else {
+      links.push({ type: 'link', label: def.label, href: def.href, icon: def.icon });
+    }
+  }
+
+  const dashIdx = links.findIndex((l) => 'href' in l && l.href === '/');
+  if (hasPedidosHub) {
+    links.splice(dashIdx + 1, 0, { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'clipboard-list' });
+  }
+  if (hasCarregamentoHub) {
+    const insertIdx = links.findIndex((l) => 'href' in l && l.href === '/financeiro');
+    const item: MenuItem = { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' };
+    if (insertIdx >= 0) links.splice(insertIdx, 0, item);
+    else links.push(item);
+  }
+
+  const result: MenuItem[] = [...links];
+  for (const [groupLabel, items] of Object.entries(groups)) {
+    result.push({ type: 'group', label: groupLabel, icon: 'users', items });
+  }
+  return result;
+}
 
 // Original curated menus per role (unchanged from before)
 function originalMenuForRole(role: UserRole): MenuItem[] {
@@ -323,6 +429,7 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
         { label: 'Representantes', href: '/representantes' },
         { label: 'Motoristas', href: '/motoristas' },
         { label: 'Usuários', href: '/usuarios' },
+        { label: 'Permissões', href: '/permissoes' },
       ]},
     ];
   }
@@ -437,6 +544,7 @@ export const routeAccess: Record<AppRouteKey, UserRole[]> = {
   representantes: ['ADMIN', 'FATURAMENTO', 'COMERCIAL'],
   motoristas: ['ADMIN', 'FATURAMENTO'],
   usuarios: ['ADMIN'],
+  permissoes: ['ADMIN'],
   comercial: ['ADMIN', 'COMERCIAL', 'LOGISTICA'],
   'comercial-liberacao': ['ADMIN', 'COMERCIAL'],
   'pedido-suporte': ['ADMIN', 'COMERCIAL'],

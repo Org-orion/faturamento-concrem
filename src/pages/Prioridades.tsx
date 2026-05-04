@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useApp, tableColumns } from '@/contexts/AppContext';
+import { can } from '@/utils/access';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { useAtencao } from '@/contexts/AtencaoContext';
 import { useToast } from '@/components/ToastProvider';
@@ -27,6 +28,7 @@ type Tab = 'prioridades' | 'atencoes';
 
 const Prioridades = () => {
   const { user } = useApp();
+  const canGerenciar = can(user, 'prioridades.gerenciar', 'prioridades', 'execute');
   const { map: prioMap, refresh: refreshPrio } = usePrioridades();
   const { map: atencaoMap, refresh: refreshAtencao } = useAtencao();
   const { showToast } = useToast();
@@ -151,10 +153,12 @@ const Prioridades = () => {
           <h1 className="text-xl font-bold font-display">Prioridades & Atenções</h1>
           <p className="text-sm text-muted-foreground mt-1">Gerencie bandeiras de prioridade e pontos de atenção dos pedidos</p>
         </div>
-        <button className={btnPrimary} onClick={() => setOpenAdd(tab)}>
-          <Plus className="h-4 w-4" />
-          {tab === 'prioridades' ? 'Adicionar Prioridade' : 'Adicionar Atenção'}
-        </button>
+        {canGerenciar && (
+          <button className={btnPrimary} onClick={() => setOpenAdd(tab)}>
+            <Plus className="h-4 w-4" />
+            {tab === 'prioridades' ? 'Adicionar Prioridade' : 'Adicionar Atenção'}
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
@@ -221,13 +225,15 @@ const Prioridades = () => {
                         <td className="py-4 px-6 text-muted-foreground">{p.criado_por || '-'}</td>
                         <td className="py-4 px-6 font-mono-data text-muted-foreground">{fmtDate(p.criado_em)}</td>
                         <td className="py-4 px-6 text-right">
-                          <button
-                            className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-all"
-                            onClick={() => setOpenRemove({ id: p.pedido_id, tipo: 'prioridades' })}
-                            title="Remover prioridade"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {canGerenciar && (
+                            <button
+                              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-all"
+                              onClick={() => setOpenRemove({ id: p.pedido_id, tipo: 'prioridades' })}
+                              title="Remover prioridade"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );
@@ -271,13 +277,15 @@ const Prioridades = () => {
                         <td className="py-4 px-6 text-muted-foreground">{a.criado_por || '-'}</td>
                         <td className="py-4 px-6 font-mono-data text-muted-foreground">{fmtDate(a.criado_em)}</td>
                         <td className="py-4 px-6 text-right">
-                          <button
-                            className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-all"
-                            onClick={() => setOpenRemove({ id: a.pedido_id, tipo: 'atencoes' })}
-                            title="Remover atenção"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </button>
+                          {canGerenciar && (
+                            <button
+                              className="inline-flex items-center justify-center h-9 w-9 rounded-lg border border-border bg-card text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-all"
+                              onClick={() => setOpenRemove({ id: a.pedido_id, tipo: 'atencoes' })}
+                              title="Remover atenção"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     );

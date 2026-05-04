@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { canDo, type UserRole } from '@/utils/access';
+import { can, canDo, type UserRole } from '@/utils/access';
 import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
@@ -375,7 +375,9 @@ const PedidoSuporte = () => {
     }
   };
 
-  const canDecide = user ? canDo(user.role as UserRole, user.permissions ?? null, 'pedido-suporte', 'execute') : false;
+  const canDecide        = can(user, 'suporte.liberar_producao', 'pedido-suporte', 'execute');
+  const canDetalhes      = can(user, 'suporte.detalhes',         'pedido-suporte', 'view');
+  const canMoverVendas   = can(user, 'suporte.mover_vendas',     'pedido-suporte', 'execute');
   const canCreateSchedule = canDecide;
 
   const saveSchedule = () => {
@@ -553,13 +555,15 @@ const PedidoSuporte = () => {
                         </div>
                       </td>
                       <td className="py-4 px-6 text-right">
-                        <button
-                          onClick={() => void openDetails(o.id)}
-                          className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
-                        >
-                          <Eye className="h-3 w-3" />
-                          Detalhes
-                        </button>
+                        {canDetalhes && (
+                          <button
+                            onClick={() => void openDetails(o.id)}
+                            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg border border-border bg-card text-muted-foreground hover:text-primary hover:border-primary/50 transition-all font-display text-xs font-bold uppercase tracking-tight shadow-sm"
+                          >
+                            <Eye className="h-3 w-3" />
+                            Detalhes
+                          </button>
+                        )}
                       </td>
                     </tr>
                   );
@@ -676,14 +680,16 @@ const PedidoSuporte = () => {
               </div>
             </div>
 
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
-              <button
-                onClick={() => void moveToSales()}
-                className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors font-semibold"
-              >
-                Mover para Pedidos
-              </button>
-            </div>
+            {canMoverVendas && (
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
+                <button
+                  onClick={() => void moveToSales()}
+                  className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors font-semibold"
+                >
+                  Mover para Pedidos
+                </button>
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-end gap-3">
               <button

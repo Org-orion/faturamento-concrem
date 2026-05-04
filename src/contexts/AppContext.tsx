@@ -15,6 +15,8 @@ import {
   FreightEntryStatus,
 } from '@/types';
 import { UserRole, PagePermission } from '@/utils/access';
+import { Funcionalidade, ALL_FUNCIONALIDADES, isSuperAdmin } from '@/types/permissions';
+import { getGrupoById, initDefaultGrupos } from '@/lib/gruposRepo';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder, rowToSupportOrder } from '@/lib/pedidoMapper';
 import {
@@ -77,7 +79,7 @@ interface AppState {
   setFreightEntryStatus: (id: string, status: FreightEntryStatus) => void;
   pedidoStatusVersion: number;
   isAuthenticated: boolean;
-  user: { name: string; username: string; role: UserRole; permissions: PagePermission[] | null } | null;
+  user: { name: string; username: string; role: UserRole; permissions: PagePermission[] | null; funcionalidades: Funcionalidade[] | null; grupoId: string | null } | null;
   login: (username: string, password: string) => Promise<boolean>;
   logout: () => void;
   addUser: (u: Omit<AppUser, 'id'>) => void;
@@ -316,6 +318,8 @@ export function getDataCorte(months = 4): string {
 const ORDERS_PAGE_SIZE = 200;
 
 export const AppProvider = ({ children }: { children: ReactNode }) => {
+  useEffect(() => { void initDefaultGrupos(); }, []);
+
   const [clients, setClients] = useState<Client[]>(sampleClients);
   const [drivers, setDrivers] = useState<Driver[]>([]);
   const [orders, setOrders] = useState<Order[]>(sampleOrders);
@@ -565,17 +569,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     return sessionStorage.getItem('auth_token') === 'true';
   });
-  const [user, setUser] = useState<{ name: string; username: string; role: UserRole; permissions: PagePermission[] | null } | null>(() => {
+  const [user, setUser] = useState<{ name: string; username: string; role: UserRole; permissions: PagePermission[] | null; funcionalidades: Funcionalidade[] | null; grupoId: string | null } | null>(() => {
     const savedUser = sessionStorage.getItem('auth_user');
     if (!savedUser) return null;
     try {
-      const parsed = JSON.parse(savedUser) as { name?: string; username?: string; role?: UserRole; permissions?: PagePermission[] | null };
+      const parsed = JSON.parse(savedUser) as { name?: string; username?: string; role?: UserRole; permissions?: PagePermission[] | null; funcionalidades?: Funcionalidade[] | null; grupoId?: string | null };
       if (parsed && parsed.username) {
         return {
           name: parsed.name || parsed.username,
           username: parsed.username,
           role: parsed.role || 'ADMIN',
           permissions: Array.isArray(parsed.permissions) ? parsed.permissions : null,
+          funcionalidades: Array.isArray(parsed.funcionalidades) ? parsed.funcionalidades : null,
+          grupoId: parsed.grupoId ?? null,
         };
       }
       return null;
@@ -610,7 +616,19 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               Array.isArray(data.paginas_acesso) && data.paginas_acesso.length > 0
                 ? (data.paginas_acesso as PagePermission[])
                 : null;
-            const newUser = { name: data.nome, username: data.email, role, permissions };
+            const grupoId: string | null = data.grupo_id || null;
+            let funcionalidades: Funcionalidade[] | null = null;
+            if (isSuperAdmin(data.email || '')) {
+              funcionalidades = ALL_FUNCIONALIDADES;
+            } else if (Array.isArray(data.funcionalidades) && data.funcionalidades.length > 0) {
+              funcionalidades = data.funcionalidades as Funcionalidade[];
+            } else if (grupoId) {
+              try {
+                const grupo = await getGrupoById(grupoId);
+                funcionalidades = grupo?.funcionalidades ?? null;
+              } catch { /* leave null */ }
+            }
+            const newUser = { name: data.nome, username: data.email, role, permissions, funcionalidades, grupoId };
             setUser(newUser);
             sessionStorage.setItem('auth_token', 'true');
             sessionStorage.setItem('auth_user', JSON.stringify(newUser));
@@ -626,7 +644,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (!found) return false;
 
     setIsAuthenticated(true);
-    const newUser = { name: found.name, username: found.username, role: found.role, permissions: null as PagePermission[] | null };
+    const newUser = { name: found.name, username: found.username, role: found.role, permissions: null as PagePermission[] | null, funcionalidades: null as Funcionalidade[] | null, grupoId: null as string | null };
     setUser(newUser);
     sessionStorage.setItem('auth_token', 'true');
     sessionStorage.setItem('auth_user', JSON.stringify(newUser));
