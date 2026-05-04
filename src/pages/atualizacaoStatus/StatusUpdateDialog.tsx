@@ -45,6 +45,7 @@ export function StatusUpdateDialog({
     setNovoStatus('');
     setObs('');
     setResolvedPhone(null);
+    setNotify(false); // reset enquanto busca o telefone — evita estado residual de abre anteriores
     setDataAlteracao(todayBR());
 
     // Buscar telefone do cadastro de representantes
@@ -64,10 +65,12 @@ export function StatusUpdateDialog({
       clienteNome: pedido.cliente,
       statusAnterior: statusAtual,
       statusNovo: novoStatus,
-      dataHoraIso: new Date().toISOString(),
+      dataHoraIso: dataAlteracao
+        ? new Date(`${dataAlteracao}T12:00:00`).toISOString()
+        : new Date().toISOString(),
       observacao: obs,
     });
-  }, [novoStatus, obs, pedido, statusAtual]);
+  }, [novoStatus, obs, pedido, statusAtual, dataAlteracao]);
 
   const save = async () => {
     if (!pedido || !statusAtual) return;
