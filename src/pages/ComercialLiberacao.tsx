@@ -347,6 +347,40 @@ const ComercialLiberacao = () => {
     showToast(`${s1Selected.length} pedido(s) enviado(s) para a gerência`);
   };
 
+  const reverterParaComercial = async () => {
+    if (!s2Selected.length || !supabaseOps) { showToast('Selecione pedidos para reverter', 'error'); return; }
+    const username = user?.username || null;
+    const now = new Date().toISOString();
+
+    const [upsertRes, histRes] = await Promise.all([
+      supabaseOps.from('concrem_pedidos_status').upsert(
+        s2Selected.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_atual: 'liberado_comercial', atualizado_em: now, atualizado_por: username,
+        })),
+        { onConflict: 'pedido_id' },
+      ),
+      supabaseOps.from('concrem_pedidos_status_historico').insert(
+        s2Selected.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_anterior: statusRowsDirect.get(id)?.status_atual ?? null,
+          status_novo: 'liberado_comercial', alterado_em: now, alterado_por: username,
+          observacao: 'Devolvido ao comercial', notificado_representante: false, notificado_em: null,
+        })),
+      ),
+    ]);
+    if (upsertRes.error) {
+      console.error('[ComercialLiberacao] reverterParaComercial error:', upsertRes.error.message);
+      showToast('Erro ao reverter status', 'error');
+      return;
+    }
+    if (histRes.error) console.error('[ComercialLiberacao] reverterParaComercial historico error:', histRes.error.message);
+
+    await refreshOrders();
+    setS2Selected([]);
+    showToast(`${s2Selected.length} pedido(s) devolvidos ao comercial`);
+  };
+
   const confirmarGerencia = async () => {
     if (!s2Selected.length || !supabaseOps) { showToast('Selecione pedidos para confirmar', 'error'); return; }
     const username = user?.username || null;
@@ -934,10 +968,16 @@ const ComercialLiberacao = () => {
       {activeTab === 'confirmar' && <div className="space-y-3">
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <h2 className="text-sm font-bold font-display uppercase tracking-wider text-muted-foreground">Aguardando Gerência — Confirmar Aprovação</h2>
-          <button className={btnPrimary} onClick={() => void confirmarGerencia()} disabled={!s2Selected.length}>
-            <CheckCircle2 className="h-4 w-4" />
-            Confirmar Gerência ({s2Selected.length})
-          </button>
+          <div className="flex items-center gap-2">
+            <button className={btnSecondary} onClick={() => void reverterParaComercial()} disabled={!s2Selected.length}>
+              <ArrowLeft className="h-4 w-4" />
+              Devolver ao Comercial ({s2Selected.length})
+            </button>
+            <button className={btnPrimary} onClick={() => void confirmarGerencia()} disabled={!s2Selected.length}>
+              <CheckCircle2 className="h-4 w-4" />
+              Confirmar Gerência ({s2Selected.length})
+            </button>
+          </div>
         </div>
         <div className="flex items-center gap-3">
           <input type="text" value={s2ColFilter.values['pedido'] || ''} onChange={(e) => s2ColFilter.setFilter('pedido', e.target.value)} placeholder="Filtrar pedido..." className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
