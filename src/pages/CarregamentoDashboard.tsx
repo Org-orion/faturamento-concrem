@@ -396,7 +396,7 @@ function LoadDetailsPanel({
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" aria-hidden />
       <div
-        className="relative z-10 w-full max-w-md bg-card border-l border-border shadow-2xl flex flex-col h-full"
+        className="relative z-10 w-full max-w-xl bg-card border-l border-border shadow-2xl flex flex-col h-full"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -453,7 +453,7 @@ function LoadDetailsPanel({
           </div>
 
           {/* Summary chips */}
-          <div className="grid grid-cols-3 gap-2">
+          <div className="grid grid-cols-2 gap-2">
             <div className="rounded-lg bg-muted/50 p-3 text-center">
               <p className="text-lg font-bold text-foreground">{load.orderIds.length}</p>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Pedidos</p>
@@ -466,15 +466,13 @@ function LoadDetailsPanel({
               <p className="text-sm font-bold text-foreground">{((load.estimatedWeight || 0) / 1000).toFixed(1)}t</p>
               <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Peso</p>
             </div>
-          </div>
-
-          {/* Total geral */}
-          {!loadingDetails && orderDetails.size > 0 && (
-            <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 flex items-center justify-between">
-              <span className="text-xs font-bold uppercase tracking-wide text-primary">Total do Carregamento</span>
-              <span className="text-sm font-bold text-primary">{formatCurrency(grandTotal)}</span>
+            <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 text-center">
+              <p className="text-sm font-bold text-primary">
+                {loadingDetails ? '...' : formatCurrency(grandTotal)}
+              </p>
+              <p className="text-[10px] text-primary/70 uppercase tracking-wide">Total</p>
             </div>
-          )}
+          </div>
 
           {/* Orders list */}
           {load.orderIds.length > 0 && (
