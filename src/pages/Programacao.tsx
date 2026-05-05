@@ -630,16 +630,14 @@ const Programacao: React.FC = () => {
   @page { size: A4 landscape; margin: 10mm 12mm; }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:11px; }
-  .outer { width:100%; border-collapse:collapse; }
-  .outer thead td { padding-bottom:10px; border-bottom:3px solid #0a2315; }
-  .outer tbody > tr > td { padding-top:8px; vertical-align:top; }
-  .page-header { display:flex; align-items:center; justify-content:space-between; }
+  .page-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:3px solid #0a2315; margin-bottom:8px; }
   .page-header img { height:44px; }
   .ph-title { text-align:right; }
   .ph-title h1 { font-size:15px; color:#0a2315; font-weight:800; text-transform:uppercase; letter-spacing:1px; }
   .ph-title p { font-size:9px; color:#888; margin-top:2px; }
   table { width:100%; border-collapse:collapse; }
   thead th { background:#0a2315; color:#fff; padding:6px 10px; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; white-space:nowrap; }
+  thead { display:table-header-group; }
   tbody td { padding:5px 10px; border-bottom:1px solid #e0e0e0; font-size:11px; }
   tbody tr:nth-child(even) { background:#f5f7f5; }
   .total-row td { padding:7px 10px; font-weight:800; font-size:11px; border-top:2px solid #0a2315; background:#f0f2f0; }
@@ -647,38 +645,32 @@ const Programacao: React.FC = () => {
 </style>
 <script>window.onload = () => { window.focus(); window.print(); };</script>
 </head><body>
-<table class="outer">
-  <thead><tr><td>
-    <div class="page-header">
-      <img src="${logoProgramacao}" alt="Concrem" />
-      <div class="ph-title">
-        <h1>Programação de Pedidos — ${mesLabel}</h1>
-        <p>Emissão: ${emissao} &nbsp;·&nbsp; ${pedidos.length} pedido(s)</p>
-      </div>
+  <div class="page-header">
+    <img src="${logoProgramacao}" alt="Concrem" />
+    <div class="ph-title">
+      <h1>Programação de Pedidos — ${mesLabel}</h1>
+      <p>Emissão: ${emissao} &nbsp;·&nbsp; ${pedidos.length} pedido(s)</p>
     </div>
-  </td></tr></thead>
-  <tbody><tr><td>
-    <table>
-      <thead><tr>
-        <th style="text-align:left">Nº Pedido</th>
-        <th style="text-align:left">Cliente</th>
-        <th style="text-align:left">Representante</th>
-        <th style="text-align:center">Qtd Kits</th>
-        <th style="text-align:right">Valor</th>
-        <th style="text-align:center">Prev. Embarque</th>
-      </tr></thead>
-      <tbody>
-        ${rows}
-        <tr class="total-row">
-          <td colspan="3" style="text-align:right">TOTAL</td>
-          <td style="text-align:center">${totalQtd || '—'}</td>
-          <td style="text-align:right">${fmtCurrency(totalValor)}</td>
-          <td></td>
-        </tr>
-      </tbody>
-    </table>
-  </td></tr></tbody>
-</table>
+  </div>
+  <table>
+    <thead><tr>
+      <th style="text-align:left">Nº Pedido</th>
+      <th style="text-align:left">Cliente</th>
+      <th style="text-align:left">Representante</th>
+      <th style="text-align:center">Qtd Kits</th>
+      <th style="text-align:right">Valor</th>
+      <th style="text-align:center">Prev. Embarque</th>
+    </tr></thead>
+    <tbody>
+      ${rows}
+      <tr class="total-row">
+        <td colspan="3" style="text-align:right">TOTAL</td>
+        <td style="text-align:center">${totalQtd || '—'}</td>
+        <td style="text-align:right">${fmtCurrency(totalValor)}</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
 </body></html>`;
 
     const w = window.open('', '_blank', 'width=1200,height=800');
