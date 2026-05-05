@@ -445,15 +445,16 @@ function LoadDetailsPanel({
                 <p className="text-sm font-semibold text-foreground">{fmtDate(load.plannedDate)}</p>
               </div>
             </div>
-            {load.realizationDate && (
-              <div className="flex items-start gap-2">
-                <CalendarCheck className="h-4 w-4 text-emerald-600 mt-0.5 shrink-0" />
-                <div>
-                  <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Realização</p>
-                  <p className="text-sm font-semibold text-foreground">{fmtDate(load.realizationDate)}</p>
-                </div>
+            <div className="flex items-start gap-2">
+              <CalendarCheck className={`h-4 w-4 mt-0.5 shrink-0 ${load.realizationDate ? 'text-emerald-600' : 'text-muted-foreground/40'}`} />
+              <div>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Realização</p>
+                {load.realizationDate
+                  ? <p className="text-sm font-semibold text-foreground">{fmtDate(load.realizationDate)}</p>
+                  : <p className="text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-wide">Sem data determinada</p>
+                }
               </div>
-            )}
+            </div>
           </div>
 
           {/* Summary chips */}
