@@ -994,6 +994,9 @@ const CreateShipment = () => {
         if (attachs.nf?.url) docAttachs.push({ url: attachs.nf.url, label: `NotaFiscal-${order.id}.pdf` });
       }
 
+      // Buscar status atual antes do envio para usar em todo o bloco
+      const currentStatusesForSend = await listPedidosStatusByPedidoIds(repOrders.map(o => o.id));
+
       // Enviar via Evolution API
       if (repPhoneRaw) {
         const phoneE164 = normalizePhoneToE164(repPhoneRaw);
@@ -1004,6 +1007,26 @@ const CreateShipment = () => {
           } else {
             showToast(`Falha ao enviar para ${repDisplayName}: ${result.error}`, 'error');
           }
+
+          // Avançar para faturado com notificação — mensagem aparece antes dos anexos no WhatsApp
+          for (const order of repOrders) {
+            const statusAtual = currentStatusesForSend.find(s => s.pedido_id === order.id)?.status_atual as string | undefined;
+            const jaFaturado = ['faturado', 'em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado'].includes(statusAtual || '');
+            if (!jaFaturado) {
+              await setPedidoStatusWithOptionalNotify({
+                pedidoId: order.id,
+                numeroPedido: order.id,
+                statusNovo: 'faturado',
+                alteradoPor: user?.username || null,
+                observacao: 'Relatório de entrega enviado ao representante',
+                notifyRepresentante: true,
+                representantePhoneRaw: repPhoneRaw || null,
+                representanteNome: repName || null,
+                clienteNome: order.clientName || order.clientCode || 'Cliente',
+              });
+            }
+          }
+
           for (const doc of docAttachs) {
             try {
               const blob = await fetch(doc.url).then(r => r.blob());
@@ -1025,14 +1048,14 @@ const CreateShipment = () => {
         showToast(`Representante ${repDisplayName} sem telefone cadastrado.`, 'error');
       }
 
-      // Avançar status: faturado → em_entrega (em_entrega dispara mensagem 3 ao representante)
-      const currentStatusesForSend = await listPedidosStatusByPedidoIds(repOrders.map(o => o.id));
+      // Avançar status após envio dos anexos
       for (const order of repOrders) {
         const statusAtual = currentStatusesForSend.find(s => s.pedido_id === order.id)?.status_atual as string | undefined;
         const jaFaturado = ['faturado', 'em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado'].includes(statusAtual || '');
         const jaEmEntrega = ['em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado'].includes(statusAtual || '');
 
-        if (!jaFaturado) {
+        // Quando telefone ausente ou inválido, ainda avança para faturado sem notificação
+        if (!jaFaturado && !normalizePhoneToE164(repPhoneRaw || '')) {
           await updatePedidoStatus({
             pedidoId: order.id,
             numeroPedido: order.id,
@@ -1048,7 +1071,7 @@ const CreateShipment = () => {
             numeroPedido: order.id,
             statusNovo: 'em_entrega',
             alteradoPor: user?.username || null,
-            observacao: `Relatório enviado via WhatsApp${hasBoleto ? ' com boleto' : ''}`,
+            observacao: null,
             notifyRepresentante: true,
             representantePhoneRaw: repPhoneRaw || null,
             representanteNome: repName || null,
@@ -1162,8 +1185,9 @@ const CreateShipment = () => {
       if (type === 'comprovante' && !isLeroy(orderForComp?.clientName || orderForComp?.clientCode, orderForComp?.representativeName)) {
         const repId = String(orderForComp?.representativeId || '').trim();
         const repNameComp = String(orderForComp?.representativeName || '').trim();
-        const repContactComp = repContacts[repId] || repContacts[repNameComp];
-        const repPhoneComp = repContactComp?.telefone || orderForComp?.representativePhone || null;
+        // Busca direta para garantir telefone mesmo que repContacts ainda não tenha carregado
+        const freshContact = await findRepresentanteContato(repId || repNameComp);
+        const repPhoneComp = freshContact?.telefone || orderForComp?.representativePhone || null;
         const clienteNomeComp = orderForComp?.clientName || orderForComp?.clientCode || 'Cliente';
         await setPedidoStatusWithOptionalNotify({
           pedidoId: orderId,
@@ -1173,7 +1197,7 @@ const CreateShipment = () => {
           observacao: null,
           notifyRepresentante: true,
           representantePhoneRaw: repPhoneComp,
-          representanteNome: repContactComp?.nome || repNameComp || null,
+          representanteNome: freshContact?.nome || repNameComp || null,
           clienteNome: clienteNomeComp,
         });
 
@@ -1322,7 +1346,7 @@ const CreateShipment = () => {
         });
       }
 
-      for (const { pedidoId, tipo, info, boletoIdx } of pendingEntries) {
+      for (const { pedidoId, tipo, info, boletoIdx, compIdx } of pendingEntries) {
         await upsertRelatorioEntregaAnexo({
           carregamento_id: id,
           pedido_id: pedidoId,

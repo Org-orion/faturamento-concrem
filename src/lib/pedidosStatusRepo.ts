@@ -612,6 +612,16 @@ export function formatStatusWhatsappMessage(params: {
       '',
       `🕒 ${when}`,
     ];
+  } else if (statusNovo === 'faturado') {
+    lines = [
+      'Olá! 👋',
+      '',
+      `O pedido ${numeroPedido} — ${clienteNome} foi faturado ✅`,
+      '',
+      '📎 Nota fiscal e boleto seguem em anexo.',
+      '',
+      `🕒 ${when}`,
+    ];
   } else if (statusNovo === 'entregue') {
     lines = [
       'Olá! 👋',

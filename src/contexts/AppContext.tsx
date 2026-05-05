@@ -1345,10 +1345,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const addFreightEntry = useCallback((e: Omit<FreightEntry, 'id' | 'createdAt'>) => {
-    const num = nextId('LNF', 'freightEntry');
-    const entry: FreightEntry = { ...e, id: num, createdAt: new Date().toISOString() };
+    const id = crypto.randomUUID();
+    const entry: FreightEntry = { ...e, id, createdAt: new Date().toISOString() };
     setFreightEntries((prev) => [entry, ...prev]);
-    void upsertLancamentoFinanceiro(entry);
+    upsertLancamentoFinanceiro(entry).catch((err) => {
+      console.error('[addFreightEntry] falha ao salvar no banco:', err);
+      setFreightEntries((prev) => prev.filter((x) => x.id !== id));
+    });
   }, []);
 
   const updateFreightEntry = useCallback((id: string, patch: Partial<Omit<FreightEntry, 'id' | 'createdAt'>>) => {

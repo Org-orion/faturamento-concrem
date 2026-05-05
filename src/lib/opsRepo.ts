@@ -411,7 +411,7 @@ export async function listLancamentosFinanceiros() {
   const { data: lancamentos, error: lancError } = await supabaseOps
     .from('concrem_lancamentos_financeiros')
     .select(`
-      id, pedido_id, motorista_id,
+      id, pedido_id, carregamento_id, motorista_id,
       data_entrega, valor_frete, valor_motorista, status, criado_em,
       concrem_lancamentos_despesas (
         id,
@@ -464,8 +464,8 @@ export async function upsertLancamentoFinanceiro(entry: FreightEntry) {
 
   const { error: lancError } = await supabaseOps.from('concrem_lancamentos_financeiros').upsert(payloadLancamento);
   if (lancError) {
-    console.error('[Supabase OPS] upsert lancamentos_financeiros:', lancError.message);
-    return;
+    console.error('[Supabase OPS] upsert lancamentos_financeiros:', lancError.message, payloadLancamento);
+    throw new Error(lancError.message);
   }
 
   // 2. Salvar as despesas vinculadas (apagando as antigas primeiro para simplificar a sincronização)

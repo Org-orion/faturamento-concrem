@@ -29,7 +29,7 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
         <Sidebar />
         <div 
           className="flex-1 flex flex-col transition-all duration-300 ease-in-out"
-          style={{ marginLeft: isCollapsed ? '64px' : '256px' }}
+          style={{ marginLeft: isCollapsed ? '72px' : '256px' }}
         >
           <Header />
           <main className="p-8 mt-16 flex-1">
