@@ -1755,10 +1755,9 @@ const CreateShipment = () => {
                     return (
                       <div
                         key={id}
-                        className="flex items-center justify-between p-3 rounded-lg border-2 border-primary bg-primary/5 transition-all group relative overflow-hidden"
+                        className="flex items-center justify-between p-3 rounded-lg border-2 border-primary border-l-4 bg-primary/5 transition-all group"
                       >
-                        <div className="absolute left-0 top-0 bottom-0 w-1 bg-primary" />
-                        <div className="flex items-center gap-4 pl-2">
+                        <div className="flex items-center gap-4 flex-1 min-w-0">
                           <button
                             type="button"
                             onClick={(e) => selectOrder(e, id)}
@@ -1766,17 +1765,17 @@ const CreateShipment = () => {
                           >
                             <Check className="h-3 w-3" />
                           </button>
-                          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 flex-1 items-center">
+                          <div className="grid grid-cols-1 md:grid-cols-6 gap-4 flex-1 min-w-0 items-center">
                             <div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 <p className="font-bold text-sm font-mono-data">{order.id}</p>
                                 <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Embarcado</span>
+                                {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}
+                                {atencaoMap.has(order.id) && <AtencaoIcon motivo={atencaoMap.get(order.id)!.motivo} />}
                               </div>
                               <p className="text-[10px] text-muted-foreground font-medium">Nº Pedido</p>
                             </div>
-                            <div className="flex justify-center">
-                              {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}{atencaoMap.has(order.id) && <AtencaoIcon motivo={atencaoMap.get(order.id)!.motivo} />}
-                            </div>
+                            <div className="hidden md:block" />
                             <div>
                               <p className="font-bold text-sm text-primary truncate">{order.clientName || order.clientCode || '-'}</p>
                               <p className="text-[10px] text-muted-foreground font-medium">Cliente</p>
