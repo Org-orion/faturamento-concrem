@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { useApp, getDataCorte } from '@/contexts/AppContext';
-import { tableColumns } from '@/contexts/AppContext';
+import { tableColumnsWithAddress as tableColumns } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import { Order } from '@/types';
 import { supabasePedidos, supabaseOps } from '@/lib/supabase';

@@ -299,7 +299,10 @@ export const vendasOr = 'id_nota_conf.in.(307,309)';
 export const suporteOr = 'id_nota_conf.in.(613,665)';
 
 export const tableColumns =
-  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete, situacao_entrega, cliente_cep, cliente_endereco, cliente_bairro';
+  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete, situacao_entrega';
+
+// Inclui campos de endereço usados em CreateShipment — use só quando necessário
+export const tableColumnsWithAddress = tableColumns + ', cliente_cep, cliente_endereco, cliente_bairro';
 
 // Retorna a data de corte para o carregamento inicial (janela recente de pedidos)
 export function getDataCorte(months = 4): string {
