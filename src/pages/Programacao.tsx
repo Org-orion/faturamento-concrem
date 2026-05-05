@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, Pencil, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, Pencil, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
+import logoProgramacao from '@/assets/logo-programacao.png';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { getPedidoStatusLabel, getPedidoStatusBadgeClass } from '@/lib/pedidoStatusFlow';
 import { cn } from '@/lib/utils';
@@ -29,6 +30,8 @@ type ErpRow = {
   frete: number | null;
   data_emissao: string | null;
   representante: string | null;
+  previsao_embarque: string | null;
+  total_qtd: number | null;
 };
 
 // Pre-formatted fields avoid calling toLocaleString per row on every render
@@ -46,6 +49,8 @@ type Pedido = {
   dataEmissao: string | null;
   dataEmissaoFormatada: string;
   representante: string | null;
+  previsaoEmbarque: string | null;
+  totalQtd: number | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -57,7 +62,7 @@ const PRODUCAO_STATUSES: string[] = [
 ];
 
 const OPS_COLS = 'pedido_id, numero_pedido, status_atual, mes_programacao, atualizado_em';
-const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, frete, data_emissao, representante';
+const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque';
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
 // ─── Module-level helpers (instantiated once, not per render) ─────────────────
@@ -304,6 +309,10 @@ const Programacao: React.FC = () => {
   const [showBulkConfirm, setShowBulkConfirm] = useState(false);
   const [bulkSaving, setBulkSaving] = useState(false);
 
+  // ── Print ─────────────────────────────────────────────────────────────────────
+  const [printMes, setPrintMes] = useState<string | null>(null);
+  const [printOverrides, setPrintOverrides] = useState<Map<string, string>>(new Map());
+
   // ── Debounce text filter ─────────────────────────────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => setFilterTextDebounced(filterText), 300);
@@ -345,6 +354,8 @@ const Programacao: React.FC = () => {
         dataEmissao: erp?.data_emissao ?? null,
         dataEmissaoFormatada: fmtDateSafe(erp?.data_emissao),
         representante: erp?.representante ?? null,
+        previsaoEmbarque: erp?.previsao_embarque ?? null,
+        totalQtd: erp?.total_qtd ?? null,
       };
     }),
   [opsRows, erpMap]);
@@ -573,6 +584,109 @@ const Programacao: React.FC = () => {
     setFilterStatus('');
     setFilterMes('');
     setShowSemProg(false);
+  };
+
+  // ── Print relatório mensal ────────────────────────────────────────────────────
+  const openPrintModal = (mes: string) => {
+    const pedidos = groupedMonths.get(mes) ?? [];
+    const initialOverrides = new Map<string, string>();
+    for (const p of pedidos) {
+      if (p.previsaoEmbarque) initialOverrides.set(p.pedidoId, p.previsaoEmbarque.slice(0, 10));
+    }
+    setPrintOverrides(initialOverrides);
+    setPrintMes(mes);
+  };
+
+  const generatePrintPdf = () => {
+    if (!printMes) return;
+    const pedidos = (groupedMonths.get(printMes) ?? []).slice().sort((a, b) =>
+      a.clienteNome.localeCompare(b.clienteNome, 'pt-BR'),
+    );
+    const mesLabel = fmtMesLabel(printMes);
+    const now = new Date();
+    const emissao = `${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    const fmtCurrency = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+    const fmtD = (iso: string) => new Date(iso.slice(0, 10) + 'T00:00:00').toLocaleDateString('pt-BR');
+
+    let totalValor = 0;
+    let totalQtd = 0;
+    const rows = pedidos.map(p => {
+      totalValor += p.valor;
+      totalQtd += p.totalQtd ?? 0;
+      const previsao = printOverrides.get(p.pedidoId);
+      return `<tr>
+        <td style="font-weight:700">${p.numeroPedido}</td>
+        <td>${p.clienteNome}</td>
+        <td style="font-size:10px;color:#555">${p.representante ?? '—'}</td>
+        <td style="text-align:center">${p.totalQtd != null ? p.totalQtd : '—'}</td>
+        <td style="text-align:right">${fmtCurrency(p.valor)}</td>
+        <td style="text-align:center">${previsao ? fmtD(previsao) : '<span style="color:#dc2626;font-weight:600">A DEFINIR</span>'}</td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title>Programação ${mesLabel}</title>
+<style>
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:11px; }
+  .outer { width:100%; border-collapse:collapse; }
+  .outer thead td { padding-bottom:10px; border-bottom:3px solid #0a2315; }
+  .outer tbody > tr > td { padding-top:8px; vertical-align:top; }
+  .page-header { display:flex; align-items:center; justify-content:space-between; }
+  .page-header img { height:44px; }
+  .ph-title { text-align:right; }
+  .ph-title h1 { font-size:15px; color:#0a2315; font-weight:800; text-transform:uppercase; letter-spacing:1px; }
+  .ph-title p { font-size:9px; color:#888; margin-top:2px; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { background:#0a2315; color:#fff; padding:6px 10px; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; white-space:nowrap; }
+  tbody td { padding:5px 10px; border-bottom:1px solid #e0e0e0; font-size:11px; }
+  tbody tr:nth-child(even) { background:#f5f7f5; }
+  .total-row td { padding:7px 10px; font-weight:800; font-size:11px; border-top:2px solid #0a2315; background:#f0f2f0; }
+  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+<script>window.onload = () => { window.focus(); window.print(); };</script>
+</head><body>
+<table class="outer">
+  <thead><tr><td>
+    <div class="page-header">
+      <img src="${logoProgramacao}" alt="Concrem" />
+      <div class="ph-title">
+        <h1>Programação de Pedidos — ${mesLabel}</h1>
+        <p>Emissão: ${emissao} &nbsp;·&nbsp; ${pedidos.length} pedido(s)</p>
+      </div>
+    </div>
+  </td></tr></thead>
+  <tbody><tr><td>
+    <table>
+      <thead><tr>
+        <th style="text-align:left">Nº Pedido</th>
+        <th style="text-align:left">Cliente</th>
+        <th style="text-align:left">Representante</th>
+        <th style="text-align:center">Qtd Kits</th>
+        <th style="text-align:right">Valor</th>
+        <th style="text-align:center">Prev. Embarque</th>
+      </tr></thead>
+      <tbody>
+        ${rows}
+        <tr class="total-row">
+          <td colspan="3" style="text-align:right">TOTAL</td>
+          <td style="text-align:center">${totalQtd || '—'}</td>
+          <td style="text-align:right">${fmtCurrency(totalValor)}</td>
+          <td></td>
+        </tr>
+      </tbody>
+    </table>
+  </td></tr></tbody>
+</table>
+</body></html>`;
+
+    const w = window.open('', '_blank', 'width=1200,height=800');
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+    setPrintMes(null);
   };
 
   // ── Import by list ───────────────────────────────────────────────────────────
@@ -974,7 +1088,16 @@ const Programacao: React.FC = () => {
                       </td>
                       <td className="px-4 py-3 text-sm text-right tabular-nums">{pedidos.length}</td>
                       <td className="px-4 py-3 text-sm text-right tabular-nums font-medium">
-                        {BRL_FMT.format(totalValor)}
+                        <div className="flex items-center justify-end gap-3">
+                          <span>{BRL_FMT.format(totalValor)}</span>
+                          <button
+                            title="Imprimir relatório do mês"
+                            onClick={(e) => { e.stopPropagation(); openPrintModal(mes); }}
+                            className="p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                          >
+                            <Printer className="h-4 w-4" />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                     {isExp && (
@@ -1010,6 +1133,81 @@ const Programacao: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Print Modal */}
+      {printMes && (() => {
+        const pedidos = (groupedMonths.get(printMes) ?? []).slice().sort((a, b) =>
+          a.clienteNome.localeCompare(b.clienteNome, 'pt-BR'),
+        );
+        const semPrevisao = pedidos.filter(p => !printOverrides.has(p.pedidoId) || !printOverrides.get(p.pedidoId));
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold font-display text-foreground">
+                    Relatório — {fmtMesLabel(printMes)}
+                  </h2>
+                  <p className="text-xs text-muted-foreground mt-0.5">{pedidos.length} pedidos · {semPrevisao.length} sem previsão</p>
+                </div>
+                <button onClick={() => setPrintMes(null)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground">
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+
+              {semPrevisao.length > 0 && (
+                <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                  <span>Pedidos sem previsão de embarque aparecem como <strong>A DEFINIR</strong> no PDF. Preencha abaixo antes de imprimir.</span>
+                </div>
+              )}
+
+              <div className="border border-border rounded-lg overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="bg-muted/30 border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
+                      <th className="text-left px-3 py-2">Pedido</th>
+                      <th className="text-left px-3 py-2">Cliente</th>
+                      <th className="text-right px-3 py-2">Valor</th>
+                      <th className="text-center px-3 py-2 w-40">Prev. Embarque</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {pedidos.map(p => (
+                      <tr key={p.pedidoId} className="border-b border-border/40 hover:bg-muted/20">
+                        <td className="px-3 py-2 font-mono font-bold text-xs">{p.numeroPedido}</td>
+                        <td className="px-3 py-2 text-xs truncate max-w-[200px]">{p.clienteNome}</td>
+                        <td className="px-3 py-2 text-xs text-right tabular-nums">{p.valorFormatado}</td>
+                        <td className="px-3 py-2 text-center">
+                          <input
+                            type="date"
+                            value={printOverrides.get(p.pedidoId) ?? ''}
+                            onChange={e => setPrintOverrides(prev => {
+                              const next = new Map(prev);
+                              if (e.target.value) next.set(p.pedidoId, e.target.value);
+                              else next.delete(p.pedidoId);
+                              return next;
+                            })}
+                            className="w-36 border border-input rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="flex justify-end gap-2 pt-1">
+                <button onClick={() => setPrintMes(null)} className={btnSecondary}>Cancelar</button>
+                <button onClick={generatePrintPdf} className={btnPrimary}>
+                  <Printer className="h-4 w-4" />
+                  Gerar PDF
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Import by list Modal */}
       {showImportModal && (
