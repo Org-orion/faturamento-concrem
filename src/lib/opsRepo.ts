@@ -408,31 +408,45 @@ export async function upsertTipoDespesa(expenseType: ExpenseType) {
 
 export async function listLancamentosFinanceiros() {
   if (!supabaseOps) return [];
-  
-  const { data: lancamentos, error: lancError } = await supabaseOps
+
+  let lancamentos: any[] | null = null;
+  let hasCarregamentoId = true;
+
+  const res1 = await supabaseOps
     .from('concrem_lancamentos_financeiros')
     .select(`
       id, pedido_id, carregamento_id, motorista_id,
       data_entrega, valor_frete, valor_motorista, status, criado_em,
-      concrem_lancamentos_despesas (
-        id,
-        tipo_despesa_id,
-        valor,
-        observacao
-      )
+      concrem_lancamentos_despesas ( id, tipo_despesa_id, valor, observacao )
     `)
     .order('criado_em', { ascending: false })
     .limit(200);
 
-  if (lancError) {
-    console.error('[Supabase OPS] list lancamentos_financeiros:', lancError.message);
-    return [];
+  if (res1.error) {
+    // Retry without carregamento_id if the column doesn't exist yet
+    const res2 = await supabaseOps
+      .from('concrem_lancamentos_financeiros')
+      .select(`
+        id, pedido_id, motorista_id,
+        data_entrega, valor_frete, valor_motorista, status, criado_em,
+        concrem_lancamentos_despesas ( id, tipo_despesa_id, valor, observacao )
+      `)
+      .order('criado_em', { ascending: false })
+      .limit(200);
+    if (res2.error) {
+      console.error('[Supabase OPS] list lancamentos_financeiros:', res2.error.message);
+      return [];
+    }
+    lancamentos = res2.data;
+    hasCarregamentoId = false;
+  } else {
+    lancamentos = res1.data;
   }
 
   return (lancamentos || []).map((row: any) => ({
     id: row.id,
     orderId: row.pedido_id,
-    loadId: row.carregamento_id ?? undefined,
+    loadId: hasCarregamentoId ? (row.carregamento_id ?? undefined) : undefined,
     driverId: row.motorista_id,
     deliveryDate: row.data_entrega,
     freightValue: Number(row.valor_frete || 0),
@@ -454,7 +468,7 @@ export async function upsertLancamentoFinanceiro(entry: FreightEntry) {
   const payloadLancamento: Record<string, unknown> = {
     id: entry.id,
     pedido_id: entry.orderId,
-    carregamento_id: entry.loadId ?? null,
+    ...(entry.loadId !== undefined ? { carregamento_id: entry.loadId } : {}),
     motorista_id: entry.driverId,
     data_entrega: entry.deliveryDate,
     valor_frete: entry.freightValue,
