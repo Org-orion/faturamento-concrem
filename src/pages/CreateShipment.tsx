@@ -57,6 +57,7 @@ const CreateShipment = () => {
   const [freightManual, setFreightManual] = useState(false);
   const [freightRaw, setFreightRaw] = useState('');
   const [shipmentDate, setShipmentStatusDate] = useState(todayBR());
+  const [realizationDate, setRealizationDate] = useState('');
   const [previsaoEntregaDate, setPrevisaoEntregaDate] = useState(todayBR());
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [deliveredOrderIds, setDeliveredOrderIds] = useState<string[]>([]);
@@ -191,6 +192,7 @@ const CreateShipment = () => {
         // otherwise let auto-calc fill it from the orders
         setFreightManual(storedFreight > 0);
         setShipmentStatusDate(loadToEdit.plannedDate || todayBR());
+        setRealizationDate(loadToEdit.realizationDate || '');
         setPrevisaoEntregaDate(loadToEdit.previsaoEntrega || todayBR());
       } else {
         showToast('Carregamento não encontrado.', 'error');
@@ -1422,18 +1424,22 @@ const CreateShipment = () => {
           driverId,
           orderIds: selectedOrderIds,
           plannedDate: shipmentDate,
+          realizationDate: realizationDate || undefined,
           previsaoEntrega: previsaoEntregaDate,
           shipmentStatus: shipmentStatus,
           estimatedWeight: totals.weight,
           freightValue: finalFreightValue,
         });
+        const backTo = location.state?.from === 'cronograma' ? '/carregamento?tab=cronograma' : '/carregamento';
         showToast('Programação atualizada com sucesso!');
-        return; // Permanecer na página de edição
+        navigate(backTo);
+        return;
       } else {
         const newId = await addLoad({
           driverId,
           orderIds: selectedOrderIds,
           plannedDate: shipmentDate,
+          realizationDate: realizationDate || undefined,
           previsaoEntrega: previsaoEntregaDate,
           obs: '',
           productionStatus: 'Aguardando Produção',
@@ -1524,11 +1530,11 @@ const CreateShipment = () => {
             <h3 className="text-lg font-semibold font-sans">Informações do Transporte</h3>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             <FormField label="Selecionar Motorista">
-              <select 
-                className={inputClass} 
-                value={driverId} 
+              <select
+                className={inputClass}
+                value={driverId}
                 onChange={e => setDriverId(e.target.value)}
               >
                 <option value="">Selecione um motorista...</option>
@@ -1538,12 +1544,21 @@ const CreateShipment = () => {
               </select>
             </FormField>
 
-            <FormField label="Data do Carregamento">
-              <input 
-                type="date" 
-                className={inputClass} 
-                value={shipmentDate} 
+            <FormField label="Data Prevista do Carregamento">
+              <input
+                type="date"
+                className={inputClass}
+                value={shipmentDate}
                 onChange={e => setShipmentStatusDate(e.target.value)}
+              />
+            </FormField>
+
+            <FormField label="Data da Realização do Carregamento">
+              <input
+                type="date"
+                className={inputClass}
+                value={realizationDate}
+                onChange={e => setRealizationDate(e.target.value)}
               />
             </FormField>
 
@@ -1587,7 +1602,7 @@ const CreateShipment = () => {
               <div className="space-y-1.5">
                 <label className="text-sm font-medium font-display text-muted-foreground">CPF / Documento</label>
                 <p className="px-3 py-2 rounded-lg border border-border bg-muted/20 text-foreground font-mono-data text-sm min-h-[38px]">
-                  {selectedDriver?.id || '-'}
+                  {selectedDriver?.cpf || '-'}
                 </p>
               </div>
               <div className="space-y-1.5">

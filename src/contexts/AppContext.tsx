@@ -422,7 +422,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const loadOps = async () => {
       const { data, error } = await supabaseOps
         .from('concrem_programacoes_embarque')
-        .select('id, driver_id, pedidos, planned_date, previsao_entrega, obs, criado_por, criado_em, production_status, shipment_status, estimated_weight, freight_value');
+        .select('id, driver_id, pedidos, planned_date, realization_date, previsao_entrega, obs, criado_por, criado_em, production_status, shipment_status, estimated_weight, freight_value');
       if (cancelled) return;
       if (error || !data) {
         if (error) console.error('[Supabase OPS] Falha ao carregar programacoes_embarque:', error.message);
@@ -437,6 +437,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           driverId: String(row.driver_id || row.driverId || ''),
           orderIds: Array.isArray(row.pedidos) ? row.pedidos.map(String) : Array.isArray(row.orderIds) ? row.orderIds.map(String) : [],
           plannedDate: plannedDateRaw || new Date().toISOString().slice(0, 10),
+          realizationDate: String(row.realization_date || '').slice(0, 10) || undefined,
           previsaoEntrega: previsaoEntregaRaw,
           obs: String(row.obs || ''),
           createdBy: String(row.criado_por || row.createdBy || 'ops'),

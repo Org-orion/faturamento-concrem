@@ -31,6 +31,7 @@ export async function upsertProgramacaoCarregamento(load: Load): Promise<{ error
     criado_por: load.createdBy,
     driver_id: load.driverId,
     planned_date: load.plannedDate,
+    realization_date: load.realizationDate ?? null,
     previsao_entrega: load.previsaoEntrega ?? null,
     obs: load.obs,
     estimated_weight: load.estimatedWeight,
