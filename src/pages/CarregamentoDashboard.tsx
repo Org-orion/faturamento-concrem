@@ -11,7 +11,7 @@ import {
 } from 'lucide-react';
 import type { Load } from '@/types';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
-import { PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
+import { PrioridadeDot, PrioridadeBadge } from '@/components/pedidos/PrioridadeBadge';
 import { supabasePedidos, supabaseOps } from '@/lib/supabase';
 
 type ViewMode = 'semana' | 'mes' | 'lista';
@@ -287,7 +287,7 @@ type LoadAttachment = { name: string; path: string; url: string };
 const STORAGE_BUCKET = 'relatorio-entrega';
 
 function LoadDetailsPanel({
-  load, driverName, onClose, canEdit, onEdit, onUpdateLoad,
+  load, driverName, onClose, canEdit, onEdit, onUpdateLoad, prioMap,
 }: {
   load: Load;
   driverName: string;
@@ -295,6 +295,7 @@ function LoadDetailsPanel({
   canEdit: boolean;
   onEdit: () => void;
   onUpdateLoad: (updated: Load) => Promise<void>;
+  prioMap: Map<string, { nivel: string }>;
 }) {
   const status = load.shipmentStatus || 'Aguardando Despacho';
   const colorClass = STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 border-gray-200';
@@ -412,8 +413,11 @@ function LoadDetailsPanel({
 
         {/* Scrollable body */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
-          {/* Status */}
-          <span className={`inline-flex text-xs font-semibold px-2.5 py-1 rounded-full border ${colorClass}`}>{status}</span>
+          {/* Status + prioridade */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className={`inline-flex text-xs font-semibold px-2.5 py-1 rounded-full border ${colorClass}`}>{status}</span>
+            {(() => { const n = getLoadPriorityNivel(load, prioMap); return n ? <PrioridadeBadge nivel={n as any} /> : null; })()}
+          </div>
 
           {/* Driver + Creator */}
           <div className="grid grid-cols-2 gap-3">
@@ -489,7 +493,10 @@ function LoadDetailsPanel({
                     return (
                       <div key={id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
                         <div className="min-w-0">
-                          <p className="text-xs font-bold font-mono-data text-foreground">{id}</p>
+                          <div className="flex items-center gap-1.5">
+                            <p className="text-xs font-bold font-mono-data text-foreground">{id}</p>
+                            {(() => { const n = prioMap.get(id)?.nivel; return n ? <PrioridadeBadge nivel={n as any} /> : null; })()}
+                          </div>
                           <p className="text-[11px] text-muted-foreground truncate">{detail?.clientName || '-'}</p>
                         </div>
                         {detail && (
@@ -943,6 +950,7 @@ const CarregamentoDashboard = () => {
             navigate(`/carregamento/editar/${selectedLoad.id}`, { state: { from: 'cronograma' } });
           }}
           onUpdateLoad={updateLoad}
+          prioMap={prioMap}
         />
       )}
     </div>
