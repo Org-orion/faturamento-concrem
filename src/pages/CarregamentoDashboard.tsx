@@ -7,11 +7,12 @@ import { todayBR, fmtDate } from '@/lib/dateUtils';
 import {
   ChevronLeft, ChevronRight, Truck, Package, DollarSign, Weight,
   Search, X, Pencil, Calendar, CalendarCheck, User, FileText,
+  Paperclip, Trash2, Upload, Save, ExternalLink,
 } from 'lucide-react';
 import type { Load } from '@/types';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeDot } from '@/components/pedidos/PrioridadeBadge';
-import { supabasePedidos } from '@/lib/supabase';
+import { supabasePedidos, supabaseOps } from '@/lib/supabase';
 
 type ViewMode = 'semana' | 'mes' | 'lista';
 
@@ -281,19 +282,26 @@ function MonthCell({
 // ── Details panel ─────────────────────────────────────────────────────────────
 
 type OrderDetail = { clientName: string; orderValue: number; freight: number };
+type LoadAttachment = { name: string; path: string; url: string };
+
+const STORAGE_BUCKET = 'relatorio-entrega';
 
 function LoadDetailsPanel({
-  load, driverName, onClose, canEdit, onEdit,
+  load, driverName, onClose, canEdit, onEdit, onUpdateLoad,
 }: {
   load: Load;
   driverName: string;
   onClose: () => void;
   canEdit: boolean;
   onEdit: () => void;
+  onUpdateLoad: (updated: Load) => Promise<void>;
 }) {
   const status = load.shipmentStatus || 'Aguardando Despacho';
   const colorClass = STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 border-gray-200';
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [dragActive, setDragActive] = useState(false);
 
+  // ── order details fetch ──
   const [orderDetails, setOrderDetails] = useState<Map<string, OrderDetail>>(new Map());
   const [loadingDetails, setLoadingDetails] = useState(false);
 
@@ -309,11 +317,7 @@ function LoadDetailsPanel({
         const m = new Map<string, OrderDetail>();
         for (const row of data || []) {
           const orderValue = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
-          m.set(String(row.numero_pedido), {
-            clientName: row.cliente_nome || '-',
-            orderValue,
-            freight: row.frete || 0,
-          });
+          m.set(String(row.numero_pedido), { clientName: row.cliente_nome || '-', orderValue, freight: row.frete || 0 });
         }
         setOrderDetails(m);
         setLoadingDetails(false);
@@ -323,11 +327,76 @@ function LoadDetailsPanel({
   const totalOrderValue = Array.from(orderDetails.values()).reduce((s, d) => s + d.orderValue + d.freight, 0);
   const grandTotal = totalOrderValue + (load.freightValue || 0);
 
+  // ── obs ──
+  const [obsValue, setObsValue] = useState(load.obs || '');
+  const [savingObs, setSavingObs] = useState(false);
+
+  useEffect(() => { setObsValue(load.obs || ''); }, [load.id, load.obs]);
+
+  const saveObs = async () => {
+    setSavingObs(true);
+    await onUpdateLoad({ ...load, obs: obsValue });
+    setSavingObs(false);
+  };
+
+  // ── attachments ──
+  const [attachments, setAttachments] = useState<LoadAttachment[]>([]);
+  const [loadingAttachments, setLoadingAttachments] = useState(false);
+  const [uploading, setUploading] = useState(false);
+
+  const storagePath = `carregamentos/${load.id}`;
+
+  const fetchAttachments = async () => {
+    if (!supabaseOps) return;
+    setLoadingAttachments(true);
+    const { data } = await supabaseOps.storage.from(STORAGE_BUCKET).list(storagePath, { limit: 50 });
+    if (data) {
+      const atts: LoadAttachment[] = data
+        .filter((f) => f.name !== '.emptyFolderPlaceholder')
+        .map((f) => {
+          const path = `${storagePath}/${f.name}`;
+          const { data: urlData } = supabaseOps!.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+          return { name: f.name, path, url: urlData.publicUrl };
+        });
+      setAttachments(atts);
+    }
+    setLoadingAttachments(false);
+  };
+
+  useEffect(() => { void fetchAttachments(); }, [load.id]);
+
+  const uploadFiles = async (files: FileList | File[]) => {
+    if (!supabaseOps || !files.length) return;
+    setUploading(true);
+    for (const file of Array.from(files)) {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${storagePath}/${Date.now()}_${safeName}`;
+      const { error } = await supabaseOps.storage.from(STORAGE_BUCKET).upload(path, file, { upsert: true });
+      if (error) console.error('[upload anexo carregamento]', error.message);
+    }
+    setUploading(false);
+    void fetchAttachments();
+  };
+
+  const deleteAttachment = async (att: LoadAttachment) => {
+    if (!supabaseOps) return;
+    await supabaseOps.storage.from(STORAGE_BUCKET).remove([att.path]);
+    setAttachments((prev) => prev.filter((a) => a.path !== att.path));
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(false);
+    if (e.dataTransfer.files.length) void uploadFiles(e.dataTransfer.files);
+  };
+
+  const isImage = (name: string) => /\.(jpg|jpeg|png|gif|webp|bmp)$/i.test(name);
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" aria-hidden />
       <div
-        className="relative z-10 w-full max-w-md bg-card border-l border-border shadow-2xl flex flex-col h-full overflow-y-auto"
+        className="relative z-10 w-full max-w-md bg-card border-l border-border shadow-2xl flex flex-col h-full"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -341,8 +410,8 @@ function LoadDetailsPanel({
           </button>
         </div>
 
-        {/* Body */}
-        <div className="flex-1 px-5 py-4 space-y-5">
+        {/* Scrollable body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
           {/* Status */}
           <span className={`inline-flex text-xs font-semibold px-2.5 py-1 rounded-full border ${colorClass}`}>{status}</span>
 
@@ -407,7 +476,7 @@ function LoadDetailsPanel({
             </div>
           )}
 
-          {/* Orders list with details */}
+          {/* Orders list */}
           {load.orderIds.length > 0 && (
             <div>
               <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-2 flex items-center gap-1">
@@ -441,13 +510,109 @@ function LoadDetailsPanel({
             </div>
           )}
 
-          {/* Obs */}
-          {load.obs && (
-            <div className="rounded-lg bg-muted/30 border border-border p-3">
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Observação</p>
-              <p className="text-sm text-foreground">{load.obs}</p>
+          {/* ── Observações ── */}
+          <div className="border-t border-border pt-4">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-2">
+              Observações
+            </p>
+            <textarea
+              value={obsValue}
+              onChange={(e) => setObsValue(e.target.value)}
+              placeholder="Adicione uma observação sobre este carregamento..."
+              rows={3}
+              className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none transition-colors"
+            />
+            {obsValue !== (load.obs || '') && (
+              <button
+                onClick={saveObs}
+                disabled={savingObs}
+                className="mt-2 flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+              >
+                <Save className="h-3 w-3" />
+                {savingObs ? 'Salvando...' : 'Salvar observação'}
+              </button>
+            )}
+          </div>
+
+          {/* ── Anexos ── */}
+          <div className="border-t border-border pt-4 pb-2">
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium flex items-center gap-1">
+                <Paperclip className="h-3.5 w-3.5" /> Anexos
+              </p>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={uploading || !supabaseOps}
+                className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-border text-xs font-medium hover:bg-muted transition-colors disabled:opacity-40"
+              >
+                <Upload className="h-3 w-3" />
+                {uploading ? 'Enviando...' : 'Adicionar'}
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                accept="image/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                className="hidden"
+                onChange={(e) => e.target.files && void uploadFiles(e.target.files)}
+              />
             </div>
-          )}
+
+            {/* Drop zone */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+              className={`rounded-lg border-2 border-dashed px-4 py-3 text-center cursor-pointer transition-colors ${
+                dragActive
+                  ? 'border-primary bg-primary/5 text-primary'
+                  : 'border-border text-muted-foreground/50 hover:border-primary/40 hover:bg-muted/30'
+              }`}
+            >
+              <p className="text-xs">{dragActive ? 'Solte os arquivos aqui' : 'Arraste arquivos ou clique para selecionar'}</p>
+              <p className="text-[10px] mt-0.5 opacity-70">Imagens, PDF, Word, Excel</p>
+            </div>
+
+            {/* Files list */}
+            {loadingAttachments ? (
+              <div className="text-xs text-muted-foreground animate-pulse mt-3">Carregando anexos...</div>
+            ) : attachments.length > 0 ? (
+              <div className="mt-3 space-y-1.5">
+                {attachments.map((att) => (
+                  <div key={att.path} className="flex items-center gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2">
+                    {isImage(att.name) ? (
+                      <img src={att.url} alt={att.name} className="w-8 h-8 rounded object-cover shrink-0 border border-border" />
+                    ) : (
+                      <div className="w-8 h-8 rounded bg-muted flex items-center justify-center shrink-0">
+                        <Paperclip className="h-3.5 w-3.5 text-muted-foreground" />
+                      </div>
+                    )}
+                    <span className="flex-1 text-xs text-foreground truncate min-w-0">{att.name.replace(/^\d+_/, '')}</span>
+                    <a
+                      href={att.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="shrink-0 p-1 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <ExternalLink className="h-3.5 w-3.5" />
+                    </a>
+                    {canEdit && (
+                      <button
+                        onClick={() => void deleteAttachment(att)}
+                        className="shrink-0 p-1 rounded hover:bg-red-100 transition-colors text-muted-foreground hover:text-red-600"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="mt-2 text-[11px] text-muted-foreground/50 text-center">Nenhum anexo ainda.</p>
+            )}
+          </div>
         </div>
 
         {/* Footer */}
@@ -779,6 +944,7 @@ const CarregamentoDashboard = () => {
             setSelectedLoad(null);
             navigate(`/carregamento/editar/${selectedLoad.id}`, { state: { from: 'cronograma' } });
           }}
+          onUpdateLoad={updateLoad}
         />
       )}
     </div>
