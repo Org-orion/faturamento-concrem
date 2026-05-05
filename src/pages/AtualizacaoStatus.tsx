@@ -145,11 +145,13 @@ const AtualizacaoStatus = () => {
         if (preserveId && !alreadyKnownIds.has(preserveId) && !missingIds.includes(preserveId)) {
           missingIds.push(preserveId);
         }
-        if (missingIds.length > 0) {
+        // Filtra apenas IDs numéricos — IDs de dados de amostra (ex: PED-010) causam 400 no ERP
+        const numericMissingIds = missingIds.filter((id) => /^\d+$/.test(id));
+        if (numericMissingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
-          const { data: byNumero } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', missingIds);
+          const { data: byNumero } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', numericMissingIds);
           const foundByNumero = new Set(((byNumero || []) as any[]).map((r: any) => r.numero_pedido != null ? String(r.numero_pedido) : null).filter(Boolean));
-          const stillMissing = missingIds.filter((id) => !foundByNumero.has(id));
+          const stillMissing = numericMissingIds.filter((id) => !foundByNumero.has(id));
           const { data: byId } = stillMissing.length > 0
             ? await supabasePedidos.from(table).select(tableColumns).in('id', stillMissing)
             : { data: [] };
