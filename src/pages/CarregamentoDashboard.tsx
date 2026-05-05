@@ -280,6 +280,8 @@ function MonthCell({
 
 // ── Details panel ─────────────────────────────────────────────────────────────
 
+type OrderDetail = { clientName: string; orderValue: number; freight: number };
+
 function LoadDetailsPanel({
   load, driverName, onClose, canEdit, onEdit,
 }: {
@@ -292,18 +294,44 @@ function LoadDetailsPanel({
   const status = load.shipmentStatus || 'Aguardando Despacho';
   const colorClass = STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 border-gray-200';
 
+  const [orderDetails, setOrderDetails] = useState<Map<string, OrderDetail>>(new Map());
+  const [loadingDetails, setLoadingDetails] = useState(false);
+
+  useEffect(() => {
+    if (!load.orderIds.length || !supabasePedidos) return;
+    setLoadingDetails(true);
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    supabasePedidos
+      .from(table)
+      .select('numero_pedido, cliente_nome, total_pedido_venda, total_produtos, frete')
+      .in('numero_pedido', load.orderIds)
+      .then(({ data }) => {
+        const m = new Map<string, OrderDetail>();
+        for (const row of data || []) {
+          const orderValue = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
+          m.set(String(row.numero_pedido), {
+            clientName: row.cliente_nome || '-',
+            orderValue,
+            freight: row.frete || 0,
+          });
+        }
+        setOrderDetails(m);
+        setLoadingDetails(false);
+      });
+  }, [load.id]);
+
+  const totalOrderValue = Array.from(orderDetails.values()).reduce((s, d) => s + d.orderValue + d.freight, 0);
+  const grandTotal = totalOrderValue + (load.freightValue || 0);
+
   return (
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
-      <div
-        className="absolute inset-0 bg-black/30 backdrop-blur-[2px]"
-        aria-hidden
-      />
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" aria-hidden />
       <div
         className="relative z-10 w-full max-w-md bg-card border-l border-border shadow-2xl flex flex-col h-full overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <Truck className="h-4 w-4 text-primary" />
             <span className="font-bold text-base text-foreground">Detalhes do Carregamento</span>
@@ -316,18 +344,22 @@ function LoadDetailsPanel({
         {/* Body */}
         <div className="flex-1 px-5 py-4 space-y-5">
           {/* Status */}
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${colorClass}`}>{status}</span>
-          </div>
+          <span className={`inline-flex text-xs font-semibold px-2.5 py-1 rounded-full border ${colorClass}`}>{status}</span>
 
-          {/* Driver */}
-          <div className="flex items-start gap-3">
-            <div className="w-8 h-8 rounded-lg bg-muted flex items-center justify-center shrink-0">
-              <User className="h-4 w-4 text-muted-foreground" />
+          {/* Driver + Creator */}
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex items-start gap-2">
+              <div className="w-7 h-7 rounded-lg bg-muted flex items-center justify-center shrink-0 mt-0.5">
+                <User className="h-3.5 w-3.5 text-muted-foreground" />
+              </div>
+              <div>
+                <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Motorista</p>
+                <p className="text-sm font-semibold text-foreground">{driverName}</p>
+              </div>
             </div>
             <div>
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Motorista</p>
-              <p className="text-sm font-semibold text-foreground">{driverName}</p>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Criado por</p>
+              <p className="text-sm font-semibold text-foreground">{load.createdBy || '-'}</p>
             </div>
           </div>
 
@@ -351,7 +383,7 @@ function LoadDetailsPanel({
             )}
           </div>
 
-          {/* Stats */}
+          {/* Summary chips */}
           <div className="grid grid-cols-3 gap-2">
             <div className="rounded-lg bg-muted/50 p-3 text-center">
               <p className="text-lg font-bold text-foreground">{load.orderIds.length}</p>
@@ -367,19 +399,45 @@ function LoadDetailsPanel({
             </div>
           </div>
 
-          {/* Orders list */}
+          {/* Total geral */}
+          {!loadingDetails && orderDetails.size > 0 && (
+            <div className="rounded-lg bg-primary/5 border border-primary/20 p-3 flex items-center justify-between">
+              <span className="text-xs font-bold uppercase tracking-wide text-primary">Total do Carregamento</span>
+              <span className="text-sm font-bold text-primary">{formatCurrency(grandTotal)}</span>
+            </div>
+          )}
+
+          {/* Orders list with details */}
           {load.orderIds.length > 0 && (
             <div>
               <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-2 flex items-center gap-1">
                 <FileText className="h-3.5 w-3.5" /> Pedidos
               </p>
-              <div className="flex flex-wrap gap-1.5">
-                {load.orderIds.map((id) => (
-                  <span key={id} className="text-[11px] font-mono-data bg-muted px-2 py-0.5 rounded border border-border">
-                    {id}
-                  </span>
-                ))}
-              </div>
+              {loadingDetails ? (
+                <div className="text-xs text-muted-foreground animate-pulse py-2">Carregando detalhes...</div>
+              ) : (
+                <div className="space-y-2">
+                  {load.orderIds.map((id) => {
+                    const detail = orderDetails.get(id);
+                    return (
+                      <div key={id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
+                        <div className="min-w-0">
+                          <p className="text-xs font-bold font-mono-data text-foreground">{id}</p>
+                          <p className="text-[11px] text-muted-foreground truncate">{detail?.clientName || '-'}</p>
+                        </div>
+                        {detail && (
+                          <div className="text-right shrink-0">
+                            <p className="text-xs font-semibold text-foreground">{formatCurrency(detail.orderValue)}</p>
+                            {detail.freight > 0 && (
+                              <p className="text-[10px] text-muted-foreground">+ {formatCurrency(detail.freight)} frete</p>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -394,7 +452,7 @@ function LoadDetailsPanel({
 
         {/* Footer */}
         {canEdit && (
-          <div className="px-5 py-4 border-t border-border">
+          <div className="px-5 py-4 border-t border-border shrink-0">
             <button
               onClick={onEdit}
               className="w-full flex items-center justify-center gap-2 h-10 rounded-lg bg-primary text-primary-foreground text-sm font-semibold hover:bg-primary/90 transition-colors"
