@@ -298,14 +298,8 @@ const nextId = (prefix: string, key: keyof typeof counters) => {
 export const vendasOr = 'id_nota_conf.in.(307,309)';
 export const suporteOr = 'id_nota_conf.in.(613,665)';
 
-// Colunas usadas na listagem e em lógica de negócio (filtragem, cálculos, exibição).
-// Colunas de detalhe puro (endereço completo) são buscadas sob demanda.
 export const tableColumns =
-  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete, situacao_entrega';
-
-// Colunas de endereço — buscadas separadamente no detalhe do pedido
-export const tableColumnsDetail =
-  'numero_pedido, cliente_cep, cliente_endereco, cliente_bairro';
+  'numero_pedido, id_nota_conf, cliente_codigo, cliente_nome, data_emissao, data_validade, total_pedido_venda, total_produtos, total_qtd, total_qtd_m3, peso_liquido_item, cliente_cidade, cliente_uf, cliente_fantasia, grupo_cliente, representante, ped_compra_cliente, previsao_embarque, frete, situacao_entrega, cliente_cep, cliente_endereco, cliente_bairro';
 
 // Retorna a data de corte para o carregamento inicial (janela recente de pedidos)
 export function getDataCorte(months = 4): string {
