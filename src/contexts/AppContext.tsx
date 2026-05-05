@@ -420,14 +420,33 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     let cancelled = false;
 
     const loadOps = async () => {
-      const { data, error } = await supabaseOps
+      // Try with realization_date first; fall back without it if the column doesn't exist yet
+      let data: any[] | null = null;
+      let hasRealizationDate = true;
+
+      const res1 = await supabaseOps
         .from('concrem_programacoes_embarque')
         .select('id, driver_id, pedidos, planned_date, realization_date, previsao_entrega, obs, criado_por, criado_em, production_status, shipment_status, estimated_weight, freight_value');
       if (cancelled) return;
-      if (error || !data) {
-        if (error) console.error('[Supabase OPS] Falha ao carregar programacoes_embarque:', error.message);
-        return;
+
+      if (res1.error) {
+        // Retry without realization_date in case the column doesn't exist yet
+        const res2 = await supabaseOps
+          .from('concrem_programacoes_embarque')
+          .select('id, driver_id, pedidos, planned_date, previsao_entrega, obs, criado_por, criado_em, production_status, shipment_status, estimated_weight, freight_value');
+        if (cancelled) return;
+        if (res2.error || !res2.data) {
+          console.error('[Supabase OPS] Falha ao carregar programacoes_embarque:', res2.error?.message);
+          return;
+        }
+        data = res2.data;
+        hasRealizationDate = false;
+        console.warn('[Supabase OPS] realization_date column missing — add it via migration');
+      } else {
+        data = res1.data;
       }
+
+      if (!data) return;
 
       const mapped: Load[] = (data as any[]).map((row) => {
         const plannedDateRaw = String(row.planned_date || row.plannedDate || '').slice(0, 10);
@@ -437,7 +456,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           driverId: String(row.driver_id || row.driverId || ''),
           orderIds: Array.isArray(row.pedidos) ? row.pedidos.map(String) : Array.isArray(row.orderIds) ? row.orderIds.map(String) : [],
           plannedDate: plannedDateRaw || new Date().toISOString().slice(0, 10),
-          realizationDate: String(row.realization_date || '').slice(0, 10) || undefined,
+          realizationDate: hasRealizationDate ? (String(row.realization_date || '').slice(0, 10) || undefined) : undefined,
           previsaoEntrega: previsaoEntregaRaw,
           obs: String(row.obs || ''),
           createdBy: String(row.criado_por || row.createdBy || 'ops'),
