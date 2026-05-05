@@ -625,9 +625,10 @@ const Programacao: React.FC = () => {
     }).join('');
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title>Programação ${mesLabel}</title>
+<title></title>
 <style>
   @page { size: A4 landscape; margin: 10mm 12mm; }
+  @page { @top-left { content: ""; } @top-center { content: ""; } @top-right { content: ""; } @bottom-left { content: ""; } @bottom-center { content: ""; } @bottom-right { content: ""; } }
   * { margin:0; padding:0; box-sizing:border-box; }
   body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:11px; }
   .page-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:3px solid #0a2315; margin-bottom:8px; }
@@ -637,7 +638,7 @@ const Programacao: React.FC = () => {
   .ph-title p { font-size:9px; color:#888; margin-top:2px; }
   table { width:100%; border-collapse:collapse; }
   thead th { background:#0a2315; color:#fff; padding:6px 10px; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; white-space:nowrap; }
-  thead { display:table-header-group; }
+  thead { display:table-row-group; }
   tbody td { padding:5px 10px; border-bottom:1px solid #e0e0e0; font-size:11px; }
   tbody tr:nth-child(even) { background:#f5f7f5; }
   .total-row td { padding:7px 10px; font-weight:800; font-size:11px; border-top:2px solid #0a2315; background:#f0f2f0; }

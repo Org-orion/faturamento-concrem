@@ -669,59 +669,63 @@ const CreateShipment = () => {
 
   /* HEADER */
   table.hdr { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
-  table.hdr td { vertical-align: middle; }
-  .hdr-logo { width: 130px; border-right: 1px solid #000; padding: 6px 8px; text-align: center; }
-  .hdr-logo img { width: 110px; height: auto; display: block; margin: 0 auto; }
-  .hdr-title { text-align: center; padding: 6px 10px; border-right: 1px solid #000; }
-  .hdr-title .t1 { font-weight: 900; font-size: 11pt; text-transform: uppercase; letter-spacing: .3px; }
-  .hdr-title .t2 { font-size: 9pt; font-weight: 700; margin-top: 2px; }
-  .hdr-date { width: 95px; text-align: center; padding: 6px 6px; }
-  .hdr-date .dlbl { font-size: 7pt; font-weight: 700; text-transform: uppercase; color: #333; }
-  .hdr-date .dv { font-size: 10pt; font-weight: 900; margin-top: 2px; }
+  table.hdr td { vertical-align: middle; border: 1px solid #000; }
+  .hdr-logo { width: 120px; padding: 4px 8px; text-align: center; }
+  .hdr-logo img { width: 100px; height: auto; display: block; margin: 0 auto; }
+  .hdr-center { text-align: center; padding: 4px 10px; }
+  .hdr-center .anexo { font-weight: 900; font-size: 10pt; text-transform: uppercase; }
+  .hdr-center .titulo { font-weight: 900; font-size: 10pt; text-transform: uppercase; margin-top: 3px; }
+  .hdr-right { width: 90px; text-align: center; padding: 0; vertical-align: top; }
+  .hdr-right table { width: 100%; border-collapse: collapse; height: 100%; }
+  .hdr-right table td { border: 1px solid #000; padding: 2px 4px; font-size: 8pt; text-align: center; vertical-align: middle; }
+  .hdr-right .lbl { font-weight: 700; font-size: 7.5pt; }
+  .hdr-right .val { font-weight: 400; font-size: 8.5pt; }
 
   /* MANDATORY */
-  .mandatory { text-align: center; font-weight: 900; font-size: 10pt; padding: 4px 0 5px; }
+  .mandatory { text-align: center; font-weight: 900; font-size: 13pt; color: #cc0000; padding: 5px 0 6px; }
 
-  /* SECTION */
-  table.sec { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
-  table.sec td { padding: 0 6px; font-size: 9pt; border: 1px solid #000; vertical-align: middle; height: 22px; }
-  td.sec-hdr { font-weight: 900; font-size: 9pt; text-transform: uppercase; background: #fff; border-bottom: 1px solid #000; padding: 3px 6px; height: auto; vertical-align: middle; }
+  /* SECTION TABLES */
+  table.sec { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 0; border-bottom: none; }
+  table.sec:last-of-type { border-bottom: 1px solid #000; }
+  table.sec td { padding: 0 5px; font-size: 9pt; border: 1px solid #000; vertical-align: middle; height: 20px; }
+  td.sec-hdr { font-weight: 900; font-size: 9pt; text-transform: uppercase; background: #fff; padding: 2px 5px; height: auto; }
   .lbl { font-weight: 400; }
   .val { font-weight: 700; }
 
   /* QTY */
-  table.qty { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
-  table.qty td { padding: 0 6px; height: 22px; border: 1px solid #000; font-size: 9pt; vertical-align: middle; }
-  .qlbl { font-weight: 700; }
-  .qval { font-weight: 700; }
+  table.qty { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
+  table.qty td { padding: 0 5px; height: 22px; border: 1px solid #000; font-size: 9pt; vertical-align: middle; text-align: center; font-weight: 700; }
 
   /* CONDITIONS */
-  table.cond { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
-  table.cond td { padding: 5px 6px; font-size: 9pt; }
-  .cond-title { font-weight: 900; text-transform: uppercase; margin-bottom: 3px; }
-  .cond-line { line-height: 1.6; }
-  .cond-notice { font-weight: 900; margin-top: 4px; }
+  table.cond { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
+  table.cond td { padding: 3px 5px; font-size: 9pt; border: 1px solid #000; vertical-align: middle; }
+  .cond-header { font-weight: 900; text-transform: uppercase; text-align: center; }
+  .cond-row { display: flex; justify-content: space-between; align-items: center; }
+  .cond-text { flex: 1; }
+  .cond-opts { white-space: nowrap; }
+  .cond-notice { font-weight: 900; text-align: center; padding: 3px 5px; font-size: 8.5pt; }
 
   /* OBS */
-  table.obs { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
-  table.obs td { padding: 4px 6px; font-size: 9pt; }
-  .obs-title { font-weight: 900; text-transform: uppercase; margin-bottom: 3px; }
-  .obs-box { height: 50px; margin-top: 3px; }
+  table.obs { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
+  table.obs td { padding: 3px 5px; font-size: 9pt; }
+  .obs-title { font-weight: 900; text-transform: uppercase; text-align: center; }
+  .obs-box { height: 55px; }
 
   /* DECLARATION */
-  table.decl { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 0; }
-  table.decl td { padding: 5px 6px; font-size: 8.5pt; line-height: 1.55; text-align: justify; }
+  table.decl { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
+  table.decl td { padding: 4px 6px; font-size: 8pt; line-height: 1.5; text-align: justify; }
 
   /* SIGNATURES */
-  .sigs { display: flex; gap: 80px; padding: 14px 60px 4px; }
-  .sig { flex: 1; text-align: center; }
-  .sig .line { border-top: 1px solid #000; padding-top: 3px; font-size: 9pt; font-weight: 400; margin-top: 18px; }
+  .sigs { display: flex; justify-content: space-around; padding: 16px 40px 6px; }
+  .sig { text-align: center; width: 38%; }
+  .sig .line { border-top: 1px solid #000; padding-top: 3px; font-size: 9pt; margin-top: 22px; }
 
   /* FOOTER */
   table.ftr { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; }
-  table.ftr td { padding: 5px 6px; font-size: 8.5pt; }
-  .ftr-line { font-weight: 700; display: block; line-height: 1.5; }
-  .ftr-contact { text-align: center; font-size: 8pt; margin-top: 5px; padding-top: 4px; border-top: 1px solid #ccc; }
+  table.ftr td { padding: 4px 6px; font-size: 8pt; line-height: 1.7; }
+  .ftr-contact { text-align: center; margin-top: 5px; }
+
+  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
 </style>
 
 <div class="page">
@@ -729,101 +733,134 @@ const CreateShipment = () => {
   <!-- HEADER -->
   <table class="hdr">
     <tr>
-      <td class="hdr-logo">${logoTag}</td>
-      <td class="hdr-title">
-        <div class="t1">Formulário de Recebimento de Produtos</div>
-        <div class="t2">CONCREM INDUSTRIAL LTDA</div>
+      <td class="hdr-logo" rowspan="2">${logoTag}</td>
+      <td class="hdr-center" style="border-bottom:1px solid #000;">
+        <div class="anexo">ANEXO DA QUALIDADE</div>
       </td>
-      <td class="hdr-date">
-        <div class="dlbl">Data</div>
-        <div class="dv">${dateStr}</div>
+      <td class="hdr-right" rowspan="2" style="border:none;padding:0;">
+        <table style="width:100%;height:100%;border-collapse:collapse;">
+          <tr>
+            <td colspan="2" class="lbl" style="border:1px solid #000;">Código</td>
+          </tr>
+          <tr>
+            <td colspan="2" class="val" style="border:1px solid #000;">AQ052</td>
+          </tr>
+          <tr>
+            <td class="lbl" style="border:1px solid #000;">Revisão</td>
+            <td class="lbl" style="border:1px solid #000;">Data</td>
+          </tr>
+          <tr>
+            <td class="val" style="border:1px solid #000;">00</td>
+            <td class="val" style="border:1px solid #000;">04/03/2021</td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+    <tr>
+      <td class="hdr-center">
+        <div class="titulo">FORMULÁRIO DE RECEBIMENTO DE PRODUTOS<br>CONCREM INDUSTRIAL LTDA</div>
       </td>
     </tr>
   </table>
 
   <!-- MANDATORY -->
-  <div class="mandatory">*****Preenchimento obrigatório!*****</div>
+  <div class="mandatory">Preenchimento obrigatório!</div>
 
-  <!-- SEÇÃO 1: PEDIDO / CLIENTE / CNPJ -->
-  <table class="sec">
-    <tr><td colspan="3" class="sec-hdr">Identificação do Pedido</td></tr>
-    <tr height="22">
-      <td width="20%" height="22" valign="middle" style="width:20%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nº do Pedido: </span><span class="val">${numeroPedido}</span></td>
-      <td width="50%" height="22" valign="middle" style="width:50%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cliente: </span><span class="val">${empresaLabel}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CNPJ: </span><span class="val">${cnpj}</span></td>
+  <!-- DADOS DO MOTORISTA -->
+  <table class="sec" style="border-bottom:none;">
+    <tr><td colspan="2" class="sec-hdr">DADOS DO MOTORISTA</td></tr>
+    <tr>
+      <td width="60%" style="height:20px;"><span class="lbl">Nome: </span><span class="val">${driverName}</span></td>
+      <td><span class="lbl">CPF: </span><span class="val">${driverCpf}</span></td>
     </tr>
-    <tr height="22">
-      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Responsável pelo Recebimento: </span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Data do Recebimento: </span></td>
+    <tr>
+      <td style="height:20px;"><span class="lbl">Placas: </span><span class="val">${driverPlate}</span></td>
+      <td><span class="lbl">Cel: </span><span class="val">${driverPhone}</span></td>
     </tr>
-    <tr height="22">
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cargo: </span></td>
-      <td colspan="2" height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CPF: </span></td>
+    <tr>
+      <td style="height:20px;"><span class="lbl">Representante Comercial Concrem: </span><span class="val">${representanteName}</span></td>
+      <td><span class="lbl">Cel: </span><span class="val">${representantePhone}</span></td>
     </tr>
   </table>
 
-  <!-- SEÇÃO 2: DADOS DO MOTORISTA -->
-  <table class="sec">
-    <tr><td colspan="2" class="sec-hdr">Dados do Motorista</td></tr>
-    <tr height="22">
-      <td width="60%" height="22" valign="middle" style="width:60%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nome: </span><span class="val">${driverName}</span></td>
-      <td width="40%" height="22" valign="middle" style="width:40%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">CPF: </span><span class="val">${driverCpf}</span></td>
+  <!-- DADOS DA ENTREGA -->
+  <table class="sec" style="border-bottom:none;">
+    <tr><td colspan="2" class="sec-hdr">DADOS DA ENTREGA</td></tr>
+    <tr>
+      <td width="40%" style="height:20px;"><span class="lbl">Nº do Pedido: </span><span class="val">${numeroPedido}</span></td>
+      <td><span class="lbl">Nº da nota fiscal: </span><span class="val">${nfNumber}</span></td>
     </tr>
-    <tr height="22">
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Placas: </span><span class="val">${driverPlate}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cel: </span><span class="val">${driverPhone}</span></td>
+    <tr>
+      <td colspan="2" style="height:20px;"><span class="lbl">Endereço de entrega: </span><span class="val">${enderecoRaw}</span></td>
     </tr>
-  </table>
-
-  <!-- SEÇÃO 3: REPRESENTANTE / TELEFONE / VALOR TOTAL -->
-  <table class="sec">
-    <tr><td colspan="3" class="sec-hdr">Representante Comercial</td></tr>
-    <tr height="22">
-      <td width="40%" height="22" valign="middle" style="width:40%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Representante: </span><span class="val">${representanteName}</span></td>
-      <td width="30%" height="22" valign="middle" style="width:30%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Telefone: </span><span class="val">${representantePhone}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Valor Total: </span><span class="val">${valorPedido}</span></td>
+    <tr>
+      <td colspan="2" style="height:20px;"><span class="lbl">Cidade/UF: </span><span class="val">${cidadeUfRaw}</span></td>
     </tr>
   </table>
 
-  <!-- SEÇÃO 4: DADOS DA ENTREGA -->
-  <table class="sec">
-    <tr><td colspan="2" class="sec-hdr">Dados da Entrega</td></tr>
-    <tr height="22">
-      <td width="50%" height="22" valign="middle" style="width:50%;height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Endereço de entrega: </span><span class="val">${enderecoRaw}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Cidade/UF: </span><span class="val">${cidadeUfRaw}</span></td>
+  <!-- DADOS DO CLIENTE -->
+  <table class="sec" style="border-bottom:none;">
+    <tr><td colspan="3" class="sec-hdr">DADOS DO CLIENTE</td></tr>
+    <tr>
+      <td colspan="2" style="height:20px;"><span class="lbl">Empresa: </span><span class="val">${empresaLabel}</span></td>
+      <td><span class="lbl">CNPJ: </span><span class="val">${cnpj}</span></td>
     </tr>
-    <tr height="22">
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="lbl">Nº da Nota Fiscal: </span><span class="val">${nfNumber}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"></td>
+    <tr>
+      <td colspan="3" style="height:20px;"><span class="lbl">Responsável pelo Recebimento: </span></td>
+    </tr>
+    <tr>
+      <td style="height:20px;"><span class="lbl">Cargo: </span></td>
+      <td><span class="lbl">CPF: </span></td>
+      <td><span class="lbl">Cel: </span></td>
+    </tr>
+    <tr>
+      <td colspan="3" style="height:20px;"><span class="lbl">Data do recebimento: </span></td>
     </tr>
   </table>
 
   <!-- KITS / PALLETS / VOLUMES -->
   <table class="qty">
-    <tr height="22">
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="qlbl">KITS:</span><span class="qval">${kits}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="qlbl">PALLETS: </span><span class="qval">${pallets}</span></td>
-      <td height="22" valign="middle" style="height:22px;padding:0 6px;vertical-align:middle;"><span class="qlbl">VOLUMES: </span><span class="qval">${volumes}</span></td>
+    <tr>
+      <td style="height:22px;text-align:center;font-weight:700;">KITS: <span style="font-weight:400;">${kits}</span></td>
+      <td style="height:22px;text-align:center;font-weight:700;">PALLETS: <span style="font-weight:400;">${pallets}</span></td>
+      <td style="height:22px;text-align:center;font-weight:700;">VOLUMES: <span style="font-weight:400;">${volumes}</span></td>
     </tr>
   </table>
 
   <!-- CONDITIONS -->
   <table class="cond">
-    <tr><td>
-      <div class="cond-title">Condições de Recebimento dos Produtos</div>
-      <div class="cond-line">1. Os produtos recebidos estão de acordo com o pedido? ( ) Sim &nbsp; ( ) Não</div>
-      <div class="cond-line">2. As embalagens/produtos/pallets chegaram em perfeito estado? ( ) Sim &nbsp; ( ) Não</div>
-      <div class="cond-line">3. As quantidades recebidas estão de acordo com o pedido? ( ) Sim &nbsp; ( ) Não</div>
-      <div class="cond-line">4. As quantidades de ferragens estão de acordo com o combinado? ( ) Sim &nbsp; ( ) Não &nbsp; ( ) N/A</div>
-      <div class="cond-line">5. Todos os produtos recebidos foram conferidos corretamente na hora do desembarque? ( ) Sim &nbsp; ( ) Não</div>
-      <div class="cond-notice">O não preenchimento deste formulário atesta o recebimento dos itens conforme o pedido/nota fiscal.</div>
-    </td></tr>
+    <tr>
+      <td colspan="2" class="cond-header" style="border-bottom:1px solid #000;">CONDIÇÕES DE RECEBIMENTO DOS PRODUTOS</td>
+    </tr>
+    <tr>
+      <td style="height:20px;">1. Os produtos recebidos estão de acordo com o pedido?</td>
+      <td style="width:120px;text-align:right;white-space:nowrap;">( &nbsp;) Sim &nbsp; ( &nbsp;) Não</td>
+    </tr>
+    <tr>
+      <td style="height:20px;">2. As embalagens/produtos/pallets chegaram em perfeito estado?</td>
+      <td style="text-align:right;white-space:nowrap;">( &nbsp;) Sim &nbsp; ( &nbsp;) Não</td>
+    </tr>
+    <tr>
+      <td style="height:20px;">3. As quantidades recebidas estão de acordo com o pedido?</td>
+      <td style="text-align:right;white-space:nowrap;">( &nbsp;) Sim &nbsp; ( &nbsp;) Não</td>
+    </tr>
+    <tr>
+      <td style="height:20px;">4. As quantidades de ferragens estão de acordo com o combinado?</td>
+      <td style="text-align:right;white-space:nowrap;">( &nbsp;) Sim &nbsp; ( &nbsp;) Não &nbsp; ( &nbsp;)N/A</td>
+    </tr>
+    <tr>
+      <td style="height:20px;">5. Todos os produtos recebidos foram conferidos corretamente na hora do desembarque?</td>
+      <td style="text-align:right;white-space:nowrap;">( &nbsp;) Sim &nbsp; ( &nbsp;) Não</td>
+    </tr>
+    <tr>
+      <td colspan="2" class="cond-notice">O não preenchimento deste formulário atesta o recebimento dos itens conforme o pedido/nota fiscal.</td>
+    </tr>
   </table>
 
   <!-- OBS -->
   <table class="obs">
     <tr><td>
-      <div class="obs-title">Observações do Cliente</div>
+      <div class="obs-title">OBSERVAÇÕES DO CLIENTE</div>
       <div class="obs-box"></div>
     </td></tr>
   </table>
@@ -844,11 +881,11 @@ const CreateShipment = () => {
   <!-- FOOTER -->
   <table class="ftr">
     <tr><td>
-      <span class="ftr-line">ATENÇÃO CLIENTE, Em caso de dúvidas, sugestões ou reclamações, entrar em contato imediatamente com a Concrem.</span>
-      <span class="ftr-line">ATENÇÃO MOTORISTA, enviar uma via digital deste formulário para a empresa, logo após seu preenchimento.</span>
+      <div><strong>ATENÇÃO CLIENTE,</strong> Em caso de dúvidas, sugestões ou reclamações, entrar em contato imediatamente com a Concrem.</div>
+      <div><strong>ATENÇÃO MOTORISTA,</strong> enviar uma via digital deste formulário para a empresa, logo após seu preenchimento.</div>
       <div class="ftr-contact">
-        E-mail: sac@concrem.com.br &nbsp;&nbsp; Whatsapp: (94) 99272-3890 &nbsp;&nbsp; Tel: (94) 98114-2020<br/>
-        <strong>CONCREM INDUSTRIAL LTDA</strong><br/>
+        ✉ E-mail: sac@concrem.com.br &nbsp;&nbsp;&nbsp; 📱 Whatsapp: (94) 99272-3890 &nbsp;&nbsp;&nbsp; Tel: (94) 98114-2020<br>
+        <strong>CONCREM INDUSTRIAL LTDA</strong><br>
         www.concremportas.com.br
       </div>
     </td></tr>
