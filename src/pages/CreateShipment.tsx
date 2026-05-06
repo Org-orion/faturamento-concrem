@@ -659,9 +659,9 @@ const CreateShipment = () => {
       : `<span style="font-weight:900;font-size:20px;letter-spacing:2px;">CONCREM</span>`;
 
     const dateStr = fmtDate(new Date().toISOString());
-    const previsaoDate = order.previsaoCarregamento
-      ? fmtDate(order.previsaoCarregamento)
-      : dateStr;
+    const previsaoDate = shipmentDate
+      ? fmtDate(shipmentDate)
+      : (order.previsaoCarregamento ? fmtDate(order.previsaoCarregamento) : dateStr);
 
     const formHtml = `
 <style>
