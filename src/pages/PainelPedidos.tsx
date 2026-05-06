@@ -101,6 +101,7 @@ const PainelPedidos = () => {
   // Debounce refs para coalescer eventos realtime
   const pendingRowsRef = useRef<PedidoStatusRow[]>([]);
   const realtimeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const notFoundToastedRef = useRef(new Set<string>());
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [history, setHistory] = useState<PedidoStatusHistoricoRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
@@ -219,7 +220,14 @@ const PainelPedidos = () => {
     if (!supabasePedidos || !numero.trim()) return;
     const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
     const { data } = await supabasePedidos.from(table).select(tableColumns).eq('numero_pedido', numero.trim()).limit(1);
-    if (!data?.length) return;
+    if (!data?.length) {
+      if (numero.length >= 4 && !notFoundToastedRef.current.has(numero)) {
+        notFoundToastedRef.current.add(numero);
+        showToast(`Pedido ${numero} não encontrado no sistema.`, 'error');
+      }
+      return;
+    }
+    notFoundToastedRef.current.delete(numero);
     const o = rowToOrder((data as any[])[0], 'CLI-001');
     const found: UnifiedPedido = { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
 
