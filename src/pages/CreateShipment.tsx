@@ -590,62 +590,10 @@ const CreateShipment = () => {
     });
   };
 
-  const handleGenerateFormulario = async (orderIds: string[]) => {
-    const orderId = orderIds[0];
-    const order = allCandidates.find((o) => o.id === orderId);
-    if (!order) return;
+  // ─── Form PDF helpers ────────────────────────────────────────────────────────
 
-    const driver = drivers.find((d) => d.id === driverId);
-    const client = clients.find((c) => c.id === order.clientId);
-
-    const repId = String(order.representativeId || '').trim();
-    const repName = String(order.representativeName || '').trim();
-    const repContact = repContacts[repId] || repContacts[repName];
-
-    let repAddress: any = null;
-    if (repContact?.endereco) {
-      try { repAddress = JSON.parse(repContact.endereco); } catch { repAddress = null; }
-    }
-
-    const driverName = driver?.name || '-';
-    const driverCpf = driver?.cpf || '-';
-    const driverPhone = driver?.phone || '-';
-    const driverPlate = driver?.plate || '-';
-    const representanteName = repContact?.nome || order.representativeName || '-';
-    const representantePhone = repContact?.telefone || order.representativePhone || '-';
-
-    const numeroPedido = orderIds.join(', ') || '-';
-    const nfNumber = orderIds.map(id => invoiceNumbers[id] || '').filter(Boolean).join(', ');
-
-    const cidadeUfRaw = (order.clientCity && order.clientUF)
-      ? `${order.clientCity} - ${order.clientUF}`
-      : repAddress
-        ? `${repAddress.city || ''} - ${repAddress.state || ''}`
-        : client
-          ? `${client.address.city || ''} - ${client.address.state || ''}`
-          : '-';
-
-    const enderecoRaw = order.clientEndereco
-      ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}${order.clientCep ? ' - CEP: ' + order.clientCep : ''}`
-      : repAddress
-        ? `${repAddress.street || ''}, ${repAddress.number || ''}${repAddress.neighborhood ? ' - ' + repAddress.neighborhood : ''}`
-        : client
-          ? `${client.address.street || ''}, ${client.address.number || ''}${client.address.neighborhood ? ' - ' + client.address.neighborhood : ''}`
-          : '-';
-
-    const empresaLabel = order.clientCode
-      ? `${order.clientCode} - ${order.clientName || client?.name || '-'}`
-      : (order.clientName || client?.name || '-');
-    const cnpj = client?.cpfCnpj || '-';
-    const valorPedido = order.totalPedidoVenda != null
-      ? `R$ ${order.totalPedidoVenda.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`
-      : '-';
-
-    const kits = qtdKits[orderId] || '0';
-    const pallets = qtdPallets[orderId] || '0';
-    const volumes = qtdVolumes[orderId] || '0';
-
-    const logoBase64 = await fetch('/logo-nova-tagline.png')
+  const fetchLogoBase64 = async (): Promise<string> =>
+    fetch('/logo-nova-tagline.png')
       .then(r => r.blob())
       .then(b => new Promise<string>((res, rej) => {
         const reader = new FileReader();
@@ -655,22 +603,11 @@ const CreateShipment = () => {
       }))
       .catch(() => '');
 
-    const logoTag = logoBase64
-      ? `<img src="${logoBase64}" />`
-      : `<span style="font-weight:900;font-size:20px;letter-spacing:2px;">CONCREM</span>`;
-
-    const dateStr = fmtDate(new Date().toISOString());
-    const previsaoDate = shipmentDate ? fmtDate(shipmentDate) : (order.previsaoCarregamento ? fmtDate(order.previsaoCarregamento) : dateStr);
-    const realizacaoDate = realizationDate ? fmtDate(realizationDate) : '';
-
-    const formHtml = `
-<style>
+  const getFormStyle = () => `
   @page { size: A4 portrait; margin: 12mm 14mm; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; background: #fff; }
-  .page { width: 100%; }
-
-  /* HEADER */
+  .page-form { width: 100%; }
   table.hdr { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
   table.hdr td { vertical-align: middle; border: 1px solid #000; }
   .hdr-logo { width: 120px; padding: 4px 8px; text-align: center; }
@@ -683,71 +620,97 @@ const CreateShipment = () => {
   .hdr-right table td { border: 1px solid #000; padding: 2px 4px; font-size: 8pt; text-align: center; vertical-align: middle; }
   .hdr-right .lbl { font-weight: 700; font-size: 7.5pt; }
   .hdr-right .val { font-weight: 400; font-size: 8.5pt; }
-
-  /* MANDATORY */
   .mandatory { text-align: center; font-weight: 900; font-size: 13pt; color: #cc0000; padding: 5px 0 6px; }
-
-  /* SECTION TABLES */
   table.sec { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 0; border-bottom: none; }
-  table.sec:last-of-type { border-bottom: 1px solid #000; }
   table.sec td { padding: 0 5px; font-size: 9pt; border: 1px solid #000; vertical-align: middle; height: 20px; }
   td.sec-hdr { font-weight: 900; font-size: 9pt; text-transform: uppercase; background: #fff; padding: 2px 5px; height: auto; }
   .lbl { font-weight: 400; }
   .val { font-weight: 700; }
-
-  /* QTY */
   table.qty { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
   table.qty td { padding: 0 5px; height: 22px; border: 1px solid #000; font-size: 9pt; vertical-align: middle; text-align: center; font-weight: 700; }
-
-  /* CONDITIONS */
   table.cond { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
   table.cond td { padding: 3px 5px; font-size: 9pt; border: 1px solid #000; vertical-align: middle; }
   .cond-header { font-weight: 900; text-transform: uppercase; text-align: center; }
-  .cond-row { display: flex; justify-content: space-between; align-items: center; }
-  .cond-text { flex: 1; }
-  .cond-opts { white-space: nowrap; }
   .cond-notice { font-weight: 900; text-align: center; padding: 3px 5px; font-size: 8.5pt; }
-
-  /* OBS */
   table.obs { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
   table.obs td { padding: 3px 5px; font-size: 9pt; }
   .obs-title { font-weight: 900; text-transform: uppercase; text-align: center; }
   .obs-box { height: 55px; }
-
-  /* DECLARATION */
   table.decl { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
   table.decl td { padding: 4px 6px; font-size: 8pt; line-height: 1.5; text-align: justify; }
-
-  /* SIGNATURES */
   .sigs { display: flex; justify-content: space-around; padding: 16px 40px 6px; }
   .sig { text-align: center; width: 38%; }
   .sig .line { border-top: 1px solid #000; padding-top: 3px; font-size: 9pt; margin-top: 22px; }
-
-  /* FOOTER */
   table.ftr { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; }
   table.ftr td { padding: 4px 6px; font-size: 8pt; line-height: 1.7; }
   .ftr-contact { text-align: center; margin-top: 5px; }
+  @media print {
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page-form { page-break-after: always; }
+    .page-form:last-child { page-break-after: auto; }
+  }`;
 
-  @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-</style>
+  // Builds body HTML for one group of orders (no <style>, no <html> wrapper)
+  const buildFormBodyHtml = (orderIds: string[], logoBase64: string): string => {
+    const orderId = orderIds[0];
+    const order = allCandidates.find((o) => o.id === orderId);
+    if (!order) return '';
 
-<div class="page">
+    const driver = drivers.find((d) => d.id === driverId);
+    const client = clients.find((c) => c.id === order.clientId);
+    const repId = String(order.representativeId || '').trim();
+    const repName = String(order.representativeName || '').trim();
+    const repContact = repContacts[repId] || repContacts[repName];
+    let repAddress: any = null;
+    if (repContact?.endereco) {
+      try { repAddress = JSON.parse(repContact.endereco); } catch { repAddress = null; }
+    }
 
-  <!-- HEADER -->
+    const driverName = driver?.name || '-';
+    const driverCpf = driver?.cpf || '-';
+    const driverPhone = driver?.phone || '-';
+    const driverPlate = driver?.plate || '-';
+    const representanteName = repContact?.nome || order.representativeName || '-';
+    const representantePhone = repContact?.telefone || order.representativePhone || '-';
+    const numeroPedido = orderIds.join(', ') || '-';
+    const nfNumber = orderIds.map(id => invoiceNumbers[id] || '').filter(Boolean).join(', ');
+
+    const cidadeUfRaw = (order.clientCity && order.clientUF)
+      ? `${order.clientCity} - ${order.clientUF}`
+      : repAddress ? `${repAddress.city || ''} - ${repAddress.state || ''}`
+      : client ? `${client.address.city || ''} - ${client.address.state || ''}` : '-';
+
+    const enderecoRaw = order.clientEndereco
+      ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}${order.clientCep ? ' - CEP: ' + order.clientCep : ''}`
+      : repAddress ? `${repAddress.street || ''}, ${repAddress.number || ''}${repAddress.neighborhood ? ' - ' + repAddress.neighborhood : ''}`
+      : client ? `${client.address.street || ''}, ${client.address.number || ''}${client.address.neighborhood ? ' - ' + client.address.neighborhood : ''}` : '-';
+
+    const empresaLabel = order.clientCode
+      ? `${order.clientCode} - ${order.clientName || client?.name || '-'}`
+      : (order.clientName || client?.name || '-');
+    const cnpj = client?.cpfCnpj || '-';
+
+    const kits = String(orderIds.reduce((s, id) => s + (Number(qtdKits[id]) || 0), 0));
+    const pallets = String(orderIds.reduce((s, id) => s + (Number(qtdPallets[id]) || 0), 0));
+    const volumes = String(orderIds.reduce((s, id) => s + (Number(qtdVolumes[id]) || 0), 0));
+
+    const logoTag = logoBase64
+      ? `<img src="${logoBase64}" />`
+      : `<span style="font-weight:900;font-size:20px;letter-spacing:2px;">CONCREM</span>`;
+
+    const dateStr = fmtDate(new Date().toISOString());
+    const previsaoDate = shipmentDate ? fmtDate(shipmentDate) : (order.previsaoCarregamento ? fmtDate(order.previsaoCarregamento) : dateStr);
+    const realizacaoDate = realizationDate ? fmtDate(realizationDate) : '';
+
+    return `<div class="page-form">
   <table class="hdr">
     <tr>
       <td class="hdr-logo" rowspan="2">${logoTag}</td>
-      <td class="hdr-center" style="border-bottom:1px solid #000;">
-        <div class="anexo">ANEXO DA QUALIDADE</div>
-      </td>
+      <td class="hdr-center" style="border-bottom:1px solid #000;"><div class="anexo">ANEXO DA QUALIDADE</div></td>
       <td class="hdr-right" rowspan="2" style="border:none;padding:0;">
         <table style="width:100%;height:100%;border-collapse:collapse;">
-          <tr>
-            <td colspan="2" class="lbl" style="border:1px solid #000;">Código</td>
-          </tr>
-          <tr>
-            <td colspan="2" class="val" style="border:1px solid #000;">AQ052</td>
-          </tr>
+          <tr><td colspan="2" class="lbl" style="border:1px solid #000;">Código</td></tr>
+          <tr><td colspan="2" class="val" style="border:1px solid #000;">AQ052</td></tr>
           <tr>
             <td class="lbl" style="border:1px solid #000;">Revisão</td>
             <td class="lbl" style="border:1px solid #000;">Data</td>
@@ -759,17 +722,11 @@ const CreateShipment = () => {
         </table>
       </td>
     </tr>
-    <tr>
-      <td class="hdr-center">
-        <div class="titulo">FORMULÁRIO DE RECEBIMENTO DE PRODUTOS<br>CONCREM INDUSTRIAL LTDA</div>
-      </td>
-    </tr>
+    <tr><td class="hdr-center"><div class="titulo">FORMULÁRIO DE RECEBIMENTO DE PRODUTOS<br>CONCREM INDUSTRIAL LTDA</div></td></tr>
   </table>
 
-  <!-- MANDATORY -->
   <div class="mandatory">Preenchimento obrigatório!</div>
 
-  <!-- DADOS DO MOTORISTA -->
   <table class="sec" style="border-bottom:none;">
     <tr><td colspan="2" class="sec-hdr">DADOS DO MOTORISTA</td></tr>
     <tr>
@@ -786,56 +743,44 @@ const CreateShipment = () => {
     </tr>
   </table>
 
-  <!-- DADOS DA ENTREGA -->
   <table class="sec" style="border-bottom:none;">
     <tr><td colspan="2" class="sec-hdr">DADOS DA ENTREGA</td></tr>
     <tr>
       <td width="40%" style="height:20px;"><span class="lbl">Nº do Pedido: </span><span class="val">${numeroPedido}</span></td>
       <td><span class="lbl">Nº da nota fiscal: </span><span class="val">${nfNumber}</span></td>
     </tr>
-    <tr>
-      <td colspan="2" style="height:20px;"><span class="lbl">Endereço de entrega: </span><span class="val">${enderecoRaw}</span></td>
-    </tr>
-    <tr>
-      <td colspan="2" style="height:20px;"><span class="lbl">Cidade/UF: </span><span class="val">${cidadeUfRaw}</span></td>
-    </tr>
+    <tr><td colspan="2" style="height:20px;"><span class="lbl">Endereço de entrega: </span><span class="val">${enderecoRaw}</span></td></tr>
+    <tr><td colspan="2" style="height:20px;"><span class="lbl">Cidade/UF: </span><span class="val">${cidadeUfRaw}</span></td></tr>
   </table>
 
-  <!-- DADOS DO CLIENTE -->
   <table class="sec" style="border-bottom:none;">
     <tr><td colspan="3" class="sec-hdr">DADOS DO CLIENTE</td></tr>
     <tr>
       <td colspan="2" style="height:20px;"><span class="lbl">Empresa: </span><span class="val">${empresaLabel}</span></td>
       <td><span class="lbl">CNPJ: </span><span class="val">${cnpj}</span></td>
     </tr>
-    <tr>
-      <td colspan="3" style="height:20px;"><span class="lbl">Responsável pelo Recebimento: </span></td>
-    </tr>
+    <tr><td colspan="3" style="height:20px;"><span class="lbl">Responsável pelo Recebimento: </span></td></tr>
     <tr>
       <td style="height:20px;"><span class="lbl">Cargo: </span></td>
       <td><span class="lbl">CPF: </span></td>
       <td><span class="lbl">Cel: </span></td>
     </tr>
     <tr>
-      <td colspan="2" style="height:20px;"><span class="lbl">Data do recebimento: </span></td>
-      <td style="height:20px;"><span class="lbl">Data da Realização do Carregamento: </span><span class="val">${realizacaoDate}</span></td>
+      <td style="height:20px;"><span class="lbl">Data do recebimento: </span></td>
+      <td colspan="2" style="height:20px;text-align:center;"><span class="lbl">Data da Realização do Carregamento: </span><span class="val">${realizacaoDate}</span></td>
     </tr>
   </table>
 
-  <!-- KITS / PALLETS / VOLUMES -->
   <table class="qty">
     <tr>
-      <td style="height:22px;text-align:center;font-weight:700;">KITS: <span style="font-weight:400;">${kits}</span></td>
-      <td style="height:22px;text-align:center;font-weight:700;">PALLETS: <span style="font-weight:400;">${pallets}</span></td>
-      <td style="height:22px;text-align:center;font-weight:700;">VOLUMES: <span style="font-weight:400;">${volumes}</span></td>
+      <td>KITS: <span style="font-weight:400;">${kits}</span></td>
+      <td>PALLETS: <span style="font-weight:400;">${pallets}</span></td>
+      <td>VOLUMES: <span style="font-weight:400;">${volumes}</span></td>
     </tr>
   </table>
 
-  <!-- CONDITIONS -->
   <table class="cond">
-    <tr>
-      <td colspan="2" class="cond-header" style="border-bottom:1px solid #000;">CONDIÇÕES DE RECEBIMENTO DOS PRODUTOS</td>
-    </tr>
+    <tr><td colspan="2" class="cond-header" style="border-bottom:1px solid #000;">CONDIÇÕES DE RECEBIMENTO DOS PRODUTOS</td></tr>
     <tr>
       <td style="height:20px;">1. Os produtos recebidos estão de acordo com o pedido?</td>
       <td style="width:120px;text-align:right;white-space:nowrap;">( &nbsp;) Sim &nbsp; ( &nbsp;) Não</td>
@@ -856,12 +801,9 @@ const CreateShipment = () => {
       <td style="height:20px;">5. Todos os produtos recebidos foram conferidos corretamente na hora do desembarque?</td>
       <td style="text-align:right;white-space:nowrap;">( &nbsp;) Sim &nbsp; ( &nbsp;) Não</td>
     </tr>
-    <tr>
-      <td colspan="2" class="cond-notice">O não preenchimento deste formulário atesta o recebimento dos itens conforme o pedido/nota fiscal.</td>
-    </tr>
+    <tr><td colspan="2" class="cond-notice">O não preenchimento deste formulário atesta o recebimento dos itens conforme o pedido/nota fiscal.</td></tr>
   </table>
 
-  <!-- OBS -->
   <table class="obs">
     <tr><td>
       <div class="obs-title">OBSERVAÇÕES DO CLIENTE</div>
@@ -869,20 +811,17 @@ const CreateShipment = () => {
     </td></tr>
   </table>
 
-  <!-- DECLARATION -->
   <table class="decl">
     <tr><td>
       EU, motorista citado a cima, declaro estar ciente de que OS PRODUTOS DA EMPRESA CONCREM INDUSTRIAL LTDA, estão de acordo com o pedido, todos embalados e etiquetados com suas devidas orientações e em perfeitas condições, estou ciente e orientado de como devo proceder no desembarque dos mesmos, para evitar danos aos produtos, sendo assim, comprometo-me pela entrega até o endereço a mim destinado, me responsabilizando em avisar ao setor responsável no ato da descarga qualquer tipo de avaria.
     </td></tr>
   </table>
 
-  <!-- SIGNATURES -->
   <div class="sigs">
     <div class="sig"><div class="line">Motorista</div></div>
     <div class="sig"><div class="line">Responsável pelo Recebimento</div></div>
   </div>
 
-  <!-- FOOTER -->
   <table class="ftr">
     <tr><td>
       <div><strong>ATENÇÃO CLIENTE,</strong> Em caso de dúvidas, sugestões ou reclamações, entrar em contato imediatamente com a Concrem.</div>
@@ -894,39 +833,40 @@ const CreateShipment = () => {
       </div>
     </td></tr>
   </table>
-
 </div>`;
+  };
 
-    const fullHtml = `<!DOCTYPE html>
-<html lang="pt-BR">
-<head>
-  <meta charset="UTF-8" />
-  <title>Formulário de Recebimento — Pedido ${numeroPedido}</title>
-  ${formHtml.match(/<style[\s\S]*?<\/style>/)?.[0] ?? ''}
-</head>
-<body>
-  ${formHtml.replace(/<style[\s\S]*?<\/style>/, '')}
-  <script>window.onload = () => { window.focus(); window.print(); };</script>
-</body>
-</html>`;
-
+  // Opens a single print window with one or more form bodies (avoids popup-blocker issues)
+  const openFormsWindow = (bodies: string[]): boolean => {
+    const fullHtml = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"/><title></title><style>${getFormStyle()}</style></head><body>${bodies.join('')}<script>window.onload=()=>{window.focus();window.print();};<\/script></body></html>`;
     const w = window.open('', '_blank', 'width=900,height=700');
-    if (!w) {
-      showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error');
-      return;
-    }
+    if (!w) return false;
     w.document.open();
     w.document.write(fullHtml);
     w.document.close();
+    return true;
+  };
 
-    // Formulário gerado → pedido Em Rota (somente se NF e boleto também estiverem anexados; nunca para LEROY;
-    // e somente se TODOS os pedidos do embarque estiverem com status 'faturado')
+  const handleGenerateFormulario = async (orderIds: string[]) => {
+    const orderId = orderIds[0];
+    const order = allCandidates.find((o) => o.id === orderId);
+    if (!order) return;
+
+    const logoBase64 = await fetchLogoBase64();
+    const body = buildFormBodyHtml(orderIds, logoBase64);
+    if (!body) return;
+
+    if (!openFormsWindow([body])) {
+      showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error');
+      return;
+    }
+
+    // Formulário gerado → pedido Em Rota
     const attachs = orderIds.reduce((acc, id) => {
       const a = orderAttachments[id] || {};
       return { nf: acc.nf || a.nf, boletos: [...(acc.boletos || []), ...(a.boletos || [])] };
     }, {} as any);
-    const orderForStatus = order;
-    if (attachs.nf?.url && (attachs.boletos?.length ?? 0) > 0 && !isLeroy(orderForStatus?.clientName || orderForStatus?.clientCode, orderForStatus?.representativeName)) {
+    if (attachs.nf?.url && (attachs.boletos?.length ?? 0) > 0 && !isLeroy(order?.clientName || order?.clientCode, order?.representativeName)) {
       const shipmentStatuses = await listPedidosStatusByPedidoIds(selectedOrderIds);
       const allFaturado = selectedOrderIds.every(oid => {
         const s = shipmentStatuses.find(r => r.pedido_id === oid);
@@ -934,33 +874,30 @@ const CreateShipment = () => {
       });
       if (allFaturado) {
         for (const oid of orderIds) {
-          void updatePedidoStatus({
-            pedidoId: oid,
-            numeroPedido: oid,
-            statusNovo: 'em_entrega',
-            alteradoPor: user?.username || null,
-            observacao: 'Formulário de entrega gerado',
-          });
+          void updatePedidoStatus({ pedidoId: oid, numeroPedido: oid, statusNovo: 'em_entrega', alteradoPor: user?.username || null, observacao: 'Formulário de entrega gerado' });
         }
       }
     }
   };
 
-  // Agrupa os pedidos selecionados por cliente + endereço e gera um formulário por grupo
+  // Groups selected orders by client+address and opens ONE window with all forms
   const handleGenerateMultiFormularios = async () => {
     if (!selectedOrderIds.length) return;
     const groups = new Map<string, string[]>();
     for (const id of selectedOrderIds) {
       const o = allCandidates.find((c) => c.id === id);
-      if (!o) continue;
+      if (!o) { groups.set(id, [id]); continue; }
       const addr = [o.clientEndereco || '', o.clientBairro || '', o.clientCep || '', o.clientCity || '', o.clientUF || '']
         .join('|').toLowerCase().trim();
       const key = `${o.clientId || o.clientCode || ''}||${addr}`;
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(id);
     }
-    for (const groupIds of groups.values()) {
-      await handleGenerateFormulario(groupIds);
+    const logoBase64 = await fetchLogoBase64();
+    const bodies = [...groups.values()].map(ids => buildFormBodyHtml(ids, logoBase64)).filter(Boolean);
+    if (!bodies.length) return;
+    if (!openFormsWindow(bodies)) {
+      showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error');
     }
   };
 
