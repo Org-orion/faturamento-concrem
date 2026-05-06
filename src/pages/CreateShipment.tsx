@@ -590,7 +590,8 @@ const CreateShipment = () => {
     });
   };
 
-  const handleGenerateFormulario = async (orderId: string) => {
+  const handleGenerateFormulario = async (orderIds: string[]) => {
+    const orderId = orderIds[0];
     const order = allCandidates.find((o) => o.id === orderId);
     if (!order) return;
 
@@ -613,8 +614,8 @@ const CreateShipment = () => {
     const representanteName = repContact?.nome || order.representativeName || '-';
     const representantePhone = repContact?.telefone || order.representativePhone || '-';
 
-    const numeroPedido = order.id || '-';
-    const nfNumber = invoiceNumbers[orderId] || '';
+    const numeroPedido = orderIds.join(', ') || '-';
+    const nfNumber = orderIds.map(id => invoiceNumbers[id] || '').filter(Boolean).join(', ');
 
     const cidadeUfRaw = (order.clientCity && order.clientUF)
       ? `${order.clientCity} - ${order.clientUF}`
@@ -659,9 +660,8 @@ const CreateShipment = () => {
       : `<span style="font-weight:900;font-size:20px;letter-spacing:2px;">CONCREM</span>`;
 
     const dateStr = fmtDate(new Date().toISOString());
-    const previsaoDate = shipmentDate
-      ? fmtDate(shipmentDate)
-      : (order.previsaoCarregamento ? fmtDate(order.previsaoCarregamento) : dateStr);
+    const previsaoDate = shipmentDate ? fmtDate(shipmentDate) : (order.previsaoCarregamento ? fmtDate(order.previsaoCarregamento) : dateStr);
+    const realizacaoDate = realizationDate ? fmtDate(realizationDate) : '';
 
     const formHtml = `
 <style>
@@ -678,9 +678,11 @@ const CreateShipment = () => {
   .hdr-center { text-align: center; padding: 4px 10px; }
   .hdr-center .anexo { font-weight: 900; font-size: 10pt; text-transform: uppercase; }
   .hdr-center .titulo { font-weight: 900; font-size: 10pt; text-transform: uppercase; margin-top: 3px; }
-  .hdr-right { width: 90px; text-align: center; padding: 4px 6px; vertical-align: middle; }
-  .hdr-right .lbl { font-weight: 700; font-size: 7.5pt; display: block; }
-  .hdr-right .val { font-weight: 900; font-size: 10pt; display: block; margin-top: 2px; }
+  .hdr-right { width: 90px; text-align: center; padding: 0; vertical-align: top; }
+  .hdr-right table { width: 100%; border-collapse: collapse; height: 100%; }
+  .hdr-right table td { border: 1px solid #000; padding: 2px 4px; font-size: 8pt; text-align: center; vertical-align: middle; }
+  .hdr-right .lbl { font-weight: 700; font-size: 7.5pt; }
+  .hdr-right .val { font-weight: 400; font-size: 8.5pt; }
 
   /* MANDATORY */
   .mandatory { text-align: center; font-weight: 900; font-size: 13pt; color: #cc0000; padding: 5px 0 6px; }
@@ -738,9 +740,23 @@ const CreateShipment = () => {
       <td class="hdr-center" style="border-bottom:1px solid #000;">
         <div class="anexo">ANEXO DA QUALIDADE</div>
       </td>
-      <td class="hdr-right" rowspan="2">
-        <span class="lbl">Data</span>
-        <span class="val">${previsaoDate}</span>
+      <td class="hdr-right" rowspan="2" style="border:none;padding:0;">
+        <table style="width:100%;height:100%;border-collapse:collapse;">
+          <tr>
+            <td colspan="2" class="lbl" style="border:1px solid #000;">Código</td>
+          </tr>
+          <tr>
+            <td colspan="2" class="val" style="border:1px solid #000;">AQ052</td>
+          </tr>
+          <tr>
+            <td class="lbl" style="border:1px solid #000;">Revisão</td>
+            <td class="lbl" style="border:1px solid #000;">Data</td>
+          </tr>
+          <tr>
+            <td class="val" style="border:1px solid #000;">01</td>
+            <td class="val" style="border:1px solid #000;">01/05/2026</td>
+          </tr>
+        </table>
       </td>
     </tr>
     <tr>
@@ -801,7 +817,8 @@ const CreateShipment = () => {
       <td><span class="lbl">Cel: </span></td>
     </tr>
     <tr>
-      <td colspan="3" style="height:20px;"><span class="lbl">Data do recebimento: </span></td>
+      <td colspan="2" style="height:20px;"><span class="lbl">Data do recebimento: </span></td>
+      <td style="height:20px;"><span class="lbl">Data da Realização do Carregamento: </span><span class="val">${realizacaoDate}</span></td>
     </tr>
   </table>
 
@@ -904,8 +921,11 @@ const CreateShipment = () => {
 
     // Formulário gerado → pedido Em Rota (somente se NF e boleto também estiverem anexados; nunca para LEROY;
     // e somente se TODOS os pedidos do embarque estiverem com status 'faturado')
-    const attachs = orderAttachments[orderId] || {};
-    const orderForStatus = allCandidates.find((o) => o.id === orderId);
+    const attachs = orderIds.reduce((acc, id) => {
+      const a = orderAttachments[id] || {};
+      return { nf: acc.nf || a.nf, boletos: [...(acc.boletos || []), ...(a.boletos || [])] };
+    }, {} as any);
+    const orderForStatus = order;
     if (attachs.nf?.url && (attachs.boletos?.length ?? 0) > 0 && !isLeroy(orderForStatus?.clientName || orderForStatus?.clientCode, orderForStatus?.representativeName)) {
       const shipmentStatuses = await listPedidosStatusByPedidoIds(selectedOrderIds);
       const allFaturado = selectedOrderIds.every(oid => {
@@ -913,14 +933,34 @@ const CreateShipment = () => {
         return s?.status_atual === 'faturado';
       });
       if (allFaturado) {
-        void updatePedidoStatus({
-          pedidoId: orderId,
-          numeroPedido: orderId,
-          statusNovo: 'em_entrega',
-          alteradoPor: user?.username || null,
-          observacao: 'Formulário de entrega gerado',
-        });
+        for (const oid of orderIds) {
+          void updatePedidoStatus({
+            pedidoId: oid,
+            numeroPedido: oid,
+            statusNovo: 'em_entrega',
+            alteradoPor: user?.username || null,
+            observacao: 'Formulário de entrega gerado',
+          });
+        }
       }
+    }
+  };
+
+  // Agrupa os pedidos selecionados por cliente + endereço e gera um formulário por grupo
+  const handleGenerateMultiFormularios = async () => {
+    if (!selectedOrderIds.length) return;
+    const groups = new Map<string, string[]>();
+    for (const id of selectedOrderIds) {
+      const o = allCandidates.find((c) => c.id === id);
+      if (!o) continue;
+      const addr = [o.clientEndereco || '', o.clientBairro || '', o.clientCep || '', o.clientCity || '', o.clientUF || '']
+        .join('|').toLowerCase().trim();
+      const key = `${o.clientId || o.clientCode || ''}||${addr}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(id);
+    }
+    for (const groupIds of groups.values()) {
+      await handleGenerateFormulario(groupIds);
     }
   };
 
@@ -1785,7 +1825,17 @@ const CreateShipment = () => {
             {selectedOrderIds.length > 0 && (
               <div className="space-y-2">
                 <div className="h-px bg-border my-2" />
-                <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em] px-1 mb-3">Pedidos Selecionados ({selectedOrderIds.length})</h4>
+                <div className="flex items-center justify-between px-1 mb-3">
+                  <h4 className="text-[10px] font-black text-primary uppercase tracking-[0.2em]">Pedidos Selecionados ({selectedOrderIds.length})</h4>
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerateMultiFormularios()}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-primary/10 border border-primary/20 hover:bg-primary/20 transition-colors text-[10px] font-bold text-primary"
+                  >
+                    <FileText className="h-3 w-3" />
+                    Gerar Formulários de Entrega
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 gap-2">
                   {selectedOrderIds.map(id => {
                     const order = allCandidates.find(o => o.id === id);
@@ -2106,7 +2156,7 @@ const CreateShipment = () => {
                                     <DropdownMenuContent align="end">
                                       <DropdownMenuLabel>Ações</DropdownMenuLabel>
                                       <DropdownMenuSeparator />
-                                      <DropdownMenuItem className="cursor-pointer" onClick={() => handleGenerateFormulario(id)}>
+                                      <DropdownMenuItem className="cursor-pointer" onClick={() => void handleGenerateFormulario([id])}>
                                         <FileText className="mr-2 h-4 w-4" /> Gerar formulário
                                       </DropdownMenuItem>
                                       <DropdownMenuSeparator />
