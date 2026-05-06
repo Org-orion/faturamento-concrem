@@ -91,8 +91,9 @@ function fmtMesLabel(mesStr: string): string {
 function resolveValor(erp: ErpRow | undefined): number {
   if (!erp) return 0;
   const v = erp.total_pedido_venda ?? 0;
+  const base = v > 0 ? v : (erp.total_produtos ?? 0);
   const f = erp.frete ?? 0;
-  const total = v + f;
+  const total = base + f;
   return isFinite(total) && total > 0 ? total : 0;
 }
 
