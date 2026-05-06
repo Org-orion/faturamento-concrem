@@ -83,6 +83,8 @@ const CreateShipment = () => {
   };
   const [sendModalOpen, setSendModalOpen] = useState(false);
   const [sendModalItems, setSendModalItems] = useState<RepSendItem[]>([]);
+  const [formulariosModalOpen, setFormulariosModalOpen] = useState(false);
+  const [formulariosSelected, setFormulariosSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
   const [notificacoes, setNotificacoes] = useState<RelatorioEntregaNotificacao[]>([]);
 
@@ -899,6 +901,34 @@ const CreateShipment = () => {
     if (!openFormsWindow(bodies)) {
       showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error');
     }
+  };
+
+  const openFormulariosModal = () => {
+    setFormulariosSelected(new Set(selectedOrderIds));
+    setFormulariosModalOpen(true);
+  };
+
+  const handlePrintFormulariosFromModal = async () => {
+    if (!formulariosSelected.size) return;
+    const ids = [...formulariosSelected];
+    const groups = new Map<string, string[]>();
+    for (const id of ids) {
+      const o = allCandidates.find((c) => c.id === id);
+      if (!o) { groups.set(id, [id]); continue; }
+      const addr = [o.clientEndereco || '', o.clientBairro || '', o.clientCep || '', o.clientCity || '', o.clientUF || '']
+        .join('|').toLowerCase().trim();
+      const key = `${o.clientId || o.clientCode || ''}||${addr}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(id);
+    }
+    const logoBase64 = await fetchLogoBase64();
+    const bodies = [...groups.values()].map(gids => buildFormBodyHtml(gids, logoBase64)).filter(Boolean);
+    if (!bodies.length) return;
+    if (!openFormsWindow(bodies)) {
+      showToast('Pop-up bloqueado. Permita pop-ups para este site.', 'error');
+      return;
+    }
+    setFormulariosModalOpen(false);
   };
 
   // Abre o modal de seleção de representantes para envio
@@ -2150,6 +2180,13 @@ const CreateShipment = () => {
         {/* Ações do Relatório de Entrega */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-border">
           <button
+            onClick={openFormulariosModal}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary/10 text-primary hover:bg-primary/20 transition-colors font-display text-sm font-bold uppercase tracking-tight"
+          >
+            <FileText className="h-4 w-4" />
+            Formulários de Entrega
+          </button>
+          <button
             onClick={openSendModal}
             className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors font-display text-sm font-bold uppercase tracking-tight"
           >
@@ -2343,6 +2380,93 @@ const CreateShipment = () => {
           value={conditions}
           onApply={setConditions}
         />
+
+        {/* Modal de Formulários de Entrega */}
+        {formulariosModalOpen && (() => {
+          const orders = selectedOrderIds
+            .map(id => allCandidates.find(o => o.id === id))
+            .filter(Boolean) as Order[];
+          const groups = new Map<string, string[]>();
+          for (const o of orders) {
+            if (!formulariosSelected.has(o.id)) continue;
+            const addr = [o.clientEndereco || '', o.clientBairro || '', o.clientCep || '', o.clientCity || '', o.clientUF || ''].join('|').toLowerCase().trim();
+            const key = `${o.clientId || o.clientCode || ''}||${addr}`;
+            if (!groups.has(key)) groups.set(key, []);
+            groups.get(key)!.push(o.id);
+          }
+          const groupCount = groups.size;
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+              <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl mx-4 flex flex-col max-h-[90vh]">
+                <div className="flex items-center justify-between px-6 py-4 border-b border-border">
+                  <div>
+                    <h2 className="text-base font-bold font-display text-foreground">Formulários de Entrega</h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">Selecione os pedidos e clique em Imprimir.</p>
+                  </div>
+                  <button onClick={() => setFormulariosModalOpen(false)} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground">✕</button>
+                </div>
+                <div className="overflow-y-auto flex-1 px-6 py-4 space-y-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <button
+                      className="text-xs font-semibold text-primary hover:underline"
+                      onClick={() => setFormulariosSelected(new Set(selectedOrderIds))}
+                    >Selecionar todos</button>
+                    <button
+                      className="text-xs font-semibold text-muted-foreground hover:underline"
+                      onClick={() => setFormulariosSelected(new Set())}
+                    >Limpar seleção</button>
+                  </div>
+                  <div className="grid grid-cols-[auto_1fr_1fr_1fr_120px] gap-x-3 text-[10px] font-bold text-muted-foreground uppercase tracking-wider px-2 pb-1 border-b border-border">
+                    <span />
+                    <span>Nº Pedido</span>
+                    <span>Cliente</span>
+                    <span>Endereço</span>
+                    <span>Nº Nota Fiscal</span>
+                  </div>
+                  {orders.map(o => {
+                    const addr = o.clientEndereco
+                      ? `${o.clientEndereco}${o.clientBairro ? ', ' + o.clientBairro : ''} — ${o.clientCity || ''}/${o.clientUF || ''}`
+                      : `${o.clientCity || ''}/${o.clientUF || ''}`;
+                    const nf = invoiceNumbers[o.id] || '—';
+                    const checked = formulariosSelected.has(o.id);
+                    return (
+                      <label key={o.id} className={`grid grid-cols-[auto_1fr_1fr_1fr_120px] gap-x-3 items-center px-2 py-2 rounded-lg cursor-pointer transition-colors ${checked ? 'bg-primary/5 border border-primary/20' : 'hover:bg-muted/40 border border-transparent'}`}>
+                        <input type="checkbox" checked={checked} onChange={e => {
+                          setFormulariosSelected(prev => {
+                            const next = new Set(prev);
+                            e.target.checked ? next.add(o.id) : next.delete(o.id);
+                            return next;
+                          });
+                        }} className="h-4 w-4 rounded accent-primary" />
+                        <span className="text-sm font-mono font-semibold text-foreground">{o.id}</span>
+                        <span className="text-xs text-foreground truncate" title={o.clientName || o.clientCode}>{o.clientName || o.clientCode || '—'}</span>
+                        <span className="text-xs text-muted-foreground truncate" title={addr}>{addr}</span>
+                        <span className="text-xs font-mono text-foreground">{nf}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+                <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+                  <p className="text-xs text-muted-foreground">
+                    {formulariosSelected.size} pedido(s) selecionado(s) →{' '}
+                    <span className="font-bold text-foreground">{groupCount} formulário(s)</span>
+                  </p>
+                  <div className="flex gap-3">
+                    <button onClick={() => setFormulariosModalOpen(false)} className="px-4 py-2 rounded-lg border border-border hover:bg-muted transition-colors text-sm font-semibold">Cancelar</button>
+                    <button
+                      onClick={() => void handlePrintFormulariosFromModal()}
+                      disabled={!formulariosSelected.size}
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-primary-foreground hover:bg-primary/90 transition-colors text-sm font-bold disabled:opacity-50"
+                    >
+                      <FileText className="h-4 w-4" />
+                      Imprimir {groupCount > 0 ? `(${groupCount} formulário${groupCount > 1 ? 's' : ''})` : ''}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Modal de envio WhatsApp por representante */}
         {sendModalOpen && (
