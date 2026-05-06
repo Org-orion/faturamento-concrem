@@ -659,6 +659,9 @@ const CreateShipment = () => {
       : `<span style="font-weight:900;font-size:20px;letter-spacing:2px;">CONCREM</span>`;
 
     const dateStr = fmtDate(new Date().toISOString());
+    const previsaoDate = order.previsaoCarregamento
+      ? fmtDate(order.previsaoCarregamento)
+      : dateStr;
 
     const formHtml = `
 <style>
@@ -675,11 +678,9 @@ const CreateShipment = () => {
   .hdr-center { text-align: center; padding: 4px 10px; }
   .hdr-center .anexo { font-weight: 900; font-size: 10pt; text-transform: uppercase; }
   .hdr-center .titulo { font-weight: 900; font-size: 10pt; text-transform: uppercase; margin-top: 3px; }
-  .hdr-right { width: 90px; text-align: center; padding: 0; vertical-align: top; }
-  .hdr-right table { width: 100%; border-collapse: collapse; height: 100%; }
-  .hdr-right table td { border: 1px solid #000; padding: 2px 4px; font-size: 8pt; text-align: center; vertical-align: middle; }
-  .hdr-right .lbl { font-weight: 700; font-size: 7.5pt; }
-  .hdr-right .val { font-weight: 400; font-size: 8.5pt; }
+  .hdr-right { width: 90px; text-align: center; padding: 4px 6px; vertical-align: middle; }
+  .hdr-right .lbl { font-weight: 700; font-size: 7.5pt; display: block; }
+  .hdr-right .val { font-weight: 900; font-size: 10pt; display: block; margin-top: 2px; }
 
   /* MANDATORY */
   .mandatory { text-align: center; font-weight: 900; font-size: 13pt; color: #cc0000; padding: 5px 0 6px; }
@@ -737,23 +738,9 @@ const CreateShipment = () => {
       <td class="hdr-center" style="border-bottom:1px solid #000;">
         <div class="anexo">ANEXO DA QUALIDADE</div>
       </td>
-      <td class="hdr-right" rowspan="2" style="border:none;padding:0;">
-        <table style="width:100%;height:100%;border-collapse:collapse;">
-          <tr>
-            <td colspan="2" class="lbl" style="border:1px solid #000;">Código</td>
-          </tr>
-          <tr>
-            <td colspan="2" class="val" style="border:1px solid #000;">AQ052</td>
-          </tr>
-          <tr>
-            <td class="lbl" style="border:1px solid #000;">Revisão</td>
-            <td class="lbl" style="border:1px solid #000;">Data</td>
-          </tr>
-          <tr>
-            <td class="val" style="border:1px solid #000;">00</td>
-            <td class="val" style="border:1px solid #000;">04/03/2021</td>
-          </tr>
-        </table>
+      <td class="hdr-right" rowspan="2">
+        <span class="lbl">Data</span>
+        <span class="val">${previsaoDate}</span>
       </td>
     </tr>
     <tr>
