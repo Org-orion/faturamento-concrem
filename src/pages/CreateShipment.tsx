@@ -606,49 +606,59 @@ const CreateShipment = () => {
       .catch(() => '');
 
   const getFormStyle = () => `
-  @page { size: A4 portrait; margin: 12mm 14mm; }
+  @page {
+    size: A4 portrait;
+    margin: 10mm 12mm;
+    @top-left { content: ""; }
+    @top-center { content: ""; }
+    @top-right { content: ""; }
+    @bottom-left { content: ""; }
+    @bottom-center { content: ""; }
+    @bottom-right { content: ""; }
+  }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, Helvetica, sans-serif; font-size: 9pt; color: #000; background: #fff; }
-  .page-form { width: 100%; }
-  table.hdr { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 4px; }
+  html, body { height: 100%; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 10.5pt; color: #000; background: #fff; }
+  .page-form { width: 100%; min-height: 277mm; display: flex; flex-direction: column; }
+  table.hdr { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 5px; }
   table.hdr td { vertical-align: middle; border: 1px solid #000; }
-  .hdr-logo { width: 120px; padding: 4px 8px; text-align: center; }
-  .hdr-logo img { width: 100px; height: auto; display: block; margin: 0 auto; }
-  .hdr-center { text-align: center; padding: 4px 10px; }
-  .hdr-center .anexo { font-weight: 900; font-size: 10pt; text-transform: uppercase; }
-  .hdr-center .titulo { font-weight: 900; font-size: 10pt; text-transform: uppercase; margin-top: 3px; }
-  .hdr-right { width: 90px; text-align: center; padding: 0; vertical-align: top; }
+  .hdr-logo { width: 130px; padding: 6px 10px; text-align: center; }
+  .hdr-logo img { width: 110px; height: auto; display: block; margin: 0 auto; }
+  .hdr-center { text-align: center; padding: 6px 12px; }
+  .hdr-center .anexo { font-weight: 900; font-size: 11pt; text-transform: uppercase; }
+  .hdr-center .titulo { font-weight: 900; font-size: 11pt; text-transform: uppercase; margin-top: 4px; }
+  .hdr-right { width: 95px; text-align: center; padding: 0; vertical-align: top; }
   .hdr-right table { width: 100%; border-collapse: collapse; height: 100%; }
-  .hdr-right table td { border: 1px solid #000; padding: 2px 4px; font-size: 8pt; text-align: center; vertical-align: middle; }
-  .hdr-right .lbl { font-weight: 700; font-size: 7.5pt; }
-  .hdr-right .val { font-weight: 400; font-size: 8.5pt; }
-  .mandatory { text-align: center; font-weight: 900; font-size: 13pt; color: #cc0000; padding: 5px 0 6px; }
+  .hdr-right table td { border: 1px solid #000; padding: 3px 4px; font-size: 9pt; text-align: center; vertical-align: middle; }
+  .hdr-right .lbl { font-weight: 700; font-size: 8pt; }
+  .hdr-right .val { font-weight: 400; font-size: 9pt; }
+  .mandatory { text-align: center; font-weight: 900; font-size: 15pt; color: #cc0000; padding: 7px 0 8px; }
   table.sec { width: 100%; border-collapse: collapse; border: 1px solid #000; margin-bottom: 0; border-bottom: none; }
-  table.sec td { padding: 0 5px; font-size: 9pt; border: 1px solid #000; vertical-align: middle; height: 20px; }
-  td.sec-hdr { font-weight: 900; font-size: 9pt; text-transform: uppercase; background: #fff; padding: 2px 5px; height: auto; }
+  table.sec td { padding: 1px 6px; font-size: 10.5pt; border: 1px solid #000; vertical-align: middle; height: 26px; }
+  td.sec-hdr { font-weight: 900; font-size: 10.5pt; text-transform: uppercase; background: #fff; padding: 3px 6px; height: auto; }
   .lbl { font-weight: 400; }
   .val { font-weight: 700; }
   table.qty { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
-  table.qty td { padding: 0 5px; height: 22px; border: 1px solid #000; font-size: 9pt; vertical-align: middle; text-align: center; font-weight: 700; }
+  table.qty td { padding: 0 6px; height: 28px; border: 1px solid #000; font-size: 10.5pt; vertical-align: middle; text-align: center; font-weight: 700; }
   table.cond { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
-  table.cond td { padding: 3px 5px; font-size: 9pt; border: 1px solid #000; vertical-align: middle; }
-  .cond-header { font-weight: 900; text-transform: uppercase; text-align: center; }
-  .cond-notice { font-weight: 900; text-align: center; padding: 3px 5px; font-size: 8.5pt; }
-  table.obs { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
-  table.obs td { padding: 3px 5px; font-size: 9pt; }
+  table.cond td { padding: 4px 6px; font-size: 10.5pt; border: 1px solid #000; vertical-align: middle; }
+  .cond-header { font-weight: 900; text-transform: uppercase; text-align: center; padding: 4px 6px; }
+  .cond-notice { font-weight: 900; text-align: center; padding: 5px 6px; font-size: 10pt; }
+  table.obs { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; flex: 1; }
+  table.obs td { padding: 4px 6px; font-size: 10.5pt; height: 100%; }
   .obs-title { font-weight: 900; text-transform: uppercase; text-align: center; }
-  .obs-box { height: 55px; }
+  .obs-box { min-height: 32mm; }
   table.decl { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; margin-bottom: 0; }
-  table.decl td { padding: 4px 6px; font-size: 8pt; line-height: 1.5; text-align: justify; }
-  .sigs { display: flex; justify-content: space-around; padding: 16px 40px 6px; }
+  table.decl td { padding: 6px 8px; font-size: 9.5pt; line-height: 1.6; text-align: justify; }
+  .sigs { display: flex; justify-content: space-around; padding: 20px 50px 8px; }
   .sig { text-align: center; width: 38%; }
-  .sig .line { border-top: 1px solid #000; padding-top: 3px; font-size: 9pt; margin-top: 22px; }
+  .sig .line { border-top: 1px solid #000; padding-top: 4px; font-size: 10pt; margin-top: 28px; }
   table.ftr { width: 100%; border-collapse: collapse; border: 1px solid #000; border-top: none; }
-  table.ftr td { padding: 4px 6px; font-size: 8pt; line-height: 1.7; }
-  .ftr-contact { text-align: center; margin-top: 5px; }
+  table.ftr td { padding: 5px 8px; font-size: 9pt; line-height: 1.8; }
+  .ftr-contact { text-align: center; margin-top: 6px; }
   @media print {
     body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-    .page-form { page-break-after: always; }
+    .page-form { page-break-after: always; min-height: 277mm; }
     .page-form:last-child { page-break-after: auto; }
   }`;
 
