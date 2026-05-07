@@ -431,6 +431,43 @@ const CreateShipment = () => {
     });
   }, [selectedOrderIds, allCandidates]);
 
+  // Pré-preencher endereço/cidade/UF a partir dos dados do pedido
+  useEffect(() => {
+    if (selectedOrderIds.length === 0) return;
+    setOrderAddresses(prev => {
+      const next = { ...prev };
+      for (const oid of selectedOrderIds) {
+        if (next[oid] !== undefined) continue;
+        const order = allCandidates.find(o => o.id === oid);
+        if (!order) continue;
+        next[oid] = order.clientEndereco
+          ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}`
+          : '';
+      }
+      return next;
+    });
+    setOrderCities(prev => {
+      const next = { ...prev };
+      for (const oid of selectedOrderIds) {
+        if (next[oid] !== undefined) continue;
+        const order = allCandidates.find(o => o.id === oid);
+        if (!order) continue;
+        next[oid] = order.clientCity || '';
+      }
+      return next;
+    });
+    setOrderUFs(prev => {
+      const next = { ...prev };
+      for (const oid of selectedOrderIds) {
+        if (next[oid] !== undefined) continue;
+        const order = allCandidates.find(o => o.id === oid);
+        if (!order) continue;
+        next[oid] = order.clientUF || '';
+      }
+      return next;
+    });
+  }, [selectedOrderIds, allCandidates]);
+
   // IDs de pedidos que já estão em outro carregamento (não o que está sendo editado)
   const idsInOtherLoads = useMemo(() => {
     const set = new Set<string>();
@@ -687,15 +724,19 @@ const CreateShipment = () => {
     const numeroPedido = orderIds.join(', ') || '-';
     const nfNumber = orderIds.map(id => invoiceNumbers[id] || '').filter(Boolean).join(', ');
 
-    const cidadeUfRaw = (order.clientCity && order.clientUF)
-      ? `${order.clientCity} - ${order.clientUF}`
-      : repAddress ? `${repAddress.city || ''} - ${repAddress.state || ''}`
-      : client ? `${client.address.city || ''} - ${client.address.state || ''}` : '-';
+    const editedCity = orderCities[orderId];
+    const editedUF = orderUFs[orderId];
+    const cityVal = editedCity !== undefined ? editedCity : (order.clientCity || repAddress?.city || client?.address.city || '');
+    const ufVal = editedUF !== undefined ? editedUF : (order.clientUF || repAddress?.state || client?.address.state || '');
+    const cidadeUfRaw = cityVal && ufVal ? `${cityVal} - ${ufVal}` : cityVal || ufVal || '-';
 
-    const enderecoRaw = order.clientEndereco
-      ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}${order.clientCep ? ' - CEP: ' + order.clientCep : ''}`
-      : repAddress ? `${repAddress.street || ''}, ${repAddress.number || ''}${repAddress.neighborhood ? ' - ' + repAddress.neighborhood : ''}`
-      : client ? `${client.address.street || ''}, ${client.address.number || ''}${client.address.neighborhood ? ' - ' + client.address.neighborhood : ''}` : '-';
+    const editedAddress = orderAddresses[orderId];
+    const enderecoRaw = editedAddress !== undefined
+      ? editedAddress || '-'
+      : order.clientEndereco
+        ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}${order.clientCep ? ' - CEP: ' + order.clientCep : ''}`
+        : repAddress ? `${repAddress.street || ''}, ${repAddress.number || ''}${repAddress.neighborhood ? ' - ' + repAddress.neighborhood : ''}`
+        : client ? `${client.address.street || ''}, ${client.address.number || ''}${client.address.neighborhood ? ' - ' + client.address.neighborhood : ''}` : '-';
 
     const empresaLabel = order.clientCode
       ? `${order.clientCode} - ${order.clientName || client?.name || '-'}`
@@ -1267,6 +1308,9 @@ const CreateShipment = () => {
 
   const [orderSequence, setOrderSequence] = useState<Record<string, number>>({});
   const [invoiceNumbers, setInvoiceNumbers] = useState<Record<string, string>>({});
+  const [orderAddresses, setOrderAddresses] = useState<Record<string, string>>({});
+  const [orderCities, setOrderCities] = useState<Record<string, string>>({});
+  const [orderUFs, setOrderUFs] = useState<Record<string, string>>({});
   const [qtdKits, setQtdKits] = useState<Record<string, string>>({});
   const [qtdPallets, setQtdPallets] = useState<Record<string, string>>({});
   const [qtdVolumes, setQtdVolumes] = useState<Record<string, string>>({});
@@ -2010,20 +2054,33 @@ const CreateShipment = () => {
                                       placeholder="-"
                                     />
                                   </td>
-                                  <td className="py-3 px-4 truncate max-w-[200px]" title={order.clientEndereco || repAddress?.street || client?.address.street || '-'}>
-                                    {order.clientEndereco
-                                      ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}`
-                                      : repAddress
-                                        ? `${repAddress.street || ''}, ${repAddress.number || ''}`
-                                        : client
-                                          ? `${client.address.street || ''}, ${client.address.number || ''}`
-                                          : '-'}
+                                  <td className="py-3 px-4 max-w-[200px]">
+                                    <input
+                                      type="text"
+                                      className="w-full bg-transparent border-b border-border focus:border-primary focus:outline-none text-sm"
+                                      value={orderAddresses[order.id] ?? (order.clientEndereco ? `${order.clientEndereco}${order.clientBairro ? ' - ' + order.clientBairro : ''}` : repAddress ? `${repAddress.street || ''}, ${repAddress.number || ''}` : client ? `${client.address.street || ''}, ${client.address.number || ''}` : '')}
+                                      onChange={(e) => setOrderAddresses(prev => ({ ...prev, [order.id]: e.target.value }))}
+                                      placeholder="-"
+                                    />
                                   </td>
-                                  <td className="py-3 px-4 truncate max-w-[150px]" title={order.clientCity || repAddress?.city || client?.address.city}>
-                                    {order.clientCity || repAddress?.city || client?.address.city || '-'}
+                                  <td className="py-3 px-4 max-w-[150px]">
+                                    <input
+                                      type="text"
+                                      className="w-full bg-transparent border-b border-border focus:border-primary focus:outline-none text-sm"
+                                      value={orderCities[order.id] ?? (order.clientCity || repAddress?.city || client?.address.city || '')}
+                                      onChange={(e) => setOrderCities(prev => ({ ...prev, [order.id]: e.target.value }))}
+                                      placeholder="-"
+                                    />
                                   </td>
-                                  <td className="py-3 px-4 font-mono-data font-bold text-center">
-                                    {order.clientUF || repAddress?.state || client?.address.state || '-'}
+                                  <td className="py-3 px-4">
+                                    <input
+                                      type="text"
+                                      className="w-16 bg-transparent border-b border-border focus:border-primary focus:outline-none text-center font-mono-data font-bold text-sm uppercase"
+                                      value={orderUFs[order.id] ?? (order.clientUF || repAddress?.state || client?.address.state || '')}
+                                      onChange={(e) => setOrderUFs(prev => ({ ...prev, [order.id]: e.target.value.toUpperCase() }))}
+                                      placeholder="-"
+                                      maxLength={2}
+                                    />
                                   </td>
                                 </>
                               )}
