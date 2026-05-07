@@ -202,17 +202,12 @@ const Commercial = () => {
     let cancelled = false;
 
     const loadOverrides = async () => {
-      const ids = Array.from(new Set([...orders.map((o) => o.id), ...supportOrders.map((o) => o.id)]));
-      if (!ids.length) {
-        setMoveOverride({});
-        return;
-      }
-
       const { data, error } = await supabaseOps
         .from('concrem_comercial_pedidos_acoes')
         .select('pedido_id, acao, criado_em')
-        .in('pedido_id', ids)
-        .in('acao', ['mover_para_suporte', 'mover_para_venda']);
+        .in('acao', ['mover_para_suporte', 'mover_para_venda'])
+        .order('criado_em', { ascending: false })
+        .limit(2000);
 
       if (cancelled) return;
       if (error || !data) return;
