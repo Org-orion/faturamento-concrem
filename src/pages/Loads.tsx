@@ -109,6 +109,8 @@ const LoadsPage = () => {
   const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<Load>('Aguardando Despacho');
   const colFilter = useColumnFilters();
   const [orderNumFilter, setOrderNumFilter] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -174,12 +176,18 @@ const LoadsPage = () => {
           l.orderIds.some((oid) => oid.toLowerCase().includes(orderNumFilter.trim().toLowerCase()))
         )
       : filtered;
-    const sorted = sortItems(byOrder, sortGetters);
+    const byDate = byOrder.filter((l) => {
+      const d = l.plannedDate?.slice(0, 10) ?? '';
+      if (dateFrom && d < dateFrom) return false;
+      if (dateTo && d > dateTo) return false;
+      return true;
+    });
+    const sorted = sortItems(byDate, sortGetters);
     if (!sortState.key) {
       return [...sorted].sort((a, b) => b.id.localeCompare(a.id, undefined, { numeric: true }));
     }
     return sorted;
-  }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs, orderNumFilter]);
+  }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs, orderNumFilter, dateFrom, dateTo]);
 
   const allOrdersMap = useMemo(() => {
     const m = new Map<string, Order>();
@@ -401,20 +409,36 @@ const LoadsPage = () => {
             activeStatus={activeStatus}
             onStatusChange={setActiveStatus}
           />
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
             <input
               type="text"
               value={orderNumFilter}
               onChange={(e) => setOrderNumFilter(e.target.value)}
               placeholder="Buscar por número do pedido..."
-              className="w-72 h-9 rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
+              className="w-64 h-9 rounded-lg border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring"
             />
-            {orderNumFilter && (
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs font-semibold text-muted-foreground whitespace-nowrap">Período</span>
+              <input
+                type="date"
+                value={dateFrom}
+                onChange={(e) => setDateFrom(e.target.value)}
+                className="h-9 px-2 text-sm rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+              />
+              <span className="text-xs text-muted-foreground">até</span>
+              <input
+                type="date"
+                value={dateTo}
+                onChange={(e) => setDateTo(e.target.value)}
+                className="h-9 px-2 text-sm rounded-lg border border-border bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring transition-colors"
+              />
+            </div>
+            {(orderNumFilter || dateFrom || dateTo) && (
               <button
-                onClick={() => setOrderNumFilter('')}
+                onClick={() => { setOrderNumFilter(''); setDateFrom(''); setDateTo(''); }}
                 className="text-xs text-muted-foreground hover:text-foreground"
               >
-                Limpar
+                Limpar filtros
               </button>
             )}
           </div>
