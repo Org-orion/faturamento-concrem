@@ -146,7 +146,7 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, on
 // ── DayColumn ─────────────────────────────────────────────────────────────────
 
 function DayColumn({
-  dateStr, loads, driverMap, today, canEdit, prioMap,
+  dateStr, loads, driverMap, today, canEdit, prioMap, orderValueMap,
   onLoadClick, onDropLoad, dragOverDate, setDragOverDate,
 }: {
   dateStr: string;
@@ -155,6 +155,7 @@ function DayColumn({
   today: string;
   canEdit: boolean;
   prioMap: Map<string, { nivel: string }>;
+  orderValueMap?: Map<string, number>;
   onLoadClick: (load: Load) => void;
   onDropLoad: (loadId: string, newDate: string) => void;
   dragOverDate: string | null;
@@ -165,7 +166,8 @@ function DayColumn({
   const dayNum = d.getDate();
   const isToday = dateStr === today;
   const isDragOver = dragOverDate === dateStr;
-  const totalFreight = loads.reduce((s, l) => s + (l.freightValue || 0), 0);
+  const dayTotal = loads.reduce((s, l) =>
+    s + (l.freightValue || 0) + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -193,7 +195,7 @@ function DayColumn({
         <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{dayName}</div>
         <div className={`text-lg font-bold leading-none mt-0.5 ${isToday ? 'text-primary' : 'text-foreground'}`}>{dayNum}</div>
         {loads.length > 0 && (
-          <div className="text-[9px] font-semibold text-emerald-600 mt-1">{formatCurrency(totalFreight)}</div>
+          <div className="text-[9px] font-semibold text-emerald-600 mt-1">{formatCurrency(dayTotal)}</div>
         )}
       </div>
       <div className="flex flex-col gap-1.5 p-2">
@@ -223,11 +225,12 @@ function DayColumn({
 // ── MonthCell ─────────────────────────────────────────────────────────────────
 
 function MonthCell({
-  dateStr, loads, driverMap, today, currentMonth, canEdit, prioMap,
+  dateStr, loads, driverMap, today, currentMonth, canEdit, prioMap, orderValueMap,
   onLoadClick, onDropLoad, dragOverDate, setDragOverDate,
 }: {
   dateStr: string; loads: Load[]; driverMap: Map<string, string>; today: string;
   currentMonth: string; canEdit: boolean; prioMap: Map<string, { nivel: string }>;
+  orderValueMap?: Map<string, number>;
   onLoadClick: (load: Load) => void;
   onDropLoad: (loadId: string, newDate: string) => void;
   dragOverDate: string | null;
@@ -238,7 +241,8 @@ function MonthCell({
   const isToday = dateStr === today;
   const isCurrentMonth = dateStr.slice(0, 7) === currentMonth;
   const isDragOver = dragOverDate === dateStr;
-  const totalFreight = loads.reduce((s, l) => s + (l.freightValue || 0), 0);
+  const dayTotal = loads.reduce((s, l) =>
+    s + (l.freightValue || 0) + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
 
   return (
     <div
@@ -254,7 +258,7 @@ function MonthCell({
           {dayNum}
         </span>
         {loads.length > 0 && isCurrentMonth && (
-          <span className="text-[9px] font-semibold text-emerald-600">{formatCurrency(totalFreight)}</span>
+          <span className="text-[9px] font-semibold text-emerald-600">{formatCurrency(dayTotal)}</span>
         )}
       </div>
       <div className="flex flex-col gap-0.5">
@@ -957,7 +961,7 @@ const CarregamentoDashboard = () => {
         <div className="grid grid-cols-7 gap-1 rounded-xl border border-border overflow-hidden bg-card">
           {weekDays.map((d) => (
             <DayColumn key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
-              today={today} canEdit={canEditLoad} prioMap={prioMap}
+              today={today} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={weekOrderValueMap}
               onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
               dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
           ))}
@@ -975,7 +979,7 @@ const CarregamentoDashboard = () => {
           <div className="grid grid-cols-7">
             {calendarCells.map((d) => (
               <MonthCell key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
-                today={today} currentMonth={monthStr} canEdit={canEditLoad} prioMap={prioMap}
+                today={today} currentMonth={monthStr} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={monthOrderValueMap}
                 onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
                 dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
             ))}
