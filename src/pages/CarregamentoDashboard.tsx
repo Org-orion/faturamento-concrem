@@ -651,7 +651,11 @@ const CarregamentoDashboard = () => {
     return canDo(user.role as UserRole, user.permissions ?? null, 'programacao', 'edit');
   }, [user]);
 
-  const [view, setView] = useState<ViewMode>('semana');
+  const [view, setView] = useState<ViewMode>(() => {
+    const saved = localStorage.getItem('cronograma_view') as ViewMode | null;
+    return saved && ['semana', 'mes', 'lista'].includes(saved) ? saved : 'semana';
+  });
+  const setViewPersisted = (v: ViewMode) => { setView(v); localStorage.setItem('cronograma_view', v); };
   const [anchor, setAnchor] = useState(today);
   const [pedidoFilter, setPedidoFilter] = useState('');
   const [selectedLoad, setSelectedLoad] = useState<Load | null>(null);
@@ -830,7 +834,7 @@ const CarregamentoDashboard = () => {
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex rounded-lg border border-border overflow-hidden">
           {(Object.keys(VIEW_LABELS) as ViewMode[]).map((v) => (
-            <button key={v} type="button" onClick={() => setView(v)}
+            <button key={v} type="button" onClick={() => setViewPersisted(v)}
               className={`px-3 py-1.5 text-xs font-semibold transition-colors ${view === v ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}>
               {VIEW_LABELS[v]}
             </button>
