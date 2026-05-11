@@ -13,6 +13,8 @@ export interface Client {
   name: string;
   cpfCnpj: string;
   phone: string;
+  phone2?: string;
+  phone3?: string;
   email: string;
   address: Address;
 }

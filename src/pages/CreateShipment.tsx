@@ -75,7 +75,7 @@ const CreateShipment = () => {
   type RepSendItem = {
     repKey: string;
     repName: string;
-    repPhone: string;
+    repPhones: string[];
     orders: Order[];
     previsao: string;       // data de previsão para esse rep (yyyy-mm-dd)
     checked: boolean;       // selecionado para envio
@@ -1012,7 +1012,11 @@ const CreateShipment = () => {
         repInfo = await findRepresentanteContato(repNameFromPedido);
       }
       const repName = repInfo?.nome || repOrders[0]?.representativeName || 'Desconhecido';
-      const repPhoneRaw = repInfo?.telefone || repOrders[0]?.representativePhone || '';
+      const repPhonesRaw = [
+        repInfo?.telefone || repOrders[0]?.representativePhone || '',
+        repInfo?.telefone2 || '',
+        repInfo?.telefone3 || '',
+      ].filter(Boolean);
       const notif = notifMap.get(repKey);
       const jaNotificado = !!notif;
       // LEROY: não aparece no modal
@@ -1020,7 +1024,7 @@ const CreateShipment = () => {
       items.push({
         repKey,
         repName,
-        repPhone: repPhoneRaw,
+        repPhones: repPhonesRaw,
         orders: repOrders,
         previsao: notif?.previsao_entrega || previsaoEntregaDate,
         checked: !jaNotificado, // desmarcado se já foi notificado
@@ -1046,7 +1050,8 @@ const CreateShipment = () => {
     const toSend = sendModalItems.filter(item => item.checked);
 
     for (const item of toSend) {
-      const { repKey, repName, repPhone: repPhoneRaw, orders: repOrders, previsao } = item;
+      const { repKey, repName, repPhones, orders: repOrders, previsao } = item;
+      const repPhoneRaw = repPhones[0] || '';
       const [py, pm, pd] = previsao.split('-');
       const dataPrevisaoEntrega = `${pd}/${pm}/${py}`;
       const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
@@ -1081,18 +1086,27 @@ const CreateShipment = () => {
       // Buscar status atual antes do envio para usar em todo o bloco
       const currentStatusesForSend = await listPedidosStatusByPedidoIds(repOrders.map(o => o.id));
 
-      // Enviar via Evolution API
-      if (repPhoneRaw) {
-        const phoneE164 = normalizePhoneToE164(repPhoneRaw);
-        if (phoneE164) {
-          const result = await sendEvolutionText(phoneE164, message);
-          if (result.ok) {
-            showToast(`Mensagem enviada para ${repDisplayName}.`);
-          } else {
-            showToast(`Falha ao enviar para ${repDisplayName}: ${result.error}`, 'error');
-          }
+      // Enviar via Evolution API para todos os números cadastrados
+      const validPhones = repPhones
+        .map(p => ({ raw: p, e164: normalizePhoneToE164(p) }))
+        .filter(p => p.e164);
 
-          // Avançar para faturado com notificação — mensagem aparece antes dos anexos no WhatsApp
+      if (repPhones.length === 0) {
+        showToast(`Representante ${repDisplayName} sem telefone cadastrado.`, 'error');
+      } else if (validPhones.length === 0) {
+        showToast(`Número(s) inválido(s) para ${repDisplayName}.`, 'error');
+      }
+
+      for (const { raw: phoneRaw, e164: phoneE164 } of validPhones) {
+        const result = await sendEvolutionText(phoneE164!, message);
+        if (result.ok) {
+          showToast(`Mensagem enviada para ${repDisplayName}${validPhones.length > 1 ? ` (${phoneRaw})` : ''}.`);
+        } else {
+          showToast(`Falha ao enviar para ${repDisplayName} (${phoneRaw}): ${result.error}`, 'error');
+        }
+
+        // Avançar para faturado com notificação — apenas no primeiro número para evitar duplicatas de status
+        if (phoneRaw === validPhones[0].raw) {
           for (const order of repOrders) {
             const statusAtual = currentStatusesForSend.find(s => s.pedido_id === order.id)?.status_atual as string | undefined;
             const jaFaturado = ['faturado', 'em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado'].includes(statusAtual || '');
@@ -1110,26 +1124,22 @@ const CreateShipment = () => {
               });
             }
           }
-
-          for (const doc of docAttachs) {
-            try {
-              const blob = await fetch(doc.url).then(r => r.blob());
-              const base64 = await new Promise<string>((resolve, reject) => {
-                const reader = new FileReader();
-                reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '');
-                reader.onerror = reject;
-                reader.readAsDataURL(blob);
-              });
-              await sendEvolutionMedia(phoneE164, base64, blob.type || 'application/pdf', doc.label);
-            } catch (e) {
-              console.error(`Erro ao enviar arquivo ${doc.label}:`, e);
-            }
-          }
-        } else {
-          showToast(`Número inválido para ${repDisplayName}: ${repPhoneRaw}`, 'error');
         }
-      } else {
-        showToast(`Representante ${repDisplayName} sem telefone cadastrado.`, 'error');
+
+        for (const doc of docAttachs) {
+          try {
+            const blob = await fetch(doc.url).then(r => r.blob());
+            const base64 = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve((reader.result as string).split(',')[1] ?? '');
+              reader.onerror = reject;
+              reader.readAsDataURL(blob);
+            });
+            await sendEvolutionMedia(phoneE164!, base64, blob.type || 'application/pdf', doc.label);
+          } catch (e) {
+            console.error(`Erro ao enviar arquivo ${doc.label}:`, e);
+          }
+        }
       }
 
       // Avançar status após envio dos anexos
@@ -2578,15 +2588,25 @@ const CreateShipment = () => {
                                 ✓ Notificado {notifDate}
                               </span>
                             )}
-                            {!item.repPhone && (
+                            {item.repPhones.length === 0 && (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-700 border border-amber-200">
                                 Sem telefone
+                              </span>
+                            )}
+                            {item.repPhones.length > 1 && (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
+                                {item.repPhones.length} números
                               </span>
                             )}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {item.orders.length} pedido(s): {item.orders.map(o => o.id).join(' · ')}
                           </div>
+                          {item.repPhones.length > 0 && (
+                            <div className="text-[11px] text-muted-foreground mt-0.5 font-mono-data">
+                              {item.repPhones.join(' · ')}
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 mt-2">
                             <label className="text-[11px] font-semibold text-muted-foreground whitespace-nowrap">Prev. Entrega:</label>
                             <input

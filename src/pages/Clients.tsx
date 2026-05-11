@@ -14,7 +14,7 @@ import { ColumnFilterRow, type ColFilterSlot } from '@/components/table/ColumnFi
 import { can } from '@/utils/access';
 
 const emptyAddress: Address = { street: '', number: '', neighborhood: '', city: '', state: '', zip: '' };
-const emptyClient = { registryNumber: '', name: '', cpfCnpj: '', phone: '', email: '', address: { ...emptyAddress } };
+const emptyClient = { registryNumber: '', name: '', cpfCnpj: '', phone: '', phone2: '', phone3: '', email: '', address: { ...emptyAddress } };
 
 const ClientsPage = ({
   title = 'Cadastro de Representantes',
@@ -56,6 +56,8 @@ const ClientsPage = ({
             name: r.nome || '',
             cpfCnpj: r.cpf || '',
             phone: r.telefone_whatsapp || '',
+            phone2: r.telefone_whatsapp_2 || '',
+            phone3: r.telefone_whatsapp_3 || '',
             email: '',
             address,
           } satisfies Client;
@@ -120,7 +122,7 @@ const ClientsPage = ({
   );
 
   const openNew = () => { setEditing(null); setForm(emptyClient); setErrors({}); setModalOpen(true); };
-  const openEdit = (c: Client) => { setEditing(c); setForm({ registryNumber: c.registryNumber || '', name: c.name, cpfCnpj: c.cpfCnpj, phone: c.phone, email: c.email, address: { ...c.address } }); setErrors({}); setModalOpen(true); };
+  const openEdit = (c: Client) => { setEditing(c); setForm({ registryNumber: c.registryNumber || '', name: c.name, cpfCnpj: c.cpfCnpj, phone: c.phone, phone2: c.phone2 || '', phone3: c.phone3 || '', email: c.email, address: { ...c.address } }); setErrors({}); setModalOpen(true); };
 
   const validate = () => {
     const e: Record<string, string> = {};
@@ -144,13 +146,15 @@ const ClientsPage = ({
             nome: form.name.trim(),
             cpf,
             telefone_whatsapp: form.phone.trim(),
+            telefone_whatsapp_2: (form.phone2 || '').trim() || null,
+            telefone_whatsapp_3: (form.phone3 || '').trim() || null,
             endereco: enderecoJson,
           });
           const address = safeJsonParse<Address>(row.endereco, { ...emptyAddress });
           setItems((prev) =>
             prev.map((x) =>
               x.id === editing.id
-                ? { ...x, registryNumber: row.codigo_representante || '', name: row.nome || '', cpfCnpj: row.cpf || '', phone: row.telefone_whatsapp || '', address }
+                ? { ...x, registryNumber: row.codigo_representante || '', name: row.nome || '', cpfCnpj: row.cpf || '', phone: row.telefone_whatsapp || '', phone2: row.telefone_whatsapp_2 || '', phone3: row.telefone_whatsapp_3 || '', address }
                 : x,
             ),
           );
@@ -170,12 +174,14 @@ const ClientsPage = ({
             nome: form.name.trim(),
             cpf,
             telefone_whatsapp: form.phone.trim(),
+            telefone_whatsapp_2: (form.phone2 || '').trim() || null,
+            telefone_whatsapp_3: (form.phone3 || '').trim() || null,
             endereco: enderecoJson,
           });
           const address = safeJsonParse<Address>(row.endereco, { ...emptyAddress });
           setItems((prev) => [
             ...prev,
-            { id: row.id, registryNumber: row.codigo_representante || '', name: row.nome || '', cpfCnpj: row.cpf || '', phone: row.telefone_whatsapp || '', email: '', address },
+            { id: row.id, registryNumber: row.codigo_representante || '', name: row.nome || '', cpfCnpj: row.cpf || '', phone: row.telefone_whatsapp || '', phone2: row.telefone_whatsapp_2 || '', phone3: row.telefone_whatsapp_3 || '', email: '', address },
           ]);
           showToast(`${entityLabel} cadastrado com sucesso!`);
           setModalOpen(false);
@@ -286,9 +292,17 @@ const ClientsPage = ({
           <FormField label="CPF/CNPJ" error={errors.cpfCnpj}>
             <input className={inputClass} value={form.cpfCnpj} onChange={e => setField('cpfCnpj', e.target.value)} />
           </FormField>
-          <FormField label="Telefone" error={errors.phone}>
-            <input className={inputClass} value={form.phone} onChange={e => setField('phone', e.target.value)} />
+          <FormField label="Telefone 1" error={errors.phone}>
+            <input className={inputClass} value={form.phone} onChange={e => setField('phone', e.target.value)} placeholder="(xx) xxxxx-xxxx" />
           </FormField>
+          {entityLabel === 'Representante' && (<>
+          <FormField label="Telefone 2">
+            <input className={inputClass} value={form.phone2 || ''} onChange={e => setField('phone2', e.target.value)} placeholder="Opcional" />
+          </FormField>
+          <FormField label="Telefone 3">
+            <input className={inputClass} value={form.phone3 || ''} onChange={e => setField('phone3', e.target.value)} placeholder="Opcional" />
+          </FormField>
+          </>)}
           {entityLabel !== 'Representante' && (<>
           <FormField label="Rua">
             <input className={inputClass} value={form.address.street} onChange={e => setAddr('street', e.target.value)} />

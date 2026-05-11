@@ -7,6 +7,8 @@ export type RepresentanteRow = {
   nome: string | null;
   cpf: string | null;
   telefone_whatsapp: string | null;
+  telefone_whatsapp_2: string | null;
+  telefone_whatsapp_3: string | null;
   regiao_atuacao: string | null;
   endereco: string | null;
   criado_em: string;
@@ -59,7 +61,7 @@ export async function listRepresentantes() {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
     .from('concrem_representantes')
-    .select('id,codigo_representante,nome,cpf,telefone_whatsapp,regiao_atuacao,endereco,criado_em,atualizado_em')
+    .select('id,codigo_representante,nome,cpf,telefone_whatsapp,telefone_whatsapp_2,telefone_whatsapp_3,regiao_atuacao,endereco,criado_em,atualizado_em')
     .order('nome', { ascending: true });
   if (error) throw new Error(error.message);
   return (data || []) as RepresentanteRow[];
@@ -70,7 +72,7 @@ export async function insertRepresentante(payload: Partial<RepresentanteRow>) {
   const { data, error } = await supabaseOps
     .from('concrem_representantes')
     .insert([payload])
-    .select('id,codigo_representante,nome,cpf,telefone_whatsapp,regiao_atuacao,endereco,criado_em,atualizado_em')
+    .select('id,codigo_representante,nome,cpf,telefone_whatsapp,telefone_whatsapp_2,telefone_whatsapp_3,regiao_atuacao,endereco,criado_em,atualizado_em')
     .single();
   if (error) throw new Error(error.message);
   return data as RepresentanteRow;
@@ -82,7 +84,7 @@ export async function updateRepresentante(id: string, payload: Partial<Represent
     .from('concrem_representantes')
     .update(payload)
     .eq('id', id)
-    .select('id,codigo_representante,nome,cpf,telefone_whatsapp,regiao_atuacao,endereco,criado_em,atualizado_em')
+    .select('id,codigo_representante,nome,cpf,telefone_whatsapp,telefone_whatsapp_2,telefone_whatsapp_3,regiao_atuacao,endereco,criado_em,atualizado_em')
     .single();
   if (error) throw new Error(error.message);
   return data as RepresentanteRow;

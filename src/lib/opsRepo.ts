@@ -194,7 +194,7 @@ export async function listEntregas(programacaoId: string) {
   }>;
 }
 
-type RepContatoResult = { codigo: string | null; nome: string | null; telefone: string | null; endereco: string | null } | null;
+type RepContatoResult = { codigo: string | null; nome: string | null; telefone: string | null; telefone2: string | null; telefone3: string | null; endereco: string | null } | null;
 const REP_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const repContatoCache = new Map<string, { value: RepContatoResult; ts: number }>();
 
@@ -215,7 +215,7 @@ export async function findRepresentanteContato(representanteIdOrName: string): P
 
   const digits = codeKey.replace(/\D+/g, '');
   const digitsNoZero = digits.replace(/^0+/, '');
-  const select = 'codigo_representante,nome,telefone_whatsapp,endereco';
+  const select = 'codigo_representante,nome,telefone_whatsapp,telefone_whatsapp_2,telefone_whatsapp_3,endereco';
 
   if (digits) {
     const orParts = [
@@ -262,6 +262,8 @@ export async function findRepresentanteContato(representanteIdOrName: string): P
           codigo: (best.codigo_representante as string | null) ?? null,
           nome: (best.nome as string | null) ?? null,
           telefone: (best.telefone_whatsapp as string | null) ?? null,
+          telefone2: (best.telefone_whatsapp_2 as string | null) ?? null,
+          telefone3: (best.telefone_whatsapp_3 as string | null) ?? null,
           endereco: (best.endereco as string | null) ?? null,
         });
       }
@@ -280,6 +282,8 @@ export async function findRepresentanteContato(representanteIdOrName: string): P
       codigo: (best.codigo_representante as string | null) ?? null,
       nome: (best.nome as string | null) ?? null,
       telefone: (best.telefone_whatsapp as string | null) ?? null,
+      telefone2: (best.telefone_whatsapp_2 as string | null) ?? null,
+      telefone3: (best.telefone_whatsapp_3 as string | null) ?? null,
       endereco: (best.endereco as string | null) ?? null,
     });
   }
