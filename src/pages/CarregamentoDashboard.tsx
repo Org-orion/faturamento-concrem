@@ -656,6 +656,19 @@ const CarregamentoDashboard = () => {
     return saved && ['semana', 'mes', 'lista'].includes(saved) ? saved : 'semana';
   });
   const setViewPersisted = (v: ViewMode) => { setView(v); localStorage.setItem('cronograma_view', v); };
+
+  type DateMode = 'programado' | 'realizado';
+  const [dateMode, setDateMode] = useState<DateMode>(() =>
+    localStorage.getItem('cronograma_datemode') === 'realizado' ? 'realizado' : 'programado'
+  );
+  const setDateModePersisted = (m: DateMode) => { setDateMode(m); localStorage.setItem('cronograma_datemode', m); };
+
+  const [statusFilter, setStatusFilter] = useState<string[]>([]);
+  const toggleStatus = (s: string) => setStatusFilter(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
+
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+
   const [anchor, setAnchor] = useState(today);
   const [pedidoFilter, setPedidoFilter] = useState('');
   const [selectedLoad, setSelectedLoad] = useState<Load | null>(null);
@@ -688,22 +701,29 @@ const CarregamentoDashboard = () => {
 
   // ── filtered loads ──
   const filteredLoads = useMemo(() => {
-    const q = pedidoFilter.trim();
-    if (!q) return loads;
-    return loads.filter((l) => l.orderIds.some((id) => id.includes(q)));
-  }, [loads, pedidoFilter]);
+    return loads.filter((l) => {
+      const q = pedidoFilter.trim();
+      if (q && !l.orderIds.some(id => id.includes(q))) return false;
+      if (statusFilter.length > 0 && !statusFilter.includes(l.shipmentStatus)) return false;
+      if (dateMode === 'realizado' && !l.realizationDate) return false;
+      const dateKey = (dateMode === 'realizado' ? l.realizationDate : l.plannedDate)?.slice(0, 10) ?? '';
+      if (dateFrom && dateKey && dateKey < dateFrom) return false;
+      if (dateTo && dateKey && dateKey > dateTo) return false;
+      return true;
+    });
+  }, [loads, pedidoFilter, statusFilter, dateMode, dateFrom, dateTo]);
 
   // ── loads by date ──
   const loadsByDate = useMemo(() => {
     const m = new Map<string, Load[]>();
     for (const l of filteredLoads) {
-      const d = l.plannedDate?.slice(0, 10);
+      const d = (dateMode === 'realizado' ? l.realizationDate : l.plannedDate)?.slice(0, 10);
       if (!d) continue;
       if (!m.has(d)) m.set(d, []);
       m.get(d)!.push(l);
     }
     return m;
-  }, [filteredLoads]);
+  }, [filteredLoads, dateMode]);
 
   // ── list view ──
   const listDates = useMemo(() => Array.from(loadsByDate.keys()).sort(), [loadsByDate]);
@@ -828,9 +848,12 @@ const CarregamentoDashboard = () => {
     if (updated) setSelectedLoad(updated);
   }, [loads]);
 
+  const ALL_STATUSES = Object.keys(STATUS_COLORS);
+  const hasActiveFilters = statusFilter.length > 0 || dateFrom || dateTo;
+
   return (
-    <div className="space-y-4">
-      {/* Toolbar */}
+    <div className="space-y-3">
+      {/* Toolbar row 1 */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex rounded-lg border border-border overflow-hidden">
           {(Object.keys(VIEW_LABELS) as ViewMode[]).map((v) => (
@@ -876,6 +899,57 @@ const CarregamentoDashboard = () => {
             <Chip icon={DollarSign} value={formatCurrency(monthTotals.total)} label="total" color="text-emerald-600" />
           </div>
         )}
+      </div>
+
+      {/* Toolbar row 2 — filtros */}
+      <div className="flex flex-wrap items-center gap-2">
+        {/* Date mode toggle */}
+        <div className="flex rounded-lg border border-border overflow-hidden shrink-0">
+          <button type="button" onClick={() => setDateModePersisted('programado')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${dateMode === 'programado' ? 'bg-primary text-primary-foreground' : 'bg-background text-muted-foreground hover:text-foreground'}`}>
+            <Calendar className="h-3.5 w-3.5" />
+            Programação
+          </button>
+          <button type="button" onClick={() => setDateModePersisted('realizado')}
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold transition-colors ${dateMode === 'realizado' ? 'bg-emerald-600 text-white' : 'bg-background text-muted-foreground hover:text-foreground'}`}>
+            <CalendarCheck className="h-3.5 w-3.5" />
+            Carregados
+          </button>
+        </div>
+
+        <div className="w-px h-5 bg-border shrink-0" />
+
+        {/* Status chips */}
+        {ALL_STATUSES.map((s) => {
+          const active = statusFilter.includes(s);
+          const dotClass = STATUS_LEFT[s] || 'bg-gray-400';
+          return (
+            <button key={s} type="button" onClick={() => toggleStatus(s)}
+              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${active ? 'bg-foreground text-background border-foreground' : 'bg-background text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground'}`}>
+              <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
+              {s}
+            </button>
+          );
+        })}
+
+        <div className="w-px h-5 bg-border shrink-0" />
+
+        {/* Date range */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-[11px] font-semibold text-muted-foreground">De</span>
+          <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
+            className="h-7 px-2 text-xs rounded-lg border border-input bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          <span className="text-[11px] font-semibold text-muted-foreground">Até</span>
+          <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
+            className="h-7 px-2 text-xs rounded-lg border border-input bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+          {hasActiveFilters && (
+            <button type="button" onClick={() => { setStatusFilter([]); setDateFrom(''); setDateTo(''); }}
+              className="flex items-center gap-1 h-7 px-2 text-[11px] font-semibold text-muted-foreground rounded-lg border border-border hover:bg-muted transition-colors">
+              <X className="h-3 w-3" />
+              Limpar
+            </button>
+          )}
+        </div>
       </div>
 
       {/* ── WEEK VIEW ── */}
