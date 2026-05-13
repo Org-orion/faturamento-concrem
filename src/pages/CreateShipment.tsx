@@ -86,6 +86,7 @@ const CreateShipment = () => {
   const [formulariosModalOpen, setFormulariosModalOpen] = useState(false);
   const [formulariosSelected, setFormulariosSelected] = useState<Set<string>>(new Set());
   const [sending, setSending] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const [notificacoes, setNotificacoes] = useState<RelatorioEntregaNotificacao[]>([]);
 
   const [reportPage, setReportPage] = useState(0);
@@ -1497,6 +1498,7 @@ const CreateShipment = () => {
   };
 
   const handleSave = async () => {
+    if (isSaving) return;
     if (!driverId) {
       showToast('Selecione um motorista.', 'error');
       return;
@@ -1510,6 +1512,7 @@ const CreateShipment = () => {
     const parsedRaw = parseFloat(freightRaw.replace(/\./g, '').replace(',', '.'));
     const finalFreightValue = !isNaN(parsedRaw) ? parsedRaw : freightValue;
 
+    setIsSaving(true);
     try {
       if (isEditing && id) {
         const old = loads.find((x) => x.id === id);
@@ -1582,6 +1585,8 @@ const CreateShipment = () => {
     } catch (e: any) {
       console.error(e);
       showToast(e?.message || 'Erro ao salvar programação.', 'error');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -1607,12 +1612,13 @@ const CreateShipment = () => {
         </div>
         <div className="flex gap-3">
           <button className={btnDanger} onClick={() => navigate('/carregamento')}>Cancelar</button>
-          <button 
+          <button
             onClick={handleSave}
-            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-semibold shadow-lg shadow-primary/25"
+            disabled={isSaving}
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 transition-colors font-semibold shadow-lg shadow-primary/25 disabled:opacity-60 disabled:cursor-not-allowed"
           >
             <Save className="h-4 w-4" />
-            Salvar Programação
+            {isSaving ? 'Salvando...' : 'Salvar Programação'}
           </button>
         </div>
       </div>
