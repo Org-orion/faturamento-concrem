@@ -45,8 +45,9 @@ export const formatCurrency = (value: number) =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
 
 export const getOrderTotal = (order: { items: OrderItem[]; totalPedidoVenda?: number | null }) => {
-  if (typeof order.totalPedidoVenda === 'number' && Number.isFinite(order.totalPedidoVenda)) return order.totalPedidoVenda;
-  return order.items.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  if (typeof order.totalPedidoVenda === 'number' && Number.isFinite(order.totalPedidoVenda) && order.totalPedidoVenda > 0)
+    return order.totalPedidoVenda;
+  return 0;
 };
 
 export const FormField = ({ label, children, error }: { label: string; children: React.ReactNode; error?: string }) => (

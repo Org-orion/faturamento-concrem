@@ -238,7 +238,7 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
   const totalPedidoVendaRaw = pickNumber(row, ['total_pedido_venda']);
   const totalPedidoVenda = totalPedidoVendaRaw > 0
     ? totalPedidoVendaRaw
-    : pickNumber(row, ['total_produtos', 'total', 'total_pedido', 'valor_total']);
+    : pickNumber(row, ['total_produtos']);
   const totalQtdM3 = pickNumber(row, ['total_qtd_m3', 'totalQtdM3', 'qtd_m3', 'volume_m3']);
   const totalQtd = pickNumber(row, ['total_qtd', 'totalQtd', 'qtd_total', 'quantidade_total']);
   const pesoLiquidoItem = pickNumber(row, ['peso_liquido_item', 'pesoLiquidoItem', 'peso_liquido', 'peso']);
@@ -271,7 +271,7 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
     driverId: driverIdRaw || null,
     freightValue: pickNumber(row, ['freight_value', 'valor_frete', 'freightValue', 'frete']),
     paymentTerms: pickString(row, ['payment_terms', 'condicao_pagamento', 'paymentTerms']) || undefined,
-    totalPedidoVenda: totalPedidoVenda || undefined,
+    totalPedidoVenda: totalPedidoVenda > 0 ? totalPedidoVenda : undefined,
     totalQtdM3: totalQtdM3 || undefined,
     totalQtd: totalQtd || undefined,
     pesoLiquidoItem: pesoLiquidoItem || undefined,
@@ -293,7 +293,7 @@ export function rowToSupportOrder(row: Row): SupportOrder {
   const totalPedidoVendaRaw = pickNumber(row, ['total_pedido_venda']);
   const totalPedidoVenda = totalPedidoVendaRaw > 0
     ? totalPedidoVendaRaw
-    : pickNumber(row, ['total_produtos', 'total', 'total_pedido', 'valor_total']);
+    : pickNumber(row, ['total_produtos']);
   const totalQtdM3 = pickNumber(row, ['total_qtd_m3', 'totalQtdM3', 'qtd_m3', 'volume_m3']);
   const totalQtd = pickNumber(row, ['total_qtd', 'totalQtd', 'qtd_total', 'quantidade_total']);
   const pesoLiquidoItem = pickNumber(row, ['peso_liquido_item', 'pesoLiquidoItem', 'peso_liquido', 'peso']);
@@ -323,7 +323,7 @@ export function rowToSupportOrder(row: Row): SupportOrder {
     obs: pickString(row, ['obs', 'observacao', 'observacoes', 'notes']) || '',
     freightValue: pickNumber(row, ['freight_value', 'valor_frete', 'freightValue', 'frete']),
     paymentTerms: pickString(row, ['payment_terms', 'condicao_pagamento', 'paymentTerms']) || undefined,
-    totalPedidoVenda: totalPedidoVenda || undefined,
+    totalPedidoVenda: totalPedidoVenda > 0 ? totalPedidoVenda : undefined,
     totalQtdM3: totalQtdM3 || undefined,
     totalQtd: totalQtd || undefined,
     pesoLiquidoItem: pesoLiquidoItem || undefined,
