@@ -88,15 +88,19 @@ interface LoadCardProps {
   compact?: boolean;
   canEdit?: boolean;
   priorityNivel?: string;
+  orderValueMap?: Map<string, number>;
   onClick?: () => void;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
 }
 
-function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, onClick, draggable, onDragStart }: LoadCardProps) {
+function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, orderValueMap, onClick, draggable, onDragStart }: LoadCardProps) {
   const status = load.shipmentStatus || 'Aguardando Despacho';
   const colorClass = STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 border-gray-200';
   const leftClass = STATUS_LEFT[status] || 'bg-gray-400';
+  const productsValue = orderValueMap
+    ? load.orderIds.reduce((s, id) => s + (orderValueMap.get(id) || 0), 0)
+    : null;
 
   if (compact) {
     return (
@@ -133,7 +137,13 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, on
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           {priorityNivel && <span className="flex items-center gap-1"><PrioridadeDot nivel={priorityNivel as any} /></span>}
           <span className="flex items-center gap-1"><Package className="h-3 w-3" />{load.orderIds.length} pedido{load.orderIds.length !== 1 ? 's' : ''}</span>
-          <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatCurrency(load.freightValue || 0)}</span>
+          {productsValue !== null
+            ? <>
+                <span className="flex items-center gap-1 text-emerald-600 font-semibold"><DollarSign className="h-3 w-3" />{formatCurrency(productsValue)}</span>
+                <span className="flex items-center gap-1 text-sky-500">frete {formatCurrency(load.freightValue || 0)}</span>
+              </>
+            : <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatCurrency(load.freightValue || 0)}</span>
+          }
           {(load.estimatedWeight || 0) > 0 && (
             <span className="flex items-center gap-1"><Weight className="h-3 w-3" />{(load.estimatedWeight || 0).toLocaleString('pt-BR')} kg</span>
           )}
@@ -215,6 +225,7 @@ function DayColumn({
               driverName={driverMap.get(l.driverId) || 'Sem motorista'}
               canEdit={canEdit}
               priorityNivel={getLoadPriorityNivel(l, prioMap)}
+              orderValueMap={orderValueMap}
               onClick={() => onLoadClick(l)}
               draggable={canEdit}
               onDragStart={(e) => { e.dataTransfer.setData('loadId', l.id); }}
@@ -278,6 +289,7 @@ function MonthCell({
             compact
             canEdit={canEdit}
             priorityNivel={getLoadPriorityNivel(l, prioMap)}
+            orderValueMap={orderValueMap}
             onClick={() => onLoadClick(l)}
             draggable={canEdit}
             onDragStart={(e) => { e.dataTransfer.setData('loadId', l.id); }}
@@ -794,12 +806,12 @@ const CarregamentoDashboard = () => {
     const chunks: string[][] = [];
     for (let i = 0; i < weekOrderIds.length; i += BATCH) chunks.push(weekOrderIds.slice(i, i + BATCH));
     Promise.all(chunks.map((batch) =>
-      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, total_produtos, frete').in('numero_pedido', batch).then(({ data }) => data || [])
+      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, total_produtos').in('numero_pedido', batch).then(({ data }) => data || [])
     )).then((results) => {
       const m = new Map<string, number>();
       for (const row of results.flat()) {
         const orderVal = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
-        m.set(String(row.numero_pedido), orderVal + (row.frete || 0));
+        m.set(String(row.numero_pedido), orderVal);
       }
       setWeekOrderValueMap(m);
     });
@@ -833,12 +845,12 @@ const CarregamentoDashboard = () => {
     const chunks: string[][] = [];
     for (let i = 0; i < monthOrderIds.length; i += BATCH) chunks.push(monthOrderIds.slice(i, i + BATCH));
     Promise.all(chunks.map((batch) =>
-      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, total_produtos, frete').in('numero_pedido', batch).then(({ data }) => data || [])
+      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, total_produtos').in('numero_pedido', batch).then(({ data }) => data || [])
     )).then((results) => {
       const m = new Map<string, number>();
       for (const row of results.flat()) {
         const orderVal = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
-        m.set(String(row.numero_pedido), orderVal + (row.frete || 0));
+        m.set(String(row.numero_pedido), orderVal);
       }
       setMonthOrderValueMap(m);
     });
@@ -852,6 +864,36 @@ const CarregamentoDashboard = () => {
       total: mLoads.reduce((s, l) => s + l.orderIds.reduce((a, id) => a + (monthOrderValueMap.get(id) || 0), 0), 0),
     };
   }, [calendarCells, monthStr, loadsByDate, monthOrderValueMap]);
+
+  // ── list order values ──
+  const [listOrderValueMap, setListOrderValueMap] = useState<Map<string, number>>(new Map());
+  const lastListFetchKey = useRef('');
+
+  const listOrderIds = useMemo(() => {
+    const lLoads = listDates.flatMap((d) => loadsByDate.get(d) || []);
+    return [...new Set(lLoads.flatMap((l) => l.orderIds))];
+  }, [listDates, loadsByDate]);
+
+  useEffect(() => {
+    if (view !== 'lista') return;
+    const fetchKey = listOrderIds.join(',');
+    if (!fetchKey || fetchKey === lastListFetchKey.current || !supabasePedidos) return;
+    lastListFetchKey.current = fetchKey;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const BATCH = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < listOrderIds.length; i += BATCH) chunks.push(listOrderIds.slice(i, i + BATCH));
+    Promise.all(chunks.map((batch) =>
+      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, total_produtos').in('numero_pedido', batch).then(({ data }) => data || [])
+    )).then((results) => {
+      const m = new Map<string, number>();
+      for (const row of results.flat()) {
+        const orderVal = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
+        m.set(String(row.numero_pedido), orderVal);
+      }
+      setListOrderValueMap(m);
+    });
+  }, [listOrderIds, view]);
 
   // ── keep selectedLoad in sync with updated loads state ──
   useEffect(() => {
@@ -893,11 +935,11 @@ const CarregamentoDashboard = () => {
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input type="text" value={pedidoFilter} onChange={(e) => setPedidoFilter(e.target.value)}
             placeholder="Filtrar por nº pedido..."
-            className="pl-8 pr-3 py-1.5 w-48 text-xs rounded-lg border border-input bg-card text-foreground font-display focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
+            className="pl-8 pr-3 py-1.5 w-32 md:w-48 text-xs rounded-lg border border-input bg-card text-foreground font-display focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
         </div>
 
         {view === 'semana' && weekTotals.count > 0 && (
-          <div className="flex gap-2">
+          <div className="hidden md:flex gap-2">
             <Chip icon={Truck} value={String(weekTotals.count)} label="carreg." />
             <Chip icon={Package} value={String(weekTotals.orders)} label="pedidos" />
             <Chip icon={DollarSign} value={formatCurrency(weekTotals.total)} label="total" color="text-emerald-600" />
@@ -905,7 +947,7 @@ const CarregamentoDashboard = () => {
         )}
 
         {view === 'mes' && monthTotals.count > 0 && (
-          <div className="flex gap-2">
+          <div className="hidden md:flex gap-2">
             <Chip icon={Truck} value={String(monthTotals.count)} label="carreg." />
             <Chip icon={Package} value={String(monthTotals.orders)} label="pedidos" />
             <Chip icon={DollarSign} value={formatCurrency(monthTotals.total)} label="total" color="text-emerald-600" />
@@ -937,9 +979,9 @@ const CarregamentoDashboard = () => {
           const dotClass = STATUS_LEFT[s] || 'bg-gray-400';
           return (
             <button key={s} type="button" onClick={() => toggleStatus(s)}
-              className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${active ? 'bg-foreground text-background border-foreground' : 'bg-background text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground'}`}>
+              className={`flex items-center gap-1.5 px-2 md:px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${active ? 'bg-foreground text-background border-foreground' : 'bg-background text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground'}`}>
               <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
-              {s}
+              <span className="hidden md:inline">{s}</span>
             </button>
           );
         })}
@@ -966,13 +1008,15 @@ const CarregamentoDashboard = () => {
 
       {/* ── WEEK VIEW ── */}
       {view === 'semana' && (
-        <div className="grid grid-cols-7 gap-1 rounded-xl border border-border overflow-hidden bg-card">
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+        <div className="grid grid-cols-7 gap-1 min-w-[700px]">
           {weekDays.map((d) => (
             <DayColumn key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
               today={today} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={weekOrderValueMap}
               onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
               dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
           ))}
+        </div>
         </div>
       )}
 
@@ -1019,6 +1063,7 @@ const CarregamentoDashboard = () => {
                     {dayLoads.map((l) => (
                       <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'}
                         canEdit={canEditLoad} priorityNivel={getLoadPriorityNivel(l, prioMap)}
+                        orderValueMap={listOrderValueMap}
                         onClick={() => setSelectedLoad(l)} />
                     ))}
                   </div>

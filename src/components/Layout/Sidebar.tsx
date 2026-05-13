@@ -571,26 +571,26 @@ export const Sidebar: React.FC = () => {
 
   return (
     <>
-      {/* Mobile toggle button */}
+      {/* Mobile/tablet toggle button */}
       <button
         onClick={() => setMobileOpen(true)}
-        className="md:hidden fixed top-4 left-4 z-50 w-9 h-9 rounded-lg flex items-center justify-center bg-zinc-900 border border-white/10 text-white/70 hover:text-white shadow-lg transition-colors"
+        className="lg:hidden fixed top-4 left-4 z-50 w-9 h-9 rounded-lg flex items-center justify-center bg-zinc-900 border border-white/10 text-white/70 hover:text-white shadow-lg transition-colors"
       >
         <Menu className="h-4 w-4" />
       </button>
 
-      {/* Mobile overlay */}
+      {/* Mobile/tablet overlay */}
       {mobileOpen && (
         <div
-          className="md:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
+          className="lg:hidden fixed inset-0 z-40 bg-black/50 backdrop-blur-sm"
           onClick={() => setMobileOpen(false)}
         />
       )}
 
-      {/* Mobile drawer */}
+      {/* Mobile/tablet drawer */}
       <aside
         className={cn(
-          'md:hidden fixed left-0 top-0 h-screen z-50 w-64 flex flex-col transition-transform duration-300 ease-in-out no-print',
+          'lg:hidden fixed left-0 top-0 h-screen z-50 w-64 flex flex-col transition-transform duration-300 ease-in-out no-print',
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
         style={{
@@ -607,10 +607,10 @@ export const Sidebar: React.FC = () => {
         <SidebarBody />
       </aside>
 
-      {/* Desktop sidebar */}
+      {/* Desktop sidebar (lg+) */}
       <aside
         className={cn(
-          'hidden md:flex fixed left-0 top-0 h-screen z-40 flex-col transition-all duration-300 ease-in-out no-print',
+          'hidden lg:flex fixed left-0 top-0 h-screen z-40 flex-col transition-all duration-300 ease-in-out no-print',
           isCollapsed ? 'w-[72px]' : 'w-64'
         )}
         style={{

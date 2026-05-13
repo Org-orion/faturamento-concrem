@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useSidebar } from './MainLayout';
 import { useLocation } from 'react-router-dom';
 
@@ -22,17 +22,27 @@ export const Header: React.FC = () => {
   const { isCollapsed } = useSidebar();
   const location = useLocation();
   const label = routeLabels[location.pathname] || 'Sistema';
+  const [isLg, setIsLg] = useState(() => typeof window !== 'undefined' && window.innerWidth >= 1024);
+
+  useEffect(() => {
+    const check = () => setIsLg(window.innerWidth >= 1024);
+    window.addEventListener('resize', check);
+    return () => window.removeEventListener('resize', check);
+  }, []);
+
+  const leftOffset = !isLg ? 0 : isCollapsed ? 64 : 256;
 
   return (
     <header
-      className="fixed top-0 right-0 h-14 z-30 flex items-center justify-between px-6 transition-all duration-300"
+      className="fixed top-0 right-0 h-14 z-30 flex items-center justify-between px-4 lg:px-6 transition-all duration-300"
       style={{
-        left: isCollapsed ? '64px' : '256px',
+        left: leftOffset,
         background: 'hsl(var(--card))',
         borderBottom: '1px solid hsl(var(--border))',
       }}
     >
       <div className="flex items-center gap-3">
+        <div className="lg:hidden w-10" />{/* espaço para o botão de menu mobile */}
         <div className="w-1 h-4 rounded-full bg-primary opacity-80" />
         <h2 className="text-sm font-display font-semibold text-foreground/90 tracking-wide">
           {label}
