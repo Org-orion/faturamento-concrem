@@ -51,6 +51,16 @@ const perfilToRole = (p: UsuarioPerfilAcesso | null): UserRole => {
   return 'COMERCIAL';
 };
 
+const grupoNomeToRole = (nome: string): UserRole | null => {
+  const n = nome.toLowerCase();
+  if (n.includes('admin')) return 'ADMIN';
+  if (n.includes('faturamento')) return 'FATURAMENTO';
+  if (n.includes('produ')) return 'PRODUCAO';
+  if (n.includes('log')) return 'LOGISTICA';
+  if (n.includes('comercial')) return 'COMERCIAL';
+  return null;
+};
+
 // ---- permission matrix sub-component ----
 const PermMatrix = ({ value, onChange }: { value: Set<Funcionalidade>; onChange: (next: Set<Funcionalidade>) => void }) => {
   const toggle = (key: Funcionalidade) => {
@@ -388,15 +398,6 @@ const UsersPage = () => {
                 <input className={inputClass} type="password" value="1234" disabled />
               </FormField>
             )}
-            <FormField label="Perfil">
-              <select className={inputClass} value={form.role} onChange={(e) => setForm((p) => ({ ...p, role: e.target.value as UserRole }))}>
-                <option value="ADMIN">ADMIN</option>
-                <option value="FATURAMENTO">FATURAMENTO</option>
-                <option value="COMERCIAL">COMERCIAL</option>
-                <option value="PRODUCAO">PRODUÇÃO</option>
-                <option value="LOGISTICA">LOGÍSTICA</option>
-              </select>
-            </FormField>
 
             {/* ── Permissões ── */}
             <div className="space-y-2 pt-1">
@@ -407,7 +408,16 @@ const UsersPage = () => {
               {!useCustomFuncs ? (
                 <>
                   <FormField label="Grupo de permissões">
-                    <select className={inputClass} value={form.grupoId ?? ''} onChange={(e) => setForm((p) => ({ ...p, grupoId: e.target.value || null }))}>
+                    <select
+                      className={inputClass}
+                      value={form.grupoId ?? ''}
+                      onChange={(e) => {
+                        const grupoId = e.target.value || null;
+                        const grupo = grupos.find((g) => g.id === grupoId);
+                        const role = grupo ? (grupoNomeToRole(grupo.nome) ?? form.role) : form.role;
+                        setForm((p) => ({ ...p, grupoId, role }));
+                      }}
+                    >
                       <option value="">— Sem grupo —</option>
                       {grupos.map((g) => (
                         <option key={g.id} value={g.id}>{g.nome}</option>

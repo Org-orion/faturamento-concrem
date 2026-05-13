@@ -590,7 +590,7 @@ export const Sidebar: React.FC = () => {
       {/* Mobile/tablet drawer */}
       <aside
         className={cn(
-          'lg:hidden fixed left-0 top-0 h-screen z-50 w-64 flex flex-col transition-transform duration-300 ease-in-out no-print',
+          'lg:hidden fixed left-0 top-0 h-screen z-50 w-56 flex flex-col transition-transform duration-300 ease-in-out no-print',
           mobileOpen ? 'translate-x-0' : '-translate-x-full'
         )}
         style={{
@@ -611,7 +611,7 @@ export const Sidebar: React.FC = () => {
       <aside
         className={cn(
           'hidden lg:flex fixed left-0 top-0 h-screen z-40 flex-col transition-all duration-300 ease-in-out no-print',
-          isCollapsed ? 'w-[72px]' : 'w-64'
+          isCollapsed ? 'w-[72px]' : 'w-56'
         )}
         style={{
           background: 'hsl(var(--sidebar-background))',

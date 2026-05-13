@@ -42,6 +42,8 @@ const PedidoSuporte = () => {
   const [filterCliente, setFilterCliente] = useState<string>('');
   const [filterConf, setFilterConf] = useState<string>('');
   const [filterRep, setFilterRep] = useState<string>('');
+  const [filterCidade, setFilterCidade] = useState<string>('');
+  const [filterUF, setFilterUF] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>('');
   const [validDate, setValidDate] = useState<string>('');
 
@@ -63,6 +65,8 @@ const PedidoSuporte = () => {
   const debouncedFilterPedido = useDebounce(filterPedido, 400);
   const debouncedFilterConf = useDebounce(filterConf, 400);
   const debouncedFilterRep = useDebounce(filterRep, 400);
+  const debouncedFilterCidade = useDebounce(filterCidade, 400);
+  const debouncedFilterUF = useDebounce(filterUF, 400);
 
   const [openDetail, setOpenDetail] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -122,8 +126,13 @@ const PedidoSuporte = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [serverOrders]);
 
-  // Reset page when sort changes
-  useEffect(() => { setPage(1); }, [sortState]);
+  const uniqueUFs = useMemo(() => {
+    const set = new Set(serverOrders.map((o) => o.clientUF).filter((u): u is string => Boolean(u)));
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [serverOrders]);
+
+  // Reset page when sort or city/UF filters change
+  useEffect(() => { setPage(1); }, [sortState, debouncedFilterCidade, debouncedFilterUF]);
 
   useEffect(() => {
     if (!supabaseOps) return;
@@ -270,6 +279,12 @@ const PedidoSuporte = () => {
       if (validDate) {
         query = query.gte('data_validade', `${validDate}T00:00:00`).lte('data_validade', `${validDate}T23:59:59`);
       }
+      if (debouncedFilterCidade) {
+        query = query.ilike('cliente_cidade', `%${debouncedFilterCidade}%`);
+      }
+      if (debouncedFilterUF) {
+        query = query.ilike('cliente_uf', `%${debouncedFilterUF}%`);
+      }
 
       const from = (page - 1) * 20;
       const to = from + 19;
@@ -300,7 +315,7 @@ const PedidoSuporte = () => {
 
     fetchPage();
     return () => { cancelled = true; };
-  }, [debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, issueDate, moveOverride, page, sortState, validDate]);
+  }, [debouncedFilterCidade, debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, debouncedFilterUF, issueDate, moveOverride, page, sortState, validDate]);
 
   const totals = useMemo(() => {
     const list: (Order | SupportOrder)[] = [];
@@ -488,6 +503,21 @@ const PedidoSuporte = () => {
           <datalist id="ps-reps-list">
             {uniqueRepresentantes.map((r) => <option key={r} value={r} />)}
           </datalist>
+          <input
+            type="text"
+            value={filterCidade}
+            onChange={(e) => { setFilterCidade(e.target.value); setPage(1); }}
+            placeholder="Cidade..."
+            className="w-36 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+          <select
+            value={filterUF}
+            onChange={(e) => { setFilterUF(e.target.value); setPage(1); }}
+            className="w-20 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          >
+            <option value="">UF</option>
+            {uniqueUFs.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+          </select>
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
         </div>
         <ActiveFiltersChips
@@ -509,6 +539,8 @@ const PedidoSuporte = () => {
                 <SortableHeader columnKey="cliente" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Cliente</SortableHeader>
                 <SortableHeader columnKey="date" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Data</SortableHeader>
                 <SortableHeader columnKey="expiryDate" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Validade</SortableHeader>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Cidade</th>
+                <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">UF</th>
                 <SortableHeader columnKey="value" sortState={sortState} onToggle={toggleSort} className="text-right py-4 px-6">Valor</SortableHeader>
                 <SortableHeader columnKey="status" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">Status</SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
@@ -517,13 +549,13 @@ const PedidoSuporte = () => {
             <tbody className="divide-y divide-border/50">
               {loadingList ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-muted-foreground font-display">
+                  <td colSpan={9} className="py-10 text-center text-muted-foreground font-display">
                     Carregando pedidos...
                   </td>
                 </tr>
               ) : displayedOrders.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-10 text-center text-muted-foreground font-display">
+                  <td colSpan={9} className="py-10 text-center text-muted-foreground font-display">
                     Nenhum pedido encontrado.
                   </td>
                 </tr>
@@ -543,6 +575,8 @@ const PedidoSuporte = () => {
                       <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
                       <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? fmtDate(o.date) : '-'}</td>
                       <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? fmtDate(o.expiryDate) : '-'}</td>
+                      <td className="py-4 px-6 font-display text-muted-foreground">{o.clientCity || '—'}</td>
+                      <td className="py-4 px-6 font-display text-muted-foreground">{o.clientUF || '—'}</td>
                       <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-2">
@@ -655,6 +689,24 @@ const PedidoSuporte = () => {
                     )}
                   </tbody>
                 </table>
+              </div>
+            </div>
+
+            <div className="bg-muted/20 border border-border rounded-xl p-4">
+              <p className="text-sm font-bold font-display text-foreground mb-3">Observação</p>
+              <textarea
+                className={`${inputClass} min-h-[80px]`}
+                value={tempNotes}
+                onChange={(e) => setTempNotes(e.target.value)}
+                placeholder="Adicione uma observação sobre este pedido..."
+              />
+              <div className="mt-2 flex justify-end">
+                <button
+                  onClick={handleSaveNotes}
+                  className="px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold hover:opacity-90 transition-opacity"
+                >
+                  Salvar observação
+                </button>
               </div>
             </div>
 

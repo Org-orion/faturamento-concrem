@@ -30,7 +30,7 @@ export const Header: React.FC = () => {
     return () => window.removeEventListener('resize', check);
   }, []);
 
-  const leftOffset = !isLg ? 0 : isCollapsed ? 64 : 256;
+  const leftOffset = !isLg ? 0 : isCollapsed ? 64 : 224;
 
   return (
     <header

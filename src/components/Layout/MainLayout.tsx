@@ -36,7 +36,7 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const toggleSidebar = () => setIsCollapsed(prev => !prev);
 
-  const marginLeft = !isLg ? 0 : isCollapsed ? 72 : 256;
+  const marginLeft = !isLg ? 0 : isCollapsed ? 72 : 224;
 
   return (
     <SidebarContext.Provider value={{ isCollapsed, setIsCollapsed, toggleSidebar }}>

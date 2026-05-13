@@ -429,7 +429,7 @@ const ComercialLiberacao = () => {
     if (!loadIds.length || !supabaseOps) { showToast('Nenhum pedido na carga', 'error'); return; }
     const username = user?.username || null;
     const now = new Date().toISOString();
-    const mes = mesProgramacao.trim() || currentMonthYYYYMM();
+    const mes = mesProgramacao.trim() || null;
 
     // Phase 1: pre-fetch unique rep contacts in parallel
     const directOrdersById = new Map(directOrders.map(o => [o.id, o]));
@@ -458,7 +458,7 @@ const ComercialLiberacao = () => {
             pedido_id: id, numero_pedido: id,
             status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: username,
           };
-          if (!existingMes || existingMes !== mes) {
+          if (existingMes !== mes) {
             row.mes_programacao = mes;
           }
           return row;
