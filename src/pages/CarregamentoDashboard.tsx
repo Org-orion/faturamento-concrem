@@ -166,8 +166,9 @@ function DayColumn({
   const dayNum = d.getDate();
   const isToday = dateStr === today;
   const isDragOver = dragOverDate === dateStr;
-  const dayTotal = loads.reduce((s, l) =>
-    s + (l.freightValue || 0) + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
+  const productsTotal = loads.reduce((s, l) =>
+    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
+  const freightTotal = loads.reduce((s, l) => s + (l.freightValue || 0), 0);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -195,7 +196,10 @@ function DayColumn({
         <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{dayName}</div>
         <div className={`text-lg font-bold leading-none mt-0.5 ${isToday ? 'text-primary' : 'text-foreground'}`}>{dayNum}</div>
         {loads.length > 0 && (
-          <div className="text-[9px] font-semibold text-emerald-600 mt-1">{formatCurrency(dayTotal)}</div>
+          <div className="mt-1 flex flex-col items-center gap-0.5">
+            <div className="text-[9px] font-semibold text-emerald-600">{formatCurrency(productsTotal)}</div>
+            <div className="text-[8px] font-medium text-sky-500">frete {formatCurrency(freightTotal)}</div>
+          </div>
         )}
       </div>
       <div className="flex flex-col gap-1.5 p-2">
@@ -241,8 +245,9 @@ function MonthCell({
   const isToday = dateStr === today;
   const isCurrentMonth = dateStr.slice(0, 7) === currentMonth;
   const isDragOver = dragOverDate === dateStr;
-  const dayTotal = loads.reduce((s, l) =>
-    s + (l.freightValue || 0) + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
+  const productsTotal = loads.reduce((s, l) =>
+    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
+  const freightTotal = loads.reduce((s, l) => s + (l.freightValue || 0), 0);
 
   return (
     <div
@@ -258,7 +263,10 @@ function MonthCell({
           {dayNum}
         </span>
         {loads.length > 0 && isCurrentMonth && (
-          <span className="text-[9px] font-semibold text-emerald-600">{formatCurrency(dayTotal)}</span>
+          <div className="flex flex-col items-end gap-0">
+            <span className="text-[9px] font-semibold text-emerald-600">{formatCurrency(productsTotal)}</span>
+            <span className="text-[8px] font-medium text-sky-500">frete {formatCurrency(freightTotal)}</span>
+          </div>
         )}
       </div>
       <div className="flex flex-col gap-0.5">
