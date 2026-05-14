@@ -36,6 +36,7 @@ import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
 import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque, batchSetEmEntregaForLoad } from '@/lib/pedidosStatusRepo';
 import { fetchAllPages } from '@/lib/supabaseUtils';
+import { recordEmbarqueCriado, recordEmbarqueAlterado } from '@/lib/embarqueHistoricoRepo';
 
 interface AppState {
   clients: Client[];
@@ -1009,6 +1010,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const { error: saveErr } = await upsertProgramacaoCarregamento(nextLoad);
     if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(nextLoad.id, nextLoad.orderIds, 'pendente');
+    void recordEmbarqueCriado(nextLoad, user?.username || null);
 
     if (nextLoad.shipmentStatus === 'Em Rota') {
       const currentStatuses = await listPedidosStatusByPedidoIds(nextLoad.orderIds);
@@ -1083,6 +1085,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const { error: saveErr } = await upsertProgramacaoCarregamento(l);
     if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(l.id, l.orderIds, l.shipmentStatus === 'Entregue' ? 'entregue' : 'pendente');
+    if (oldLoad) void recordEmbarqueAlterado(oldLoad, l, user?.username || null);
 
     if (l.shipmentStatus === 'Em Rota') {
       const currentStatuses = await listPedidosStatusByPedidoIds(l.orderIds);

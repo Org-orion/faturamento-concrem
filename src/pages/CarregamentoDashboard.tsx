@@ -13,6 +13,8 @@ import type { Load } from '@/types';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeDot, PrioridadeBadge } from '@/components/pedidos/PrioridadeBadge';
 import { supabasePedidos, supabaseOps } from '@/lib/supabase';
+import { listEmbarqueHistorico, type EmbarqueHistoricoRow } from '@/lib/embarqueHistoricoRepo';
+import { fmtDateTime } from '@/lib/dateUtils';
 
 type ViewMode = 'semana' | 'mes' | 'lista';
 
@@ -364,6 +366,18 @@ function LoadDetailsPanel({
     setSavingObs(false);
   };
 
+  // ── histórico ──
+  const [historico, setHistorico] = useState<EmbarqueHistoricoRow[]>([]);
+  const [loadingHistorico, setLoadingHistorico] = useState(false);
+
+  useEffect(() => {
+    setLoadingHistorico(true);
+    listEmbarqueHistorico(load.id).then((rows) => {
+      setHistorico(rows);
+      setLoadingHistorico(false);
+    });
+  }, [load.id]);
+
   // ── attachments ──
   const [attachments, setAttachments] = useState<LoadAttachment[]>([]);
   const [loadingAttachments, setLoadingAttachments] = useState(false);
@@ -643,6 +657,51 @@ function LoadDetailsPanel({
               <p className="mt-2 text-[11px] text-muted-foreground/50 text-center">Nenhum anexo ainda.</p>
             )}
           </div>
+        </div>
+
+        {/* ── Histórico de movimentações ── */}
+        <div className="border-t border-border pt-4 pb-2">
+          <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-3 flex items-center gap-1">
+            <Calendar className="h-3.5 w-3.5" /> Histórico
+          </p>
+          {loadingHistorico ? (
+            <p className="text-xs text-muted-foreground animate-pulse">Carregando histórico...</p>
+          ) : historico.length === 0 ? (
+            <p className="text-[11px] text-muted-foreground/50 text-center">Nenhuma movimentação registrada.</p>
+          ) : (
+            <div className="space-y-2 max-h-48 overflow-y-auto">
+              {historico.map((h) => (
+                <div key={h.id} className="flex items-start gap-2 text-xs">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary/50 mt-1.5 shrink-0" />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1 flex-wrap">
+                      <span className="font-medium text-foreground">
+                        {h.acao === 'criado' ? 'Criado' :
+                         h.acao === 'status_alterado' ? h.campo :
+                         h.acao === 'motorista_alterado' ? 'Motorista alterado' :
+                         h.acao === 'pedidos_alterados' ? h.campo :
+                         h.acao === 'data_alterada' ? h.campo :
+                         h.acao === 'frete_alterado' ? 'Frete alterado' :
+                         h.acao === 'obs_alterada' ? 'Observação' : h.acao}
+                      </span>
+                      {h.acao !== 'criado' && h.valor_anterior && (
+                        <span className="text-muted-foreground line-through">{h.valor_anterior}</span>
+                      )}
+                      {h.acao !== 'criado' && h.valor_novo && (
+                        <>
+                          {h.valor_anterior && <span className="text-muted-foreground">→</span>}
+                          <span className="text-primary font-medium">{h.valor_novo}</span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-muted-foreground/70 text-[10px] mt-0.5">
+                      {fmtDateTime(h.criado_em)}{h.alterado_por ? ` · ${h.alterado_por}` : ''}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Footer */}
