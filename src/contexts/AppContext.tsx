@@ -1085,7 +1085,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const { error: saveErr } = await upsertProgramacaoCarregamento(l);
     if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(l.id, l.orderIds, l.shipmentStatus === 'Entregue' ? 'entregue' : 'pendente');
-    if (oldLoad) void recordEmbarqueAlterado(oldLoad, l, user?.username || null);
+    if (oldLoad) await recordEmbarqueAlterado(oldLoad, l, user?.username || null);
 
     if (l.shipmentStatus === 'Em Rota') {
       const currentStatuses = await listPedidosStatusByPedidoIds(l.orderIds);

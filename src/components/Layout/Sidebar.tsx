@@ -607,10 +607,10 @@ export const Sidebar: React.FC = () => {
         <SidebarBody />
       </aside>
 
-      {/* Desktop sidebar (lg+) */}
+      {/* Desktop sidebar (lg+) — flex-child normal, nunca rola com o conteúdo */}
       <aside
         className={cn(
-          'hidden lg:flex fixed left-0 top-0 h-screen z-40 flex-col transition-all duration-300 ease-in-out no-print',
+          'hidden lg:flex shrink-0 h-screen sticky top-0 z-40 flex-col transition-[width] duration-300 ease-in-out no-print',
           isCollapsed ? 'w-[72px]' : 'w-56'
         )}
         style={{

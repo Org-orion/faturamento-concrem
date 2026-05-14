@@ -74,11 +74,13 @@ export function AtualizacaoStatusList({
                 transform: `translateY(${virtualRow.start}px)`,
               }}
             >
-              <button
-                type="button"
+              <div
+                role="button"
+                tabIndex={0}
                 onClick={() => onSelect(p.id)}
+                onKeyDown={(e) => e.key === 'Enter' && onSelect(p.id)}
                 className={cn(
-                  'w-full text-left bg-card rounded-xl border border-border p-4 shadow-card hover:bg-muted/10 transition-colors',
+                  'w-full text-left bg-card rounded-xl border border-border p-4 shadow-card hover:bg-muted/10 transition-colors cursor-pointer',
                   sel && 'ring-2 ring-primary/30 border-primary/40',
                   pinned && 'border-amber-300/60 bg-amber-50/30',
                 )}
@@ -117,7 +119,7 @@ export function AtualizacaoStatusList({
                     </div>
                   </div>
                 </div>
-              </button>
+              </div>
             </div>
           );
         })}

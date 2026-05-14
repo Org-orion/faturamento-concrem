@@ -434,9 +434,9 @@ const Financial = () => {
                 <SortableHeader columnKey="driver" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Motorista</SortableHeader>
                 <SortableHeader columnKey="date" sortState={sortPending} onToggle={togglePending} className="text-left py-4 px-6">Data</SortableHeader>
                 <SortableHeader columnKey="freightValue" sortState={sortPending} onToggle={togglePending} className="text-right py-4 px-6">Valor Frete</SortableHeader>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Motorista</th>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Outras Despesas</th>
-                <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Saldo</th>
+                <th className="hidden xl:table-cell text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Valor Motorista</th>
+                <th className="hidden xl:table-cell text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Outras Despesas</th>
+                <th className="hidden xl:table-cell text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Saldo</th>
                 <th className="text-left py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Status</th>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
@@ -454,9 +454,9 @@ const Financial = () => {
                     <td className="py-4 px-6">{driver?.name || '-'}</td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">{dataStr}</td>
                     <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(frete)}</td>
-                    <td className="py-4 px-6 text-right font-mono-data">-</td>
-                    <td className="py-4 px-6 text-right font-mono-data">-</td>
-                    <td className="py-4 px-6 text-right font-mono-data">-</td>
+                    <td className="hidden xl:table-cell py-4 px-6 text-right font-mono-data">-</td>
+                    <td className="hidden xl:table-cell py-4 px-6 text-right font-mono-data">-</td>
+                    <td className="hidden xl:table-cell py-4 px-6 text-right font-mono-data">-</td>
                     <td className="py-4 px-6">
                       <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-status-warning/15 text-status-warning">Pendente</span>
                     </td>
@@ -505,9 +505,9 @@ const Financial = () => {
                 <SortableHeader columnKey="driver" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Motorista</SortableHeader>
                 <SortableHeader columnKey="date" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Data</SortableHeader>
                 <SortableHeader columnKey="freightValue" sortState={sortLaunched} onToggle={toggleLaunched} className="text-right py-4 px-6">Valor Frete</SortableHeader>
-                <SortableHeader columnKey="driverValue" sortState={sortLaunched} onToggle={toggleLaunched} className="text-right py-4 px-6">Valor Motorista</SortableHeader>
-                <SortableHeader columnKey="expenses" sortState={sortLaunched} onToggle={toggleLaunched} className="text-right py-4 px-6">Outras Despesas</SortableHeader>
-                <SortableHeader columnKey="saldo" sortState={sortLaunched} onToggle={toggleLaunched} className="text-right py-4 px-6">Saldo</SortableHeader>
+                <SortableHeader columnKey="driverValue" sortState={sortLaunched} onToggle={toggleLaunched} className="hidden xl:table-cell text-right py-4 px-6">Valor Motorista</SortableHeader>
+                <SortableHeader columnKey="expenses" sortState={sortLaunched} onToggle={toggleLaunched} className="hidden xl:table-cell text-right py-4 px-6">Outras Despesas</SortableHeader>
+                <SortableHeader columnKey="saldo" sortState={sortLaunched} onToggle={toggleLaunched} className="hidden xl:table-cell text-right py-4 px-6">Saldo</SortableHeader>
                 <SortableHeader columnKey="status" sortState={sortLaunched} onToggle={toggleLaunched} className="text-left py-4 px-6">Status</SortableHeader>
                 <th className="text-right py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px]">Ações</th>
               </tr>
@@ -527,9 +527,9 @@ const Financial = () => {
                     <td className="py-4 px-6">{driver?.name || '-'}</td>
                     <td className="py-4 px-6 font-mono-data text-muted-foreground">{fmtDate(e.deliveryDate)}</td>
                     <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(e.freightValue)}</td>
-                    <td className="py-4 px-6 text-right font-mono-data">{formatCurrency(e.driverValue)}</td>
-                    <td className="py-4 px-6 text-right font-mono-data">{formatCurrency(other)}</td>
-                    <td className={"py-4 px-6 text-right font-mono-data font-bold " + (negative ? 'text-destructive' : 'text-foreground')}>{formatCurrency(saldoRow)}</td>
+                    <td className="hidden xl:table-cell py-4 px-6 text-right font-mono-data">{formatCurrency(e.driverValue)}</td>
+                    <td className="hidden xl:table-cell py-4 px-6 text-right font-mono-data">{formatCurrency(other)}</td>
+                    <td className={"hidden xl:table-cell py-4 px-6 text-right font-mono-data font-bold " + (negative ? 'text-destructive' : 'text-foreground')}>{formatCurrency(saldoRow)}</td>
                     <td className="py-4 px-6">
                       <span
                         className={

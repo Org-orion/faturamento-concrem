@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, Pencil, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, FileDown, Pencil, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
 import logoProgramacao from '@/assets/logo-programacao.png';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { getPedidoStatusLabel, getPedidoStatusBadgeClass } from '@/lib/pedidoStatusFlow';
@@ -681,6 +681,93 @@ const Programacao: React.FC = () => {
     setPrintMes(null);
   };
 
+  // ── Export PDF dos pedidos selecionados (sem programação) ────────────────────
+  const generateSelecaoPdf = () => {
+    const pedidos = filteredPedidos
+      .filter(p => selectedIds.has(p.pedidoId))
+      .slice()
+      .sort((a, b) => a.clienteNome.localeCompare(b.clienteNome, 'pt-BR'));
+
+    if (!pedidos.length) return;
+
+    const now = new Date();
+    const emissao = `${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
+    const fmtCurrency = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+
+    let totalValor = 0;
+    let totalQtd = 0;
+    const rows = pedidos.map(p => {
+      totalValor += p.valor;
+      totalQtd += p.totalQtd ?? 0;
+      return `<tr>
+        <td style="font-weight:700">${p.numeroPedido}</td>
+        <td>${p.clienteNome}</td>
+        <td style="font-size:10px;color:#555">${p.representante ?? '—'}</td>
+        <td style="text-align:center;font-size:10px">${p.statusLabel}</td>
+        <td style="text-align:center">${p.totalQtd != null ? p.totalQtd : '—'}</td>
+        <td style="text-align:right">${fmtCurrency(p.valor)}</td>
+        <td style="text-align:center">${p.dataEmissaoFormatada}</td>
+      </tr>`;
+    }).join('');
+
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+<title></title>
+<style>
+  @page { size: A4 landscape; margin: 10mm 12mm; }
+  @page { @top-left { content: ""; } @top-center { content: ""; } @top-right { content: ""; } @bottom-left { content: ""; } @bottom-center { content: ""; } @bottom-right { content: ""; } }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:11px; }
+  .page-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:3px solid #0a2315; margin-bottom:8px; }
+  .page-header img { height:44px; }
+  .ph-title { text-align:right; }
+  .ph-title h1 { font-size:15px; color:#0a2315; font-weight:800; text-transform:uppercase; letter-spacing:1px; }
+  .ph-title p { font-size:9px; color:#888; margin-top:2px; }
+  table { width:100%; border-collapse:collapse; }
+  thead th { background:#0a2315; color:#fff; padding:6px 10px; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; white-space:nowrap; }
+  thead { display:table-row-group; }
+  tbody td { padding:5px 10px; border-bottom:1px solid #e0e0e0; font-size:11px; }
+  tbody tr:nth-child(even) { background:#f5f7f5; }
+  .total-row td { padding:7px 10px; font-weight:800; font-size:11px; border-top:2px solid #0a2315; background:#f0f2f0; }
+  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
+</style>
+<script>window.onload = () => { window.focus(); window.print(); };</script>
+</head><body>
+  <div class="page-header">
+    <img src="${logoProgramacao}" alt="Concrem" />
+    <div class="ph-title">
+      <h1>Pedidos Sem Programação</h1>
+      <p>Emissão: ${emissao} &nbsp;·&nbsp; ${pedidos.length} pedido(s) selecionado(s)</p>
+    </div>
+  </div>
+  <table>
+    <thead><tr>
+      <th style="text-align:left">Nº Pedido</th>
+      <th style="text-align:left">Cliente</th>
+      <th style="text-align:left">Representante</th>
+      <th style="text-align:center">Status</th>
+      <th style="text-align:center">Qtd Kits</th>
+      <th style="text-align:right">Valor</th>
+      <th style="text-align:center">Emissão</th>
+    </tr></thead>
+    <tbody>
+      ${rows}
+      <tr class="total-row">
+        <td colspan="4" style="text-align:right">TOTAL</td>
+        <td style="text-align:center">${totalQtd ? parseFloat(totalQtd.toFixed(2)).toLocaleString('pt-BR') : '—'}</td>
+        <td style="text-align:right;border:2px solid #0a2315;background:#e8ede8">${fmtCurrency(totalValor)}</td>
+        <td></td>
+      </tr>
+    </tbody>
+  </table>
+</body></html>`;
+
+    const w = window.open('', '_blank', 'width=1200,height=800');
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
   // ── Import by list ───────────────────────────────────────────────────────────
 
   const parseImportIds = () => {
@@ -874,19 +961,19 @@ const Programacao: React.FC = () => {
   // ─── Main render ─────────────────────────────────────────────────────────────
 
   return (
-    <div className="space-y-4 p-6">
+    <div className="space-y-4">
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-4 flex-wrap">
-        <div className="flex items-center gap-3">
-          <CalendarDays className="h-6 w-6 text-primary shrink-0" />
-          <div>
-            <h1 className="text-2xl font-display font-semibold">Programação</h1>
-            <p className="text-sm text-muted-foreground">Acompanhe os pedidos liberados por mês de programação.</p>
+      <div className="flex items-start justify-between gap-3 flex-wrap">
+        <div className="flex items-center gap-3 min-w-0">
+          <CalendarDays className="h-5 w-5 text-primary shrink-0" />
+          <div className="min-w-0">
+            <h1 className="text-lg sm:text-2xl font-display font-semibold">Programação</h1>
+            <p className="text-xs sm:text-sm text-muted-foreground hidden sm:block">Acompanhe os pedidos liberados por mês de programação.</p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm text-muted-foreground">Ano:</label>
+        <div className="flex items-center gap-1.5 shrink-0">
+          <label className="text-sm text-muted-foreground hidden sm:inline">Ano:</label>
           <select
             value={selectedYear}
             onChange={(e) => {
@@ -900,7 +987,7 @@ const Programacao: React.FC = () => {
           </select>
           <button
             onClick={() => { setImportResult(null); setShowImportModal(true); }}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
             title="Importar lista de pedidos"
           >
             <Upload className="h-4 w-4" />
@@ -918,7 +1005,7 @@ const Programacao: React.FC = () => {
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-border bg-card">
-        <div className="relative flex-1 min-w-[160px] max-w-[260px]">
+        <div className="relative flex-1 min-w-[140px] max-w-full sm:max-w-[260px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input
             type="text"
@@ -931,7 +1018,7 @@ const Programacao: React.FC = () => {
         <select
           value={filterStatus}
           onChange={(e) => setFilterStatus(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+          className="flex-1 sm:flex-none px-2 py-1.5 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary min-w-[120px]"
         >
           <option value="">Todos os status</option>
           {availableStatuses.map(s => (
@@ -941,7 +1028,7 @@ const Programacao: React.FC = () => {
         <select
           value={filterMes}
           onChange={(e) => setFilterMes(e.target.value)}
-          className="px-2 py-1.5 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+          className="flex-1 sm:flex-none px-2 py-1.5 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary min-w-[100px]"
         >
           <option value="">Todos os meses</option>
           {availableMonths.map(m => (
@@ -974,7 +1061,7 @@ const Programacao: React.FC = () => {
       </div>
 
       {/* Summary Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         {[
           { label: `Pedidos programados em ${selectedYear}`, value: stats.totalPedidos.toString() },
           { label: `Valor total em ${selectedYear}`,         value: BRL_FMT.format(stats.totalValor) },
@@ -994,7 +1081,7 @@ const Programacao: React.FC = () => {
           <span className="text-sm font-semibold text-foreground">
             {selectedIds.size} pedido(s) selecionado(s)
           </span>
-          <div className="flex items-center gap-2 flex-1 min-w-[280px]">
+          <div className="flex items-center gap-2 flex-1 min-w-[200px]">
             <span className="text-sm text-muted-foreground whitespace-nowrap">Novo mês:</span>
             <input
               type="month"
@@ -1016,6 +1103,13 @@ const Programacao: React.FC = () => {
           >
             <Trash2 className="h-3.5 w-3.5" />
             Remover programação
+          </button>
+          <button
+            className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-border text-foreground hover:bg-muted transition-colors"
+            onClick={generateSelecaoPdf}
+          >
+            <FileDown className="h-3.5 w-3.5" />
+            Exportar PDF
           </button>
           <button
             onClick={clearSelection}

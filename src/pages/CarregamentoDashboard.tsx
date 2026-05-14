@@ -5,7 +5,7 @@ import { canDo, type UserRole } from '@/utils/access';
 import { formatCurrency } from '@/components/shared';
 import { todayBR, fmtDate } from '@/lib/dateUtils';
 import {
-  ChevronLeft, ChevronRight, Truck, Package, DollarSign, Weight,
+  ChevronLeft, ChevronRight, Truck, Package, DollarSign,
   Search, X, Pencil, Calendar, CalendarCheck, User, FileText,
   Paperclip, Trash2, Upload, Save, ExternalLink,
 } from 'lucide-react';
@@ -38,6 +38,10 @@ const STATUS_LEFT: Record<string, string> = {
   'Em Rota':             'bg-purple-500',
   'Entregue':            'bg-emerald-500',
   'Cancelado':           'bg-red-500',
+};
+
+const STATUS_ABBR: Record<string, string> = {
+  'Aguardando Despacho': 'Ag. Despacho',
 };
 
 const DAYS_BR = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
@@ -134,21 +138,15 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, or
             <Truck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="text-xs font-semibold truncate text-foreground group-hover:text-primary">{driverName}</span>
           </div>
-          <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${colorClass}`}>{status}</span>
+          <span className={`hidden sm:inline-flex shrink-0 items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${colorClass}`}>{STATUS_ABBR[status] ?? status}</span>
         </div>
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           {priorityNivel && <span className="flex items-center gap-1"><PrioridadeDot nivel={priorityNivel as any} /></span>}
           <span className="flex items-center gap-1"><Package className="h-3 w-3" />{load.orderIds.length} pedido{load.orderIds.length !== 1 ? 's' : ''}</span>
-          {productsValue !== null
-            ? <>
-                <span className="flex items-center gap-1 text-emerald-600 font-semibold"><DollarSign className="h-3 w-3" />{formatCurrency(productsValue)}</span>
-                <span className="flex items-center gap-1 text-sky-500">frete {formatCurrency(load.freightValue || 0)}</span>
-              </>
-            : <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{formatCurrency(load.freightValue || 0)}</span>
-          }
-          {(load.estimatedWeight || 0) > 0 && (
-            <span className="flex items-center gap-1"><Weight className="h-3 w-3" />{(load.estimatedWeight || 0).toLocaleString('pt-BR')} kg</span>
-          )}
+          <span className="flex items-center gap-1 text-emerald-600 font-semibold">
+            <DollarSign className="h-3 w-3" />
+            {formatCurrency((productsValue ?? 0) + (load.freightValue || 0))}
+          </span>
         </div>
       </div>
     </div>
@@ -178,9 +176,8 @@ function DayColumn({
   const dayNum = d.getDate();
   const isToday = dateStr === today;
   const isDragOver = dragOverDate === dateStr;
-  const productsTotal = loads.reduce((s, l) =>
-    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
-  const freightTotal = loads.reduce((s, l) => s + (l.freightValue || 0), 0);
+  const dayTotal = loads.reduce((s, l) =>
+    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0) + (l.freightValue || 0), 0);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -208,9 +205,8 @@ function DayColumn({
         <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{dayName}</div>
         <div className={`text-lg font-bold leading-none mt-0.5 ${isToday ? 'text-primary' : 'text-foreground'}`}>{dayNum}</div>
         {loads.length > 0 && (
-          <div className="mt-1 flex flex-col items-center gap-0.5">
-            <div className="text-[9px] font-semibold text-emerald-600">{formatCurrency(productsTotal)}</div>
-            <div className="text-[8px] font-medium text-sky-500">frete {formatCurrency(freightTotal)}</div>
+          <div className="mt-1">
+            <div className="text-[9px] font-semibold text-emerald-600">{formatCurrency(dayTotal)}</div>
           </div>
         )}
       </div>
@@ -258,9 +254,8 @@ function MonthCell({
   const isToday = dateStr === today;
   const isCurrentMonth = dateStr.slice(0, 7) === currentMonth;
   const isDragOver = dragOverDate === dateStr;
-  const productsTotal = loads.reduce((s, l) =>
-    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
-  const freightTotal = loads.reduce((s, l) => s + (l.freightValue || 0), 0);
+  const dayTotal = loads.reduce((s, l) =>
+    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0) + (l.freightValue || 0), 0);
 
   return (
     <div
@@ -276,10 +271,7 @@ function MonthCell({
           {dayNum}
         </span>
         {loads.length > 0 && isCurrentMonth && (
-          <div className="flex flex-col items-end gap-0">
-            <span className="text-[9px] font-semibold text-emerald-600">{formatCurrency(productsTotal)}</span>
-            <span className="text-[8px] font-medium text-sky-500">frete {formatCurrency(freightTotal)}</span>
-          </div>
+          <span className="text-[9px] font-semibold text-emerald-600">{formatCurrency(dayTotal)}</span>
         )}
       </div>
       <div className="flex flex-col gap-0.5">
@@ -351,7 +343,7 @@ function LoadDetailsPanel({
       });
   }, [load.id]);
 
-  const totalOrderValue = Array.from(orderDetails.values()).reduce((s, d) => s + d.orderValue + d.freight, 0);
+  const totalOrderValue = Array.from(orderDetails.values()).reduce((s, d) => s + d.orderValue, 0);
   const grandTotal = totalOrderValue + (load.freightValue || 0);
 
   // ── obs ──
@@ -362,8 +354,13 @@ function LoadDetailsPanel({
 
   const saveObs = async () => {
     setSavingObs(true);
-    await onUpdateLoad({ ...load, obs: obsValue });
-    setSavingObs(false);
+    try {
+      await onUpdateLoad({ ...load, obs: obsValue });
+    } catch (err) {
+      console.error('[LoadDetailsPanel] saveObs:', err);
+    } finally {
+      setSavingObs(false);
+    }
   };
 
   // ── histórico ──
@@ -376,7 +373,8 @@ function LoadDetailsPanel({
       setHistorico(rows);
       setLoadingHistorico(false);
     });
-  }, [load.id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [load.id, load.plannedDate, load.shipmentStatus, load.productionStatus, load.driverId, load.freightValue, load.obs, load.previsaoEntrega, load.realizationDate, load.orderIds.length]);
 
   // ── attachments ──
   const [attachments, setAttachments] = useState<LoadAttachment[]>([]);
@@ -435,7 +433,7 @@ function LoadDetailsPanel({
     <div className="fixed inset-0 z-40 flex justify-end" onClick={onClose}>
       <div className="absolute inset-0 bg-black/30 backdrop-blur-[2px]" aria-hidden />
       <div
-        className="relative z-10 w-full max-w-xl bg-card border-l border-border shadow-2xl flex flex-col h-full"
+        className="relative z-10 w-full max-w-2xl bg-card border-l border-border shadow-2xl flex flex-col h-full"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -757,6 +755,15 @@ const CarregamentoDashboard = () => {
   const [selectedLoad, setSelectedLoad] = useState<Load | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
 
+  // ── mobile detection ──
+  const [windowWidth, setWindowWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
+  useEffect(() => {
+    const handle = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handle);
+    return () => window.removeEventListener('resize', handle);
+  }, []);
+  const isMobile = windowWidth < 640;
+
   const driverMap = useMemo(() => {
     const m = new Map<string, string>();
     for (const d of drivers) m.set(d.id, d.name);
@@ -766,6 +773,9 @@ const CarregamentoDashboard = () => {
   // ── week view ──
   const weekStart = useMemo(() => mondayOfWeek(anchor), [anchor]);
   const weekDays = useMemo(() => Array.from({ length: 7 }, (_, i) => addDays(weekStart, i)), [weekStart]);
+  // Mobile: show only 3 days centered on anchor
+  const mobileDays = useMemo(() => [-1, 0, 1].map(offset => addDays(anchor, offset)), [anchor]);
+  const visibleWeekDays = isMobile ? mobileDays : weekDays;
 
   // ── month view ──
   const monthStr = useMemo(() => anchor.slice(0, 7), [anchor]);
@@ -820,11 +830,13 @@ const CarregamentoDashboard = () => {
 
   // ── navigation ──
   function prev() {
+    if (view === 'semana' && isMobile) { setAnchor(addDays(anchor, -1)); return; }
     if (view === 'semana') setAnchor(addDays(weekStart, -7));
     else if (view === 'mes') setAnchor(addMonths(monthFirst, -1));
     else setAnchor(addDays(anchor, -30));
   }
   function next() {
+    if (view === 'semana' && isMobile) { setAnchor(addDays(anchor, 1)); return; }
     if (view === 'semana') setAnchor(addDays(weekStart, 7));
     else if (view === 'mes') setAnchor(addMonths(monthFirst, 1));
     else setAnchor(addDays(anchor, 30));
@@ -833,6 +845,10 @@ const CarregamentoDashboard = () => {
 
   function periodLabel() {
     if (view === 'semana') {
+      if (isMobile) {
+        const d = parseISO(anchor);
+        return `${DAYS_BR[d.getDay()]}, ${d.getDate()} ${MONTHS_BR[d.getMonth()].slice(0, 3)}`;
+      }
       const from = parseISO(weekStart);
       const to = parseISO(addDays(weekStart, 6));
       if (from.getMonth() === to.getMonth()) {
@@ -873,7 +889,7 @@ const CarregamentoDashboard = () => {
         m.set(String(row.numero_pedido), orderVal);
       }
       setWeekOrderValueMap(m);
-    });
+    }).catch((err) => console.error('[CarregamentoDashboard] weekOrderValues:', err));
   }, [weekOrderIds]);
 
   const weekTotals = useMemo(() => {
@@ -912,7 +928,7 @@ const CarregamentoDashboard = () => {
         m.set(String(row.numero_pedido), orderVal);
       }
       setMonthOrderValueMap(m);
-    });
+    }).catch((err) => console.error('[CarregamentoDashboard] monthOrderValues:', err));
   }, [monthOrderIds]);
 
   const monthTotals = useMemo(() => {
@@ -951,7 +967,7 @@ const CarregamentoDashboard = () => {
         m.set(String(row.numero_pedido), orderVal);
       }
       setListOrderValueMap(m);
-    });
+    }).catch((err) => console.error('[CarregamentoDashboard] listOrderValues:', err));
   }, [listOrderIds, view]);
 
   // ── keep selectedLoad in sync with updated loads state ──
@@ -986,7 +1002,7 @@ const CarregamentoDashboard = () => {
             <button type="button" onClick={next} className="h-7 w-7 flex items-center justify-center rounded-lg border border-border hover:bg-muted transition-colors">
               <ChevronRight className="h-4 w-4" />
             </button>
-            <span className="ml-2 text-sm font-semibold text-foreground">{periodLabel()}</span>
+            <span className="ml-1 text-sm font-semibold text-foreground truncate max-w-[140px] sm:max-w-none">{periodLabel()}</span>
           </div>
         )}
 
@@ -998,7 +1014,7 @@ const CarregamentoDashboard = () => {
         </div>
 
         {view === 'semana' && weekTotals.count > 0 && (
-          <div className="hidden md:flex gap-2">
+          <div className="hidden lg:flex gap-2">
             <Chip icon={Truck} value={String(weekTotals.count)} label="carreg." />
             <Chip icon={Package} value={String(weekTotals.orders)} label="pedidos" />
             <Chip icon={DollarSign} value={formatCurrency(weekTotals.total)} label="total" color="text-emerald-600" />
@@ -1038,17 +1054,18 @@ const CarregamentoDashboard = () => {
           const dotClass = STATUS_LEFT[s] || 'bg-gray-400';
           return (
             <button key={s} type="button" onClick={() => toggleStatus(s)}
-              className={`flex items-center gap-1.5 px-2 md:px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${active ? 'bg-foreground text-background border-foreground' : 'bg-background text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground'}`}>
+              className={`flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-semibold border transition-colors ${active ? 'bg-foreground text-background border-foreground' : 'bg-background text-muted-foreground border-border hover:border-foreground/40 hover:text-foreground'}`}
+              title={s}>
               <span className={`h-2 w-2 rounded-full shrink-0 ${dotClass}`} />
-              <span className="hidden md:inline">{s}</span>
+              <span className="hidden xl:inline">{s}</span>
             </button>
           );
         })}
 
-        <div className="w-px h-5 bg-border shrink-0" />
+        <div className="hidden sm:block w-px h-5 bg-border shrink-0" />
 
-        {/* Date range */}
-        <div className="flex items-center gap-1.5 shrink-0">
+        {/* Date range — hidden on mobile */}
+        <div className="hidden sm:flex items-center gap-1.5 shrink-0">
           <span className="text-[11px] font-semibold text-muted-foreground">De</span>
           <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
             className="h-7 px-2 text-xs rounded-lg border border-input bg-card text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors" />
@@ -1067,33 +1084,35 @@ const CarregamentoDashboard = () => {
 
       {/* ── WEEK VIEW ── */}
       {view === 'semana' && (
-        <div className="overflow-x-auto rounded-xl border border-border bg-card">
-        <div className="grid grid-cols-7 gap-1 min-w-[700px]">
-          {weekDays.map((d) => (
-            <DayColumn key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
-              today={today} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={weekOrderValueMap}
-              onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
-              dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
-          ))}
-        </div>
+        <div className={isMobile ? 'rounded-xl border border-border bg-card' : 'overflow-x-auto rounded-xl border border-border bg-card'}>
+          <div className={isMobile ? 'grid grid-cols-3 gap-1' : 'grid grid-cols-7 gap-1 min-w-[700px]'}>
+            {visibleWeekDays.map((d) => (
+              <DayColumn key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
+                today={today} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={weekOrderValueMap}
+                onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
+                dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
+            ))}
+          </div>
         </div>
       )}
 
       {/* ── MONTH VIEW ── */}
       {view === 'mes' && (
-        <div className="rounded-xl border border-border overflow-hidden bg-card">
-          <div className="grid grid-cols-7 border-b border-border bg-muted/40">
-            {DAYS_BR.slice(1).concat(DAYS_BR[0]).map((d) => (
-              <div key={d} className="px-2 py-2 text-[11px] font-semibold text-muted-foreground text-center">{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7">
-            {calendarCells.map((d) => (
-              <MonthCell key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
-                today={today} currentMonth={monthStr} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={monthOrderValueMap}
-                onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
-                dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
-            ))}
+        <div className="overflow-x-auto rounded-xl border border-border bg-card">
+          <div className="min-w-[560px]">
+            <div className="grid grid-cols-7 border-b border-border bg-muted/40">
+              {DAYS_BR.slice(1).concat(DAYS_BR[0]).map((d) => (
+                <div key={d} className="px-1 py-2 text-[10px] font-semibold text-muted-foreground text-center">{d}</div>
+              ))}
+            </div>
+            <div className="grid grid-cols-7">
+              {calendarCells.map((d) => (
+                <MonthCell key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
+                  today={today} currentMonth={monthStr} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={monthOrderValueMap}
+                  onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
+                  dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
+              ))}
+            </div>
           </div>
         </div>
       )}

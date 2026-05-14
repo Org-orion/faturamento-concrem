@@ -150,12 +150,8 @@ const AtualizacaoStatus = () => {
         if (numericMissingIds.length > 0) {
           const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
           const { data: byNumero } = await supabasePedidos.from(table).select(tableColumns).in('numero_pedido', numericMissingIds);
-          const foundByNumero = new Set(((byNumero || []) as any[]).map((r: any) => r.numero_pedido != null ? String(r.numero_pedido) : null).filter(Boolean));
-          const stillMissing = numericMissingIds.filter((id) => !foundByNumero.has(id));
-          const { data: byId } = stillMissing.length > 0
-            ? await supabasePedidos.from(table).select(tableColumns).in('id', stillMissing)
-            : { data: [] };
-          const allExtra = [...(byNumero || []), ...(byId || [])] as any[];
+          // Não há fallback por 'id': a view concrem_pedidos_venda não possui essa coluna
+          const allExtra = [...(byNumero || [])] as any[];
           const fetched: UnifiedPedido[] = allExtra.map((row: any) => {
             const o = rowToOrder(row, 'CLI-001');
             const canonicalId = row.numero_pedido != null ? String(row.numero_pedido) : (row.id != null ? String(row.id) : o.id);
@@ -310,10 +306,8 @@ const AtualizacaoStatus = () => {
       const { data: byNumero } = await supabasePedidos!.from(table).select(tableColumns).in('numero_pedido', missingIds);
       const foundByNumero = new Set(((byNumero || []) as any[]).map((r: any) => r.numero_pedido != null ? String(r.numero_pedido) : null).filter(Boolean));
       const stillMissing = missingIds.filter((id) => !foundByNumero.has(id));
-      const { data: byId } = stillMissing.length > 0
-        ? await supabasePedidos!.from(table).select(tableColumns).in('id', stillMissing)
-        : { data: [] };
-      const data = [...(byNumero || []), ...(byId || [])];
+      // Não há fallback por 'id': a view concrem_pedidos_venda não possui essa coluna
+      const data = [...(byNumero || [])];
       const fetched: UnifiedPedido[] = (data as any[]).map((row: any) => {
         const o = rowToOrder(row, 'CLI-001');
         const canonicalId = row.numero_pedido != null ? String(row.numero_pedido) : (row.id != null ? String(row.id) : o.id);

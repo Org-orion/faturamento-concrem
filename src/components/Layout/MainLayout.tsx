@@ -22,13 +22,10 @@ const isDesktop = () => typeof window !== 'undefined' && window.innerWidth >= 10
 
 export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [isCollapsed, setIsCollapsed] = useState(() => !isDesktop());
-  const [isLg, setIsLg] = useState(isDesktop);
 
   useEffect(() => {
     const check = () => {
-      const lg = window.innerWidth >= 1024;
-      setIsLg(lg);
-      if (!lg) setIsCollapsed(true);
+      if (window.innerWidth < 1024) setIsCollapsed(true);
     };
     window.addEventListener('resize', check);
     return () => window.removeEventListener('resize', check);
@@ -36,21 +33,18 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const toggleSidebar = () => setIsCollapsed(prev => !prev);
 
-  const marginLeft = !isLg ? 0 : isCollapsed ? 72 : 224;
-
   return (
     <SidebarContext.Provider value={{ isCollapsed, setIsCollapsed, toggleSidebar }}>
-      <div className="flex min-h-screen bg-background font-sans">
+      {/* Outer: h-screen + overflow-hidden → body nunca rola, sidebar nunca se move */}
+      <div className="flex h-screen overflow-hidden bg-background font-sans">
         <Sidebar />
-        <div
-          className="flex-1 flex flex-col transition-all duration-300 ease-in-out"
-          style={{ marginLeft }}
-        >
+        {/* Content area: flex-1 + overflow-y-auto → scroll fica aqui dentro */}
+        <div className="flex-1 flex flex-col min-w-0 overflow-y-auto transition-[margin] duration-300 ease-in-out">
           <Header />
-          <main className="p-4 lg:p-6 xl:p-8 mt-16 flex-1">
+          <main className="p-3 md:p-4 lg:p-5 xl:p-7 flex-1">
             {children}
           </main>
-          <footer className="py-4 text-center border-t border-border bg-muted/20">
+          <footer className="py-4 text-center border-t border-border bg-muted/20 shrink-0">
             <p className="text-xs text-muted-foreground font-medium">
               &copy; {new Date().getFullYear()} Concrem. Todos os direitos reservados.
             </p>

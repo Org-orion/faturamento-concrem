@@ -62,16 +62,16 @@ const Pedidos = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="border-b border-border">
-        <div className="flex gap-1">
+    <div className="space-y-4">
+      <div className="border-b border-border overflow-x-auto">
+        <div className="flex gap-0.5 min-w-max">
           {visibleTabs.map((tab) => (
             <button
               key={tab}
               type="button"
               onClick={() => setTab(tab)}
               className={cn(
-                'px-4 py-3 text-sm font-semibold transition-colors border-b-2 -mb-px',
+                'px-3 py-2.5 text-xs sm:text-sm sm:px-4 sm:py-3 font-semibold transition-colors border-b-2 -mb-px whitespace-nowrap',
                 activeTab === tab
                   ? 'border-primary text-primary'
                   : 'border-transparent text-muted-foreground hover:text-foreground',
