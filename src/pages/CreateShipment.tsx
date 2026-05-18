@@ -15,6 +15,7 @@ import {
   getOrderTotal
 } from '@/components/shared';
 import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle } from 'lucide-react';
+import { DriverSelectField } from '@/components/drivers/DriverSelectField';
 import { cn } from '@/lib/utils';
 import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas, upsertRelatorioEntregaNotificacao, listRelatorioEntregaNotificacoes, type RelatorioEntregaNotificacao } from '@/lib/opsRepo';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
@@ -1633,16 +1634,11 @@ const CreateShipment = () => {
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
             <FormField label="Selecionar Motorista">
-              <select
-                className={inputClass}
+              <DriverSelectField
+                drivers={drivers}
                 value={driverId}
-                onChange={e => setDriverId(e.target.value)}
-              >
-                <option value="">Selecione um motorista...</option>
-                {drivers.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
-                ))}
-              </select>
+                onChange={setDriverId}
+              />
             </FormField>
 
             <FormField label="Data Prevista do Carregamento">

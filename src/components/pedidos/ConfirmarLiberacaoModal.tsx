@@ -37,7 +37,7 @@ export const ConfirmarLiberacaoModal: React.FC<Props> = ({
   if (!open) return null;
 
   const invalid = mesProgramacao !== '' && !YYYYMM_RE.test(mesProgramacao);
-  const canConfirm = YYYYMM_RE.test(mesProgramacao) && !loading;
+  const canConfirm = !invalid && !loading;
 
   const titulo =
     quantidadePedidos === 1
@@ -64,14 +64,13 @@ export const ConfirmarLiberacaoModal: React.FC<Props> = ({
 
         <div className="space-y-1.5">
           <label className="block text-xs font-bold text-muted-foreground uppercase tracking-wider">
-            Mês de Programação <span className="text-destructive">*</span>
+            Mês de Programação
           </label>
           <input
             type="month"
             value={mesProgramacao}
             onChange={(e) => onChange(e.target.value)}
             className={inputClass}
-            required
             autoFocus
           />
           {invalid && (

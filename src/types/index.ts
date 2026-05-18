@@ -31,6 +31,9 @@ export interface Driver {
   vehicleWeight?: number;
   plate: string;
   status: 'Disponível' | 'Em Trânsito' | 'Inativo';
+  blacklisted?: boolean;
+  rating?: number | null;
+  ratingCount?: number;
 }
 
 export interface OrderItem {

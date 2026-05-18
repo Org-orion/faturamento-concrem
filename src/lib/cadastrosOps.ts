@@ -26,8 +26,20 @@ export type MotoristaRow = {
   tipo_veiculo: string | null;
   volume_suportado_m3: number | null;
   peso_suportado_kg: number | null;
+  blacklisted: boolean | null;
+  avaliacao_media: number | null;
+  avaliacao_count: number | null;
   criado_em: string;
   atualizado_em: string;
+};
+
+export type MotoristaAvaliacaoRow = {
+  id: string;
+  motorista_id: string;
+  estrelas: number;
+  comentario: string | null;
+  avaliado_por: string | null;
+  criado_em: string;
 };
 
 export type UsuarioPerfilAcesso = 'faturamento' | 'administrador' | 'comercial' | 'producao' | 'logistica';
@@ -96,12 +108,26 @@ export async function deleteRepresentante(id: string) {
   if (error) throw new Error(error.message);
 }
 
+const MOTORISTA_COLS = 'id,nome,cpf,telefone,cnh_numero,cnh_categoria,placa_veiculo,tipo_veiculo,volume_suportado_m3,peso_suportado_kg,blacklisted,avaliacao_media,avaliacao_count,criado_em,atualizado_em';
+const MOTORISTA_COLS_LEGACY = 'id,nome,cpf,telefone,cnh_numero,cnh_categoria,placa_veiculo,tipo_veiculo,volume_suportado_m3,peso_suportado_kg,criado_em,atualizado_em';
+
 export async function listMotoristas() {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { data, error } = await supabaseOps
     .from('concrem_motoristas')
-    .select('id,nome,cpf,telefone,cnh_numero,cnh_categoria,placa_veiculo,tipo_veiculo,volume_suportado_m3,peso_suportado_kg,criado_em,atualizado_em')
+    .select(MOTORISTA_COLS)
     .order('nome', { ascending: true });
+  // Fallback: se as colunas de avaliação ainda não existirem no banco, busca sem elas
+  if (error?.message?.includes('blacklisted') || error?.message?.includes('avaliacao')) {
+    const fallback = await supabaseOps
+      .from('concrem_motoristas')
+      .select(MOTORISTA_COLS_LEGACY)
+      .order('nome', { ascending: true });
+    if (fallback.error) throw new Error(fallback.error.message);
+    return ((fallback.data || []) as any[]).map(r => ({
+      ...r, blacklisted: false, avaliacao_media: null, avaliacao_count: 0,
+    })) as MotoristaRow[];
+  }
   if (error) throw new Error(error.message);
   return (data || []) as MotoristaRow[];
 }
@@ -111,7 +137,7 @@ export async function insertMotorista(payload: Partial<MotoristaRow>) {
   const { data, error } = await supabaseOps
     .from('concrem_motoristas')
     .insert([payload])
-    .select('id,nome,cpf,telefone,cnh_numero,cnh_categoria,placa_veiculo,tipo_veiculo,volume_suportado_m3,peso_suportado_kg,criado_em,atualizado_em')
+    .select(MOTORISTA_COLS)
     .single();
   if (error) throw new Error(error.message);
   return data as MotoristaRow;
@@ -123,7 +149,7 @@ export async function updateMotorista(id: string, payload: Partial<MotoristaRow>
     .from('concrem_motoristas')
     .update(payload)
     .eq('id', id)
-    .select('id,nome,cpf,telefone,cnh_numero,cnh_categoria,placa_veiculo,tipo_veiculo,volume_suportado_m3,peso_suportado_kg,criado_em,atualizado_em')
+    .select(MOTORISTA_COLS)
     .single();
   if (error) throw new Error(error.message);
   return data as MotoristaRow;
@@ -132,6 +158,51 @@ export async function updateMotorista(id: string, payload: Partial<MotoristaRow>
 export async function deleteMotorista(id: string) {
   if (!supabaseOps) throw new Error('Supabase OPS não configurado');
   const { error } = await supabaseOps.from('concrem_motoristas').delete().eq('id', id);
+  if (error) throw new Error(error.message);
+}
+
+export async function setMotoristaBlacklisted(id: string, blacklisted: boolean) {
+  if (!supabaseOps) throw new Error('Supabase OPS não configurado');
+  const { data, error } = await supabaseOps
+    .from('concrem_motoristas')
+    .update({ blacklisted })
+    .eq('id', id)
+    .select(MOTORISTA_COLS)
+    .single();
+  if (error) throw new Error(error.message);
+  return data as MotoristaRow;
+}
+
+export async function insertMotoristaAvaliacao(
+  motoristaId: string,
+  estrelas: number,
+  comentario: string | null,
+  avaliadoPor: string | null,
+) {
+  if (!supabaseOps) throw new Error('Supabase OPS não configurado');
+  const { data, error } = await supabaseOps
+    .from('concrem_motoristas_avaliacoes')
+    .insert([{ motorista_id: motoristaId, estrelas, comentario: comentario || null, avaliado_por: avaliadoPor }])
+    .select('id,motorista_id,estrelas,comentario,avaliado_por,criado_em')
+    .single();
+  if (error) throw new Error(error.message);
+  return data as MotoristaAvaliacaoRow;
+}
+
+export async function listMotoristaAvaliacoes(motoristaId: string) {
+  if (!supabaseOps) throw new Error('Supabase OPS não configurado');
+  const { data, error } = await supabaseOps
+    .from('concrem_motoristas_avaliacoes')
+    .select('id,motorista_id,estrelas,comentario,avaliado_por,criado_em')
+    .eq('motorista_id', motoristaId)
+    .order('criado_em', { ascending: false });
+  if (error) throw new Error(error.message);
+  return (data || []) as MotoristaAvaliacaoRow[];
+}
+
+export async function deleteMotoristaAvaliacao(id: string) {
+  if (!supabaseOps) throw new Error('Supabase OPS não configurado');
+  const { error } = await supabaseOps.from('concrem_motoristas_avaliacoes').delete().eq('id', id);
   if (error) throw new Error(error.message);
 }
 

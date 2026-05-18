@@ -24,6 +24,8 @@ export function useColumnFilters() {
   const [textValues, setTextValues] = useState<Record<string, string>>({});
   // Select values → instant
   const [selectValues, setSelectValues] = useState<Record<string, string>>({});
+  // Multi-select values → instant (array per key)
+  const [multiValues, setMultiValuesState] = useState<Record<string, string[]>>({});
 
   const debouncedText = useDebounce(textValues, 400);
 
@@ -33,6 +35,10 @@ export function useColumnFilters() {
     } else {
       setTextValues((prev) => ({ ...prev, [key]: value }));
     }
+  }, []);
+
+  const setMultiFilter = useCallback((key: string, values: string[]) => {
+    setMultiValuesState((prev) => ({ ...prev, [key]: values }));
   }, []);
 
   /** Raw values for rendering the inputs (no debounce applied). */
@@ -46,12 +52,13 @@ export function useColumnFilters() {
     <T,>(items: T[], defs: ColDef<T>[]): T[] => {
       const merged = { ...debouncedText, ...selectValues };
       const active = Object.entries(merged).filter(([, v]) => v !== undefined && v !== '');
-      if (!active.length) return items;
+      const activeMulti = Object.entries(multiValues).filter(([, v]) => v.length > 0);
+      if (!active.length && !activeMulti.length) return items;
 
       const defMap = new Map(defs.map((d) => [d.key, d]));
 
-      return items.filter((item) =>
-        active.every(([key, val]) => {
+      return items.filter((item) => {
+        const passesCol = active.every(([key, val]) => {
           const def = defMap.get(key);
           if (!def) return true;
           const cell = String(def.getter(item) ?? '').toLowerCase();
@@ -61,16 +68,24 @@ export function useColumnFilters() {
           const terms = filter.split(/[,;]+/).map((t) => t.trim()).filter(Boolean);
           if (terms.length > 1) return terms.some((t) => cell.includes(t));
           return cell.includes(filter);
-        }),
-      );
+        });
+        const passesMulti = activeMulti.every(([key, vals]) => {
+          const def = defMap.get(key);
+          if (!def) return true;
+          const cell = String(def.getter(item) ?? '').toLowerCase();
+          return vals.some(v => cell.includes(v.toLowerCase()));
+        });
+        return passesCol && passesMulti;
+      });
     },
-    [debouncedText, selectValues],
+    [debouncedText, selectValues, multiValues],
   );
 
   const clearAll = useCallback(() => {
     setTextValues({});
     setSelectValues({});
+    setMultiValuesState({});
   }, []);
 
-  return { values, setFilter, filterItems, clearAll };
+  return { values, multiValues, setFilter, setMultiFilter, filterItems, clearAll };
 }

@@ -88,7 +88,24 @@
       "Bash(curl -s 'https://ctntlgvoefdbjxvfkahp.supabase.co/rest/v1/concrem_pedidos_venda?select=numero_pedido&id_nota_conf=in.\\(613,665\\)&data_emissao=gte.2025-01-01&order=data_emissao.desc&limit=10&offset=0' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bnRsZ3ZvZWZkYmp4dmZrYWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTk0MzEsImV4cCI6MjA4OTgzNTQzMX0.e9iq0VH2Z2HEN4vw7QASSOTEcpB_x7Ovqeo6R7CDfdA' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bnRsZ3ZvZWZkYmp4dmZrYWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTk0MzEsImV4cCI6MjA4OTgzNTQzMX0.e9iq0VH2Z2HEN4vw7QASSOTEcpB_x7Ovqeo6R7CDfdA')",
       "Bash(curl -s 'https://ctntlgvoefdbjxvfkahp.supabase.co/rest/v1/concrem_pedidos_venda?select=numero_pedido&or=\\(id_nota_conf.in.\\(613,665\\)\\)&data_emissao=gte.2025-01-01&order=data_emissao.desc&limit=10&offset=0' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bnRsZ3ZvZWZkYmp4dmZrYWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTk0MzEsImV4cCI6MjA4OTgzNTQzMX0.e9iq0VH2Z2HEN4vw7QASSOTEcpB_x7Ovqeo6R7CDfdA' -H 'Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bnRsZ3ZvZWZkYmp4dmZrYWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTk0MzEsImV4cCI6MjA4OTgzNTQzMX0.e9iq0VH2Z2HEN4vw7QASSOTEcpB_x7Ovqeo6R7CDfdA')",
       "Bash(node c:/tmp/revert_finalizados_abril.mjs)",
-      "Bash(powershell -Command ' *)"
+      "Bash(powershell -Command ' *)",
+      "Bash(cat .env)",
+      "Bash(cat .env.local)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" -H \"apikey: DDCC3A3A31E3-4D87-B0DF-63187F0855A0\" \"https://evo.infinityia.online/instance/fetchInstances\")",
+      "Bash(curl -s -H \"apikey: DDCC3A3A31E3-4D87-B0DF-63187F0855A0\" \"https://evo.infinityia.online/instance/fetchInstances\")",
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(f\\\\\"Instance: {i.get\\('name','?'\\)} | State: {i.get\\('connectionStatus','?'\\)} | Number: {i.get\\('ownerJid','?'\\)}\\\\\"\\) for i in data]\")",
+      "Bash(curl -s -X POST https://ctntlgvoefdbjxvfkahp.supabase.co/rest/v1/rpc/sql -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bnRsZ3ZvZWZkYmp4dmZrYWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTk0MzEsImV4cCI6MjA4OTgzNTQzMX0.e9iq0VH2Z2HEN4vw7QASSOTEcpB_x7Ovqeo6R7CDfdA' -H 'Content-Type: application/json' -d '{\"query\": \"SELECT pedido_id, status_atual, atualizado_em, atualizado_por FROM concrem_pedidos_status WHERE pedido_id IN \\('\\\\''42674'\\\\'', '\\\\''18708'\\\\'', '\\\\''710'\\\\''\\) ORDER BY pedido_id\"}')",
+      "Bash(curl -s 'https://ctntlgvoefdbjxvfkahp.supabase.co/rest/v1/concrem_pedidos_status?pedido_id=in.\\(42674,18708,710\\)&select=pedido_id,status_atual,atualizado_em,atualizado_por' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bnRsZ3ZvZWZkYmp4dmZrYWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTk0MzEsImV4cCI6MjA4OTgzNTQzMX0.e9iq0VH2Z2HEN4vw7QASSOTEcpB_x7Ovqeo6R7CDfdA' -H 'Content-Type: application/json')",
+      "Bash(curl -s -X PATCH 'https://ctntlgvoefdbjxvfkahp.supabase.co/rest/v1/concrem_pedidos_status?pedido_id=in.\\(42674,18708,710\\)' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bnRsZ3ZvZWZkYmp4dmZrYWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTk0MzEsImV4cCI6MjA4OTgzNTQzMX0.e9iq0VH2Z2HEN4vw7QASSOTEcpB_x7Ovqeo6R7CDfdA' -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{\"status_atual\": \"aguardando_avaliacao\", \"atualizado_em\": \"2026-05-04T12:00:00.000+00:00\", \"atualizado_por\": \"reset_teste\"}')",
+      "Bash(curl -s -X DELETE 'https://ctntlgvoefdbjxvfkahp.supabase.co/rest/v1/concrem_pedidos_status_historico?pedido_id=in.\\(42674,18708,710\\)' -H 'apikey: eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImN0bnRsZ3ZvZWZkYmp4dmZrYWhwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzQyNTk0MzEsImV4cCI6MjA4OTgzNTQzMX0.e9iq0VH2Z2HEN4vw7QASSOTEcpB_x7Ovqeo6R7CDfdA' -H 'Content-Type: application/json' -H 'Prefer: return=representation')",
+      "Bash(python -c \"import sys,json; data=json.load\\(sys.stdin\\); print\\(f'{len\\(data\\)} registros de historico apagados'\\)\")",
+      "Bash(dir)",
+      "Bash(git ls-remote *)",
+      "Bash(node c:\\\\tmp\\\\delete-emb130.mjs)",
+      "PowerShell(node \"c:\\\\tmp\\\\delete-emb130.mjs\")",
+      "Bash(grep -n \"totalQtdM3\\\\|totalPedidoVenda\\\\|total_qtd_m3\\\\|formatCurrency\\\\|R\\\\$\\\\|valor\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\pages\\\\CreateShipment.tsx\")",
+      "Bash(npx supabase *)",
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\({k:v for k,v in d.get\\('dependencies',{}\\).items\\(\\) if 'supabase' in k.lower\\(\\) or 'react' in k.lower\\(\\)}\\)\")"
     ]
   }
 }

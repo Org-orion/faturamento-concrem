@@ -508,6 +508,9 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           vehicleWeight: d.peso_suportado_kg || undefined,
           plate: d.placa_veiculo || '',
           status: 'Disponível',
+          blacklisted: d.blacklisted ?? false,
+          rating: d.avaliacao_media ?? null,
+          ratingCount: d.avaliacao_count ?? 0,
         }));
         setDrivers(mappedDrivers);
       } catch (e) {
