@@ -34,6 +34,7 @@ type ErpRow = {
   previsao_embarque: string | null;
   total_qtd: number | null;
   grupo_cliente: string | null;
+  id_nota_conf: number | null;
 };
 
 // Pre-formatted fields avoid calling toLocaleString per row on every render
@@ -54,6 +55,7 @@ type Pedido = {
   previsaoEmbarque: string | null;
   totalQtd: number | null;
   grupoCliente: string | null;
+  idNotaConf: number | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -65,7 +67,7 @@ const PRODUCAO_STATUSES: string[] = [
 ];
 
 const OPS_COLS = 'pedido_id, numero_pedido, status_atual, mes_programacao, atualizado_em';
-const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente';
+const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente, id_nota_conf';
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
 // ─── Module-level helpers (instantiated once, not per render) ─────────────────
@@ -93,6 +95,7 @@ function fmtMesLabel(mesStr: string): string {
 
 function resolveValor(erp: ErpRow | undefined): number {
   if (!erp) return 0;
+  if (erp.id_nota_conf === 613 || erp.id_nota_conf === 665) return 0;
   const v = erp.total_pedido_venda ?? 0;
   const base = v > 0 ? v : (erp.total_produtos ?? 0);
   return isFinite(base) && base > 0 ? base : 0;
@@ -138,6 +141,125 @@ async function fetchOpsRows(): Promise<OpsRow[]> {
   }
 
   return all;
+}
+
+/** Sync único: percorre todos os carregamentos, identifica pedidos Leroy e seta mes_programacao */
+async function syncLeroyExistentes(): Promise<{ updated: number; errors: number }> {
+  if (!supabaseOps || !supabasePedidos) {
+    console.error('[syncLeroy] supabaseOps ou supabasePedidos não disponível');
+    return { updated: 0, errors: 1 };
+  }
+
+  // 1. Busca todos os carregamentos com data planejada e lista de pedidos
+  const { data: loads, error: loadsErr } = await supabaseOps
+    .from('concrem_programacoes_embarque')
+    .select('planned_date, pedidos')
+    .not('pedidos', 'is', null)
+    .not('planned_date', 'is', null);
+  if (loadsErr) { console.error('[syncLeroy] loads error:', loadsErr.message); return { updated: 0, errors: 1 }; }
+  if (!loads?.length) return { updated: 0, errors: 0 };
+
+  // 2. Monta mapa pedidoId → mes (YYYY-MM) — mantém o mês mais recente se duplicado
+  const pedidoMesMap = new Map<string, string>();
+  for (const load of loads as { planned_date: string; pedidos: string[] }[]) {
+    const mes = load.planned_date.slice(0, 7);
+    for (const id of load.pedidos) pedidoMesMap.set(String(id), mes);
+  }
+
+  const allIds = Array.from(pedidoMesMap.keys());
+  if (!allIds.length) return { updated: 0, errors: 0 };
+
+  // 3. Busca nome do cliente no ERP para identificar Leroy
+  const erpBatches: { numero_pedido: string; cliente_nome: string | null }[][] = [];
+  for (let i = 0; i < allIds.length; i += 200) {
+    const { data, error } = await supabasePedidos
+      .from(ERP_TABLE)
+      .select('numero_pedido, cliente_nome')
+      .in('numero_pedido', allIds.slice(i, i + 200));
+    if (error) { console.error('[syncLeroy] erp batch error:', error.message); continue; }
+    if (data) erpBatches.push(data as { numero_pedido: string; cliente_nome: string | null }[]);
+  }
+  const erpRows = erpBatches.flat();
+
+  // 4. Filtra apenas Leroy
+  const leroyIds = erpRows
+    .filter(r => (r.cliente_nome || '').toUpperCase().includes('LEROY'))
+    .map(r => String(r.numero_pedido));
+  if (!leroyIds.length) return { updated: 0, errors: 0 };
+
+  // 5. Verifica quais já existem em concrem_pedidos_status
+  const existingSet = new Set<string>();
+  for (let i = 0; i < leroyIds.length; i += 200) {
+    const { data } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select('pedido_id')
+      .in('pedido_id', leroyIds.slice(i, i + 200));
+    for (const r of (data || []) as { pedido_id: string }[]) existingSet.add(r.pedido_id);
+  }
+
+  const now = new Date().toISOString();
+  let updated = 0;
+  let errors = 0;
+
+  // 6a. UPDATE mes_programacao para os que já existem
+  const toUpdate = leroyIds.filter(id => existingSet.has(id));
+  for (let i = 0; i < toUpdate.length; i += 200) {
+    const batch = toUpdate.slice(i, i + 200);
+    // Atualiza cada grupo do mesmo mês de uma vez
+    const byMes = new Map<string, string[]>();
+    for (const id of batch) {
+      const mes = pedidoMesMap.get(id) ?? '';
+      if (!byMes.has(mes)) byMes.set(mes, []);
+      byMes.get(mes)!.push(id);
+    }
+    for (const [mes, ids] of byMes) {
+      const { error } = await supabaseOps
+        .from('concrem_pedidos_status')
+        .update({ mes_programacao: mes, atualizado_em: now, atualizado_por: 'sync_leroy' })
+        .in('pedido_id', ids);
+      if (error) { console.error('[syncLeroy] update error:', error.message); errors++; }
+      else updated += ids.length;
+    }
+  }
+
+  // 6b. INSERT para os que não existem ainda (com status padrão)
+  const toInsert = leroyIds.filter(id => !existingSet.has(id));
+  if (toInsert.length) {
+    for (let i = 0; i < toInsert.length; i += 100) {
+      const batch = toInsert.slice(i, i + 100);
+      const { error } = await supabaseOps
+        .from('concrem_pedidos_status')
+        .insert(batch.map(id => ({
+          pedido_id: id,
+          numero_pedido: id,
+          status_atual: 'liberado_producao',
+          mes_programacao: pedidoMesMap.get(id) ?? null,
+          atualizado_em: now,
+          atualizado_por: 'sync_leroy',
+        })));
+      if (error) { console.error('[syncLeroy] insert error:', error.message); errors++; }
+      else updated += batch.length;
+    }
+  }
+
+  return { updated, errors };
+}
+
+async function fetchLoadsByMonth(): Promise<Map<string, Set<string>>> {
+  if (!supabaseOps) return new Map();
+  const { data, error } = await supabaseOps
+    .from('concrem_programacoes_embarque')
+    .select('planned_date, pedidos')
+    .not('pedidos', 'is', null);
+  if (error || !data) return new Map();
+  const map = new Map<string, Set<string>>();
+  for (const row of data as { planned_date: string | null; pedidos: string[] | null }[]) {
+    if (!row.planned_date || !row.pedidos?.length) continue;
+    const month = row.planned_date.slice(0, 7);
+    if (!map.has(month)) map.set(month, new Set());
+    for (const id of row.pedidos) map.get(month)!.add(String(id));
+  }
+  return map;
 }
 
 async function fetchErpMap(pedidoIds: string[]): Promise<Map<string, ErpRow>> {
@@ -269,7 +391,9 @@ const Programacao: React.FC = () => {
   // ── Data ─────────────────────────────────────────────────────────────────────
   const [opsRows, setOpsRows] = useState<OpsRow[]>([]);
   const [erpMap, setErpMap] = useState<Map<string, ErpRow>>(new Map());
+  const [loadsByMonth, setLoadsByMonth] = useState<Map<string, Set<string>>>(new Map());
   const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   // ── View ─────────────────────────────────────────────────────────────────────
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -281,6 +405,7 @@ const Programacao: React.FC = () => {
   const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
   const [filterClientes, setFilterClientes] = useState<string[]>([]);
   const [filterGrupos, setFilterGrupos] = useState<string[]>([]);
+  const [filterConfs, setFilterConfs] = useState<string[]>([]);
   const [filterMeses, setFilterMeses] = useState<string[]>([]);
   const [showSemProg, setShowSemProg] = useState(false);
 
@@ -327,10 +452,11 @@ const Programacao: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const ops = await fetchOpsRows();
+      const [ops, lbm] = await Promise.all([fetchOpsRows(), fetchLoadsByMonth()]);
       const erp = await fetchErpMap(ops.map((r) => r.pedido_id));
       setOpsRows(ops);
       setErpMap(erp);
+      setLoadsByMonth(lbm);
     } finally {
       setLoading(false);
     }
@@ -361,6 +487,7 @@ const Programacao: React.FC = () => {
         previsaoEmbarque: erp?.previsao_embarque ?? null,
         totalQtd: erp?.total_qtd ?? null,
         grupoCliente: erp?.grupo_cliente ?? null,
+        idNotaConf: erp?.id_nota_conf ?? null,
       };
     }),
   [opsRows, erpMap]);
@@ -395,6 +522,12 @@ const Programacao: React.FC = () => {
     const s = new Set<string>();
     for (const p of allPedidos) if (p.grupoCliente) s.add(p.grupoCliente);
     return Array.from(s).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [allPedidos]);
+
+  const availableConfs = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of allPedidos) if (p.idNotaConf != null) s.add(String(p.idNotaConf));
+    return Array.from(s).sort((a, b) => Number(a) - Number(b));
   }, [allPedidos]);
 
   const availableMonths = useMemo(() => {
@@ -443,8 +576,11 @@ const Programacao: React.FC = () => {
     if (filterGrupos.length > 0) {
       result = result.filter(p => p.grupoCliente && filterGrupos.includes(p.grupoCliente));
     }
+    if (filterConfs.length > 0) {
+      result = result.filter(p => p.idNotaConf != null && filterConfs.includes(String(p.idNotaConf)));
+    }
     return result;
-  }, [allPedidos, filterTextDebounced, filterStatuses, filterClientes, filterGrupos]);
+  }, [allPedidos, filterTextDebounced, filterStatuses, filterClientes, filterGrupos, filterConfs]);
 
   // ── Group by month ────────────────────────────────────────────────────────────
   const { groupedMonths, monthOrder } = useMemo(() => {
@@ -454,13 +590,18 @@ const Programacao: React.FC = () => {
       const year = parseInt(p.mesProgramacao.split('-')[0], 10);
       if (year !== selectedYear) continue;
       if (filterMeses.length > 0 && !filterMeses.includes(p.mesProgramacao)) continue;
+      // Pedidos Leroy só contam se estiverem no cronograma de carregamento do mês
+      if (p.clienteNome.toUpperCase().includes('LEROY')) {
+        const leroySet = loadsByMonth.get(p.mesProgramacao);
+        if (!leroySet?.has(p.pedidoId)) continue;
+      }
       const list = grouped.get(p.mesProgramacao) ?? [];
       list.push(p);
       grouped.set(p.mesProgramacao, list);
     }
     const order = Array.from(grouped.keys()).sort((a, b) => b.localeCompare(a));
     return { groupedMonths: grouped, monthOrder: order };
-  }, [filteredPedidos, selectedYear, filterMeses]);
+  }, [filteredPedidos, selectedYear, filterMeses, loadsByMonth]);
 
   const semProgramacao = useMemo(() =>
     filteredPedidos.filter((p) => !p.mesProgramacao),
@@ -475,7 +616,7 @@ const Programacao: React.FC = () => {
     };
   }, [groupedMonths, monthOrder]);
 
-  const hasActiveFilters = !!(filterTextDebounced || filterStatuses.length || filterClientes.length || filterGrupos.length || filterMeses.length);
+  const hasActiveFilters = !!(filterTextDebounced || filterStatuses.length || filterClientes.length || filterGrupos.length || filterConfs.length || filterMeses.length);
 
   // Auto-expand all months when a filter becomes active
   useEffect(() => {
@@ -609,6 +750,7 @@ const Programacao: React.FC = () => {
     setFilterStatuses([]);
     setFilterClientes([]);
     setFilterGrupos([]);
+    setFilterConfs([]);
     setFilterMeses([]);
     setShowSemProg(false);
   };
@@ -1022,6 +1164,31 @@ const Programacao: React.FC = () => {
             Importar lista
           </button>
           <button
+            onClick={async () => {
+              setSyncing(true);
+              try {
+                const result = await syncLeroyExistentes();
+                if (result.errors && result.updated === 0) {
+                  showToast('Erro durante a sincronização. Veja o console para detalhes.', 'error');
+                } else {
+                  showToast(`Sync Leroy: ${result.updated} pedido(s) sincronizado(s).${result.errors ? ' (com alguns erros parciais)' : ''}`);
+                  await load();
+                }
+              } catch (e: any) {
+                console.error('[syncLeroy] exception:', e);
+                showToast('Erro inesperado na sincronização.', 'error');
+              } finally {
+                setSyncing(false);
+              }
+            }}
+            disabled={syncing}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50"
+            title="Sincronizar pedidos Leroy do cronograma com a programação"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? 'Sincronizando…' : 'Sync Leroy'}
+          </button>
+          <button
             onClick={() => void load()}
             className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
             title="Recarregar dados"
@@ -1067,6 +1234,13 @@ const Programacao: React.FC = () => {
           onChange={setFilterGrupos}
           placeholder="Todos os grupos"
           className="flex-1 sm:flex-none min-w-[140px]"
+        />
+        <MultiSelectFilter
+          options={availableConfs}
+          selected={filterConfs}
+          onChange={setFilterConfs}
+          placeholder="Conf."
+          className="flex-none min-w-[90px]"
         />
         <MultiSelectFilter
           options={availableMonths.map(fmtMesLabel)}

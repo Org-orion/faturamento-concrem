@@ -235,14 +235,15 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
   const statusRaw = row.status ?? row.status_pedido ?? row.situacao;
   const status: OrderStatus = isOrderStatus(statusRaw) ? statusRaw : 'Aguardando Avaliação';
   const items = normalizeItems(row.dados_tabela ?? row.items ?? row.itens ?? row.produtos);
+  const idNotaConf = pickNumber(row, ['id_nota_conf', 'idNotaConf']);
+  const isSuporte = idNotaConf === 613 || idNotaConf === 665;
   const totalPedidoVendaRaw = pickNumber(row, ['total_pedido_venda']);
-  const totalPedidoVenda = totalPedidoVendaRaw > 0
+  const totalPedidoVenda = isSuporte ? 0 : (totalPedidoVendaRaw > 0
     ? totalPedidoVendaRaw
-    : pickNumber(row, ['total_produtos']);
+    : pickNumber(row, ['total_produtos']));
   const totalQtdM3 = pickNumber(row, ['total_qtd_m3', 'totalQtdM3', 'qtd_m3', 'volume_m3']);
   const totalQtd = pickNumber(row, ['total_qtd', 'totalQtd', 'qtd_total', 'quantidade_total']);
   const pesoLiquidoItem = pickNumber(row, ['peso_liquido_item', 'pesoLiquidoItem', 'peso_liquido', 'peso']);
-  const idNotaConf = pickNumber(row, ['id_nota_conf', 'idNotaConf']);
 
   return {
     id: id || `PED-${Math.random().toString(16).slice(2, 8).toUpperCase()}`,
@@ -290,14 +291,15 @@ export function rowToSupportOrder(row: Row): SupportOrder {
   const tipoPedido: SupportOrderType = isSupportType(tipoRaw) ? tipoRaw : 'Pedido de Amostra';
   const statusRaw = row.status ?? row.status_pedido ?? row.situacao;
   const status: SupportOrderStatus = isSupportStatus(statusRaw) ? statusRaw : 'Aguardando Avaliação';
+  const idNotaConf = pickNumber(row, ['id_nota_conf', 'idNotaConf']);
+  const isSuporte = idNotaConf === 613 || idNotaConf === 665;
   const totalPedidoVendaRaw = pickNumber(row, ['total_pedido_venda']);
-  const totalPedidoVenda = totalPedidoVendaRaw > 0
+  const totalPedidoVenda = isSuporte ? 0 : (totalPedidoVendaRaw > 0
     ? totalPedidoVendaRaw
-    : pickNumber(row, ['total_produtos']);
+    : pickNumber(row, ['total_produtos']));
   const totalQtdM3 = pickNumber(row, ['total_qtd_m3', 'totalQtdM3', 'qtd_m3', 'volume_m3']);
   const totalQtd = pickNumber(row, ['total_qtd', 'totalQtd', 'qtd_total', 'quantidade_total']);
   const pesoLiquidoItem = pickNumber(row, ['peso_liquido_item', 'pesoLiquidoItem', 'peso_liquido', 'peso']);
-  const idNotaConf = pickNumber(row, ['id_nota_conf', 'idNotaConf']);
 
   return {
     id: id || `SUP-${Math.random().toString(16).slice(2, 8).toUpperCase()}`,

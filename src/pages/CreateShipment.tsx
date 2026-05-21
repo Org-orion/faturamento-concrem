@@ -96,7 +96,8 @@ const CreateShipment = () => {
     client: '',
     representative: '',
     city: '',
-    expiry: ''
+    expiry: '',
+    pedCompraCliente: '',
   });
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -118,6 +119,7 @@ const CreateShipment = () => {
       return `${o.clientCity || client?.address.city || ''} ${o.clientUF || client?.address.state || ''}`;
     },
     (o: Order) => o.previsaoCarregamento || o.expiryDate || '',
+    (o: Order) => o.pedCompraCliente || '',
   ], [clients]);
 
   const sortGetters: Record<string, (item: Order) => unknown> = useMemo(() => ({
@@ -166,6 +168,13 @@ const CreateShipment = () => {
         getValue: (o: Order) => o.previsaoCarregamento || o.expiryDate || '',
         placeholder: 'Data...',
       },
+      {
+        id: 'pedCompraCliente',
+        label: 'Ped. Compra Cliente',
+        type: 'text',
+        getValue: (o: Order) => o.pedCompraCliente || '',
+        placeholder: 'Ex: OC-12345...',
+      },
     ] satisfies Array<FilterField<Order>>;
   }, [clients]);
 
@@ -178,6 +187,7 @@ const CreateShipment = () => {
       representative: byField.get('representative')?.value ?? '',
       city: byField.get('city')?.value ?? '',
       expiry: byField.get('expiry')?.value ?? '',
+      pedCompraCliente: byField.get('pedCompraCliente')?.value ?? '',
     });
   }, [conditions]);
 
@@ -553,8 +563,9 @@ const CreateShipment = () => {
       const matchesRep = (o.representativePhone || '').toLowerCase().includes(filters.representative.toLowerCase());
       const matchesCity = cityState.toLowerCase().includes(filters.city.toLowerCase());
       const matchesExpiry = (o.previsaoCarregamento || o.expiryDate || '').toLowerCase().includes(filters.expiry.toLowerCase());
+      const matchesPedCompra = !filters.pedCompraCliente || (o.pedCompraCliente || '').toLowerCase().includes(filters.pedCompraCliente.toLowerCase());
 
-      return matchesId && matchesClient && matchesRep && matchesCity && matchesExpiry;
+      return matchesId && matchesClient && matchesRep && matchesCity && matchesExpiry && matchesPedCompra;
     });
 
     const beforeDate = allCandidates.filter((o) => {
@@ -1498,6 +1509,44 @@ const CreateShipment = () => {
     }
   };
 
+  // Sincroniza mes_programacao de pedidos Leroy com base na data planejada do carregamento
+  const syncLeroyMesProgramacao = async (
+    keptIds: string[],
+    removedIds: string[],
+    plannedDate: string,
+  ) => {
+    if (!supabaseOps) return;
+    const mes = plannedDate.slice(0, 7); // YYYY-MM
+    const allById = new Map<string, { clientName?: string; clientCode?: string; representativeName?: string }>();
+    for (const o of [...orders, ...allCandidates]) allById.set(o.id, o);
+
+    const leroyKept = keptIds.filter(id => {
+      const o = allById.get(id);
+      return o && isLeroy(o.clientName || o.clientCode, o.representativeName);
+    });
+    const leroyRemoved = removedIds.filter(id => {
+      const o = allById.get(id);
+      return o && isLeroy(o.clientName || o.clientCode, o.representativeName);
+    });
+
+    const tasks: Promise<any>[] = [];
+
+    if (leroyKept.length) {
+      tasks.push(
+        supabaseOps.from('concrem_pedidos_status').upsert(
+          leroyKept.map(id => ({ pedido_id: id, numero_pedido: id, mes_programacao: mes })),
+          { onConflict: 'pedido_id' },
+        ),
+      );
+    }
+    for (const id of leroyRemoved) {
+      tasks.push(
+        supabaseOps.from('concrem_pedidos_status').update({ mes_programacao: null }).eq('pedido_id', id),
+      );
+    }
+    if (tasks.length) await Promise.all(tasks);
+  };
+
   const handleSave = async () => {
     if (isSaving) return;
     if (!driverId) {
@@ -1518,6 +1567,7 @@ const CreateShipment = () => {
       if (isEditing && id) {
         const old = loads.find((x) => x.id === id);
         if (!old) return;
+        const removedIds = old.orderIds.filter(oid => !selectedOrderIds.includes(oid));
         await updateLoad({
           ...old,
           driverId,
@@ -1529,6 +1579,7 @@ const CreateShipment = () => {
           estimatedWeight: totals.weight,
           freightValue: finalFreightValue,
         });
+        await syncLeroyMesProgramacao(selectedOrderIds, removedIds, shipmentDate);
         const backTo = location.state?.from === 'cronograma' ? '/carregamento?tab=cronograma' : '/carregamento';
         showToast('Programação atualizada com sucesso!');
         navigate(backTo);
@@ -1546,6 +1597,7 @@ const CreateShipment = () => {
           estimatedWeight: totals.weight,
           freightValue: finalFreightValue,
         });
+        await syncLeroyMesProgramacao(selectedOrderIds, [], shipmentDate);
         showToast('Programação criada com sucesso!');
         navigate(`/carregamento/editar/${newId}`);
         return;
@@ -1737,7 +1789,7 @@ const CreateShipment = () => {
             <QuickFilterBar
               query={quickQuery}
               onQueryChange={setQuickQuery}
-              placeholder="Buscar pedido, representante, cidade..."
+              placeholder="Buscar pedido, cliente, representante, cidade, ped. compra… (vários: 100012, 100013)"
             >
               <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
             </QuickFilterBar>

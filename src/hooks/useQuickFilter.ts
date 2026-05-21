@@ -16,12 +16,19 @@ export function useQuickFilter<T>(initialStatus: string | null = null) {
     ): T[] => {
       let result = items;
 
-      // text search
+      // text search — suporta múltiplos termos separados por vírgula, ponto-e-vírgula ou quebra de linha
       const q = norm(debouncedQuery);
       if (q) {
-        result = result.filter((item) =>
-          textGetters.some((g) => norm(g(item)).includes(q)),
-        );
+        const terms = q.split(/[,;\n\r]+/).map(t => t.trim()).filter(Boolean);
+        if (terms.length > 1) {
+          result = result.filter((item) =>
+            terms.some((term) => textGetters.some((g) => norm(g(item)).includes(term))),
+          );
+        } else {
+          result = result.filter((item) =>
+            textGetters.some((g) => norm(g(item)).includes(q)),
+          );
+        }
       }
 
       // status filter
