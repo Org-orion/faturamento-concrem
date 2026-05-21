@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, FileDown, Pencil, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
+import { MultiSelectFilter } from '@/components/filters/MultiSelectFilter';
 import logoProgramacao from '@/assets/logo-programacao.png';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { getPedidoStatusLabel, getPedidoStatusBadgeClass } from '@/lib/pedidoStatusFlow';
@@ -32,6 +33,7 @@ type ErpRow = {
   representante: string | null;
   previsao_embarque: string | null;
   total_qtd: number | null;
+  grupo_cliente: string | null;
 };
 
 // Pre-formatted fields avoid calling toLocaleString per row on every render
@@ -51,6 +53,7 @@ type Pedido = {
   representante: string | null;
   previsaoEmbarque: string | null;
   totalQtd: number | null;
+  grupoCliente: string | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -62,7 +65,7 @@ const PRODUCAO_STATUSES: string[] = [
 ];
 
 const OPS_COLS = 'pedido_id, numero_pedido, status_atual, mes_programacao, atualizado_em';
-const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque';
+const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente';
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
 // ─── Module-level helpers (instantiated once, not per render) ─────────────────
@@ -275,8 +278,10 @@ const Programacao: React.FC = () => {
   // ── Filters ──────────────────────────────────────────────────────────────────
   const [filterText, setFilterText] = useState('');
   const [filterTextDebounced, setFilterTextDebounced] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
-  const [filterMes, setFilterMes] = useState('');
+  const [filterStatuses, setFilterStatuses] = useState<string[]>([]);
+  const [filterClientes, setFilterClientes] = useState<string[]>([]);
+  const [filterGrupos, setFilterGrupos] = useState<string[]>([]);
+  const [filterMeses, setFilterMeses] = useState<string[]>([]);
   const [showSemProg, setShowSemProg] = useState(false);
 
   // ── Inline edit ──────────────────────────────────────────────────────────────
@@ -355,6 +360,7 @@ const Programacao: React.FC = () => {
         representante: erp?.representante ?? null,
         previsaoEmbarque: erp?.previsao_embarque ?? null,
         totalQtd: erp?.total_qtd ?? null,
+        grupoCliente: erp?.grupo_cliente ?? null,
       };
     }),
   [opsRows, erpMap]);
@@ -377,6 +383,18 @@ const Programacao: React.FC = () => {
     return Array.from(s).sort((a, b) =>
       getPedidoStatusLabel(a as PedidoStatusValue).localeCompare(
         getPedidoStatusLabel(b as PedidoStatusValue), 'pt-BR'));
+  }, [allPedidos]);
+
+  const availableClientes = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of allPedidos) if (p.clienteNome && p.clienteNome !== '—') s.add(p.clienteNome);
+    return Array.from(s).sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  }, [allPedidos]);
+
+  const availableGrupos = useMemo(() => {
+    const s = new Set<string>();
+    for (const p of allPedidos) if (p.grupoCliente) s.add(p.grupoCliente);
+    return Array.from(s).sort((a, b) => a.localeCompare(b, 'pt-BR'));
   }, [allPedidos]);
 
   const availableMonths = useMemo(() => {
@@ -414,11 +432,19 @@ const Programacao: React.FC = () => {
         );
       }
     }
-    if (filterStatus) {
-      result = result.filter(p => p.statusAtual === filterStatus);
+    if (filterStatuses.length > 0) {
+      result = result.filter(p => filterStatuses.includes(p.statusAtual));
+    }
+    if (filterClientes.length > 0) {
+      result = result.filter(p =>
+        filterClientes.some(c => p.clienteNome.toLowerCase().includes(c.toLowerCase())),
+      );
+    }
+    if (filterGrupos.length > 0) {
+      result = result.filter(p => p.grupoCliente && filterGrupos.includes(p.grupoCliente));
     }
     return result;
-  }, [allPedidos, filterTextDebounced, filterStatus]);
+  }, [allPedidos, filterTextDebounced, filterStatuses, filterClientes, filterGrupos]);
 
   // ── Group by month ────────────────────────────────────────────────────────────
   const { groupedMonths, monthOrder } = useMemo(() => {
@@ -427,14 +453,14 @@ const Programacao: React.FC = () => {
       if (!p.mesProgramacao) continue;
       const year = parseInt(p.mesProgramacao.split('-')[0], 10);
       if (year !== selectedYear) continue;
-      if (filterMes && p.mesProgramacao !== filterMes) continue;
+      if (filterMeses.length > 0 && !filterMeses.includes(p.mesProgramacao)) continue;
       const list = grouped.get(p.mesProgramacao) ?? [];
       list.push(p);
       grouped.set(p.mesProgramacao, list);
     }
     const order = Array.from(grouped.keys()).sort((a, b) => b.localeCompare(a));
     return { groupedMonths: grouped, monthOrder: order };
-  }, [filteredPedidos, selectedYear, filterMes]);
+  }, [filteredPedidos, selectedYear, filterMeses]);
 
   const semProgramacao = useMemo(() =>
     filteredPedidos.filter((p) => !p.mesProgramacao),
@@ -449,7 +475,7 @@ const Programacao: React.FC = () => {
     };
   }, [groupedMonths, monthOrder]);
 
-  const hasActiveFilters = !!(filterTextDebounced || filterStatus || filterMes);
+  const hasActiveFilters = !!(filterTextDebounced || filterStatuses.length || filterClientes.length || filterGrupos.length || filterMeses.length);
 
   // Auto-expand all months when a filter becomes active
   useEffect(() => {
@@ -580,8 +606,10 @@ const Programacao: React.FC = () => {
   // ── Filter helpers ────────────────────────────────────────────────────────────
   const clearFilters = () => {
     setFilterText('');
-    setFilterStatus('');
-    setFilterMes('');
+    setFilterStatuses([]);
+    setFilterClientes([]);
+    setFilterGrupos([]);
+    setFilterMeses([]);
     setShowSemProg(false);
   };
 
@@ -979,7 +1007,7 @@ const Programacao: React.FC = () => {
             onChange={(e) => {
               setSelectedYear(Number(e.target.value));
               setExpandedMonths(new Set());
-              setFilterMes('');
+              setFilterMeses([]);
             }}
             className="border border-border rounded px-2 py-1 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary"
           >
@@ -1015,26 +1043,42 @@ const Programacao: React.FC = () => {
             className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
-        <select
-          value={filterStatus}
-          onChange={(e) => setFilterStatus(e.target.value)}
-          className="flex-1 sm:flex-none px-2 py-1.5 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary min-w-[120px]"
-        >
-          <option value="">Todos os status</option>
-          {availableStatuses.map(s => (
-            <option key={s} value={s}>{getPedidoStatusLabel(s as PedidoStatusValue)}</option>
-          ))}
-        </select>
-        <select
-          value={filterMes}
-          onChange={(e) => setFilterMes(e.target.value)}
-          className="flex-1 sm:flex-none px-2 py-1.5 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary min-w-[100px]"
-        >
-          <option value="">Todos os meses</option>
-          {availableMonths.map(m => (
-            <option key={m} value={m}>{fmtMesLabel(m)}</option>
-          ))}
-        </select>
+        <MultiSelectFilter
+          options={availableStatuses.map(s => getPedidoStatusLabel(s as PedidoStatusValue))}
+          selected={filterStatuses.map(s => getPedidoStatusLabel(s as PedidoStatusValue))}
+          onChange={(labels) =>
+            setFilterStatuses(
+              labels.map(label => availableStatuses.find(s => getPedidoStatusLabel(s as PedidoStatusValue) === label) ?? label)
+            )
+          }
+          placeholder="Todos os status"
+          className="flex-1 sm:flex-none min-w-[140px]"
+        />
+        <MultiSelectFilter
+          options={availableClientes}
+          selected={filterClientes}
+          onChange={setFilterClientes}
+          placeholder="Todos os clientes"
+          className="flex-1 sm:flex-none min-w-[160px]"
+        />
+        <MultiSelectFilter
+          options={availableGrupos}
+          selected={filterGrupos}
+          onChange={setFilterGrupos}
+          placeholder="Todos os grupos"
+          className="flex-1 sm:flex-none min-w-[140px]"
+        />
+        <MultiSelectFilter
+          options={availableMonths.map(fmtMesLabel)}
+          selected={filterMeses.map(fmtMesLabel)}
+          onChange={(labels) =>
+            setFilterMeses(
+              labels.map(label => availableMonths.find(m => fmtMesLabel(m) === label) ?? '').filter(Boolean)
+            )
+          }
+          placeholder="Todos os meses"
+          className="flex-1 sm:flex-none min-w-[130px]"
+        />
         <label className="flex items-center gap-1.5 text-sm cursor-pointer select-none text-muted-foreground whitespace-nowrap">
           <input
             type="checkbox"
