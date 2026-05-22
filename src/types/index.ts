@@ -112,6 +112,8 @@ export type PedidoStatusValue =
   | 'liberado_producao'
   | 'em_producao'
   | 'producao_finalizada'
+  | 'em_carregamento'
+  | 'despachado'
   | 'faturado'
   | 'em_entrega'
   | 'parcialmente_entregue'

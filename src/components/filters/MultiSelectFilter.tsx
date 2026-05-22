@@ -37,6 +37,17 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
     onChange(selected.includes(val) ? selected.filter(v => v !== val) : [...selected, val]);
   };
 
+  const allFilteredSelected = filtered.length > 0 && filtered.every(o => selected.includes(o));
+
+  const toggleSelectAll = () => {
+    if (allFilteredSelected) {
+      onChange(selected.filter(v => !filtered.includes(v)));
+    } else {
+      const toAdd = filtered.filter(v => !selected.includes(v));
+      onChange([...selected, ...toAdd]);
+    }
+  };
+
   const label =
     selected.length === 0 ? placeholder :
     selected.length === 1 ? selected[0] :
@@ -80,6 +91,17 @@ export const MultiSelectFilter: React.FC<MultiSelectFilterProps> = ({
                 className="w-full px-2 py-1.5 text-sm rounded border border-input bg-background text-foreground focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary"
               />
             </div>
+          )}
+          {filtered.length > 0 && (
+            <label className="flex items-center gap-2.5 px-3 py-2 text-sm cursor-pointer hover:bg-muted/40 transition-colors select-none border-b border-border/50 font-medium text-foreground">
+              <input
+                type="checkbox"
+                checked={allFilteredSelected}
+                onChange={toggleSelectAll}
+                className="rounded shrink-0"
+              />
+              <span className="truncate">Selecionar todos</span>
+            </label>
           )}
           <div className="max-h-52 overflow-y-auto">
             {filtered.length === 0 ? (

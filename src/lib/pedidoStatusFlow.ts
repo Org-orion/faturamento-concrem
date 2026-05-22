@@ -12,12 +12,14 @@ export const pedidoStatusFlow: PedidoStatusDef[] = [
   { order: 9,  label: 'Liberado Produção',         value: 'liberado_producao',       kind: 'automatico' },
   { order: 10, label: 'Em Produção',               value: 'em_producao',             kind: 'manual' },
   { order: 11, label: 'Produção Finalizada',       value: 'producao_finalizada',     kind: 'manual' },
-  { order: 12, label: 'Faturado',                  value: 'faturado',                kind: 'automatico' },
-  { order: 13, label: 'Em Rota',                   value: 'em_entrega',              kind: 'automatico' },
-  { order: 14, label: 'Parcialmente Entregue',     value: 'parcialmente_entregue',   kind: 'automatico' },
-  { order: 15, label: 'Entregue',                  value: 'entregue',                kind: 'automatico' },
-  { order: 16, label: 'Aguardando Pagamento',      value: 'aguardando_pagamento',    kind: 'manual' },
-  { order: 17, label: 'Finalizado',                value: 'finalizado',              kind: 'automatico' },
+  { order: 12, label: 'Em Carregamento',           value: 'em_carregamento',         kind: 'automatico' },
+  { order: 13, label: 'Despachado',                value: 'despachado',              kind: 'automatico' },
+  { order: 14, label: 'Faturado',                  value: 'faturado',                kind: 'automatico' },
+  { order: 15, label: 'Em Rota',                   value: 'em_entrega',              kind: 'automatico' },
+  { order: 16, label: 'Parcialmente Entregue',     value: 'parcialmente_entregue',   kind: 'automatico' },
+  { order: 17, label: 'Entregue',                  value: 'entregue',                kind: 'automatico' },
+  { order: 18, label: 'Aguardando Pagamento',      value: 'aguardando_pagamento',    kind: 'manual' },
+  { order: 19, label: 'Finalizado',                value: 'finalizado',              kind: 'automatico' },
 ];
 
 const byValue = new Map(pedidoStatusFlow.map((s) => [s.value, s] as const));
@@ -49,9 +51,11 @@ export function canMoveToStatus(_from: PedidoStatusValue | null, _to: PedidoStat
 
 export function getPedidoStatusBadgeClass(value: PedidoStatusValue): string {
   const o = getPedidoStatusDef(value).order;
-  if (o >= 16) return 'bg-emerald-50 text-emerald-700 border border-emerald-100'; // Finalizado
-  if (o >= 15) return 'bg-green-50 text-green-700 border border-green-100';       // Entregue
-  if (o >= 13) return 'bg-blue-50 text-blue-700 border border-blue-100';          // Faturado / Em Rota
+  if (o >= 19) return 'bg-emerald-50 text-emerald-700 border border-emerald-100'; // Finalizado
+  if (o >= 17) return 'bg-green-50 text-green-700 border border-green-100';       // Entregue
+  if (o >= 15) return 'bg-blue-50 text-blue-700 border border-blue-100';          // Faturado / Em Rota
+  if (o >= 13) return 'bg-indigo-50 text-indigo-700 border border-indigo-100';    // Despachado
+  if (o >= 12) return 'bg-cyan-50 text-cyan-700 border border-cyan-100';          // Em Carregamento
   if (o >= 10) return 'bg-purple-50 text-purple-700 border border-purple-100';    // Produção
   if (o >= 6)  return 'bg-amber-50 text-amber-700 border border-amber-100';       // Comercial
   if (o >= 4)  return 'bg-orange-50 text-orange-700 border border-orange-100';    // Ferragens

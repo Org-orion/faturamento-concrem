@@ -57,6 +57,7 @@ export type Funcionalidade =
   // Programação Comercial
   | 'programacao_comercial.view'
   | 'programacao_comercial.editar_mes'
+  | 'programacao_comercial.sincronizar'
 
   // Painel de Pedidos
   | 'painel_pedidos.view'
@@ -73,6 +74,8 @@ export type Funcionalidade =
   | 'motoristas.view'
   | 'motoristas.criar_editar'
   | 'motoristas.excluir'
+  | 'motoristas.avaliar'
+  | 'motoristas.blacklist'
 
   // Usuários
   | 'usuarios.view'
@@ -128,8 +131,9 @@ export const funcionalidadeLabels: Record<Funcionalidade, string> = {
   'prioridades.view':     'Visualizar prioridades e atenções',
   'prioridades.gerenciar':'Adicionar / remover prioridade e atenção',
 
-  'programacao_comercial.view': 'Visualizar programação',
-  'programacao_comercial.editar_mes': 'Editar mês de programação',
+  'programacao_comercial.view':        'Visualizar programação',
+  'programacao_comercial.editar_mes':  'Editar mês de programação',
+  'programacao_comercial.sincronizar': 'Sincronizar Leroy e Status (Sync)',
 
   'painel_pedidos.view': 'Visualizar painel de pedidos',
 
@@ -142,6 +146,8 @@ export const funcionalidadeLabels: Record<Funcionalidade, string> = {
   'motoristas.view':        'Visualizar motoristas',
   'motoristas.criar_editar':'Criar / editar motorista',
   'motoristas.excluir':     'Excluir motorista',
+  'motoristas.avaliar':     'Avaliar motoristas (estrelas)',
+  'motoristas.blacklist':   'Adicionar / remover da lista negra',
 
   'usuarios.view':            'Visualizar usuários',
   'usuarios.criar_editar':    'Criar / editar usuário',
@@ -222,7 +228,7 @@ export const funcionalidadeSections: FuncionalidadeSection[] = [
   },
   {
     label: 'Programação',
-    keys: ['programacao_comercial.view', 'programacao_comercial.editar_mes'],
+    keys: ['programacao_comercial.view', 'programacao_comercial.editar_mes', 'programacao_comercial.sincronizar'],
   },
   {
     label: 'Cadastro — Representantes',
@@ -230,7 +236,7 @@ export const funcionalidadeSections: FuncionalidadeSection[] = [
   },
   {
     label: 'Cadastro — Motoristas',
-    keys: ['motoristas.view', 'motoristas.criar_editar', 'motoristas.excluir'],
+    keys: ['motoristas.view', 'motoristas.criar_editar', 'motoristas.excluir', 'motoristas.avaliar', 'motoristas.blacklist'],
   },
   {
     label: 'Cadastro — Usuários',
@@ -264,10 +270,10 @@ export const GRUPOS_PADRAO: GrupoPadrao[] = [
       'carregamento.view', 'carregamento.criar_editar', 'carregamento.excluir', 'carregamento.cronograma', 'carregamento.dashboard',
       'financeiro.view', 'financeiro.criar_editar', 'financeiro.excluir',
       'financeiro.marcar_lancado_conferido', 'financeiro.imprimir', 'financeiro.gerenciar_tipos',
-      'programacao_comercial.view', 'programacao_comercial.editar_mes',
+      'programacao_comercial.view', 'programacao_comercial.editar_mes', 'programacao_comercial.sincronizar',
       'painel_pedidos.view', 'painel_tv.view',
       'representantes.view', 'representantes.criar_editar',
-      'motoristas.view', 'motoristas.criar_editar',
+      'motoristas.view', 'motoristas.criar_editar', 'motoristas.avaliar', 'motoristas.blacklist',
     ],
   },
   {
@@ -281,7 +287,7 @@ export const GRUPOS_PADRAO: GrupoPadrao[] = [
       'comercial.exportar_pdf_programacao', 'comercial.mover_suporte',
       'suporte.view', 'suporte.detalhes', 'suporte.atualizar_status',
       'suporte.liberar_producao', 'suporte.mover_vendas',
-      'programacao_comercial.view', 'programacao_comercial.editar_mes',
+      'programacao_comercial.view', 'programacao_comercial.editar_mes', 'programacao_comercial.sincronizar',
       'prioridades.view', 'prioridades.gerenciar',
       'representantes.view', 'representantes.criar_editar',
       'painel_tv.view',

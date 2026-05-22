@@ -30,7 +30,9 @@ const DriversPage = () => {
   const { showToast } = useToast();
   const { addDriver, updateDriver: updateAppDriver, deleteDriver: deleteAppDriver, user } = useApp();
   const canCriarEditar = can(user, 'motoristas.criar_editar', 'motoristas', 'execute');
-  const canExcluir = can(user, 'motoristas.excluir', 'motoristas', 'execute');
+  const canExcluir     = can(user, 'motoristas.excluir',      'motoristas', 'execute');
+  const canAvaliar     = can(user, 'motoristas.avaliar',      'motoristas', 'execute');
+  const canBlacklist   = can(user, 'motoristas.blacklist',    'motoristas', 'execute');
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Driver | null>(null);
@@ -325,16 +327,18 @@ const DriversPage = () => {
                 <td className="py-3 px-4">
                   <div className="flex gap-2 items-center">
                     {/* Avaliar */}
-                    <button
-                      title="Avaliar motorista"
-                      onClick={() => void openAvalModal(d)}
-                      className="text-muted-foreground hover:text-amber-500 transition-colors"
-                    >
-                      <Star className="h-4 w-4" />
-                    </button>
+                    {canAvaliar && (
+                      <button
+                        title="Avaliar motorista"
+                        onClick={() => void openAvalModal(d)}
+                        className="text-muted-foreground hover:text-amber-500 transition-colors"
+                      >
+                        <Star className="h-4 w-4" />
+                      </button>
+                    )}
 
                     {/* Blacklist toggle */}
-                    {canCriarEditar && (
+                    {canBlacklist && (
                       <button
                         title={d.blacklisted ? 'Remover da lista negra' : 'Adicionar à lista negra'}
                         onClick={() => toggleBlacklist(d)}

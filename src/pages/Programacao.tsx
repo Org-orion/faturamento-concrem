@@ -62,6 +62,7 @@ type Pedido = {
 
 const PRODUCAO_STATUSES: string[] = [
   'liberado_producao', 'em_producao', 'producao_finalizada',
+  'em_carregamento', 'despachado',
   'faturado', 'em_entrega', 'parcialmente_entregue',
   'entregue', 'aguardando_pagamento', 'finalizado',
 ];
@@ -245,21 +246,116 @@ async function syncLeroyExistentes(): Promise<{ updated: number; errors: number 
   return { updated, errors };
 }
 
-async function fetchLoadsByMonth(): Promise<Map<string, Set<string>>> {
-  if (!supabaseOps) return new Map();
+const SHIP_TO_PEDIDO: Record<string, string> = {
+  'Aguardando Despacho': 'em_carregamento',
+  'Despachado':          'despachado',
+  'Em Rota':             'em_entrega',
+  'Entregue':            'entregue',
+};
+const STATUS_JA_ENTREGUES_PROG = new Set(['em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado']);
+
+/** Sync único: atualiza status de todos os pedidos em carregamentos existentes */
+async function syncStatusCarregamentos(): Promise<{ updated: number; errors: number }> {
+  if (!supabaseOps) return { updated: 0, errors: 1 };
+
+  // 1. Busca todos os carregamentos
+  const { data: loads, error: loadsErr } = await supabaseOps
+    .from('concrem_programacoes_embarque')
+    .select('shipment_status, pedidos')
+    .not('pedidos', 'is', null);
+  if (loadsErr) { console.error('[syncStatus] loads:', loadsErr.message); return { updated: 0, errors: 1 }; }
+  if (!loads?.length) return { updated: 0, errors: 0 };
+
+  // 2. Monta mapa orderId → status alvo (último carregamento vence)
+  const pedidoTargetMap = new Map<string, string>();
+  for (const load of loads as { shipment_status: string | null; pedidos: string[] | null }[]) {
+    const target = load.shipment_status ? SHIP_TO_PEDIDO[load.shipment_status] : null;
+    if (!target || !load.pedidos?.length) continue;
+    for (const id of load.pedidos) pedidoTargetMap.set(String(id), target);
+  }
+
+  const allIds = Array.from(pedidoTargetMap.keys());
+  if (!allIds.length) return { updated: 0, errors: 0 };
+
+  // 3. Busca status atuais no OPS
+  const currentRows: { pedido_id: string; status_atual: string }[] = [];
+  for (let i = 0; i < allIds.length; i += 200) {
+    const { data } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select('pedido_id, status_atual')
+      .in('pedido_id', allIds.slice(i, i + 200));
+    if (data) currentRows.push(...(data as { pedido_id: string; status_atual: string }[]));
+  }
+  const currentMap = new Map(currentRows.map(r => [r.pedido_id, r.status_atual]));
+
+  // 4. Filtra apenas os que precisam mudar e não estão em status finais
+  const toUpdate = allIds.filter(id => {
+    const cur = currentMap.get(id) ?? '';
+    if (STATUS_JA_ENTREGUES_PROG.has(cur)) return false;
+    const target = pedidoTargetMap.get(id)!;
+    return cur !== target;
+  });
+
+  if (!toUpdate.length) return { updated: 0, errors: 0 };
+
+  const now = new Date().toISOString();
+  let updated = 0;
+  let errors = 0;
+
+  // 5. Agrupa por status alvo e faz update em batch
+  const byTarget = new Map<string, string[]>();
+  for (const id of toUpdate) {
+    const t = pedidoTargetMap.get(id)!;
+    if (!byTarget.has(t)) byTarget.set(t, []);
+    byTarget.get(t)!.push(id);
+  }
+
+  for (const [targetStatus, ids] of byTarget) {
+    for (let i = 0; i < ids.length; i += 200) {
+      const batch = ids.slice(i, i + 200);
+      const { error } = await supabaseOps
+        .from('concrem_pedidos_status')
+        .update({ status_atual: targetStatus, atualizado_em: now, atualizado_por: 'sync_carregamento' })
+        .in('pedido_id', batch);
+      if (error) { console.error('[syncStatus] update:', error.message); errors++; }
+      else updated += batch.length;
+    }
+  }
+
+  return { updated, errors };
+}
+
+type LoadsMaps = {
+  byMonth: Map<string, Set<string>>;          // month → Set<orderId>
+  pedidoToLoad: Map<string, string>;          // orderId → loadId (ex: "EMB-179")
+  pedidoToShipStatus: Map<string, string>;    // orderId → shipment_status do carregamento
+};
+
+async function fetchLoadsByMonth(): Promise<LoadsMaps> {
+  const empty: LoadsMaps = { byMonth: new Map(), pedidoToLoad: new Map(), pedidoToShipStatus: new Map() };
+  if (!supabaseOps) return empty;
   const { data, error } = await supabaseOps
     .from('concrem_programacoes_embarque')
-    .select('planned_date, pedidos')
+    .select('id, planned_date, pedidos, shipment_status')
     .not('pedidos', 'is', null);
-  if (error || !data) return new Map();
-  const map = new Map<string, Set<string>>();
-  for (const row of data as { planned_date: string | null; pedidos: string[] | null }[]) {
-    if (!row.planned_date || !row.pedidos?.length) continue;
-    const month = row.planned_date.slice(0, 7);
-    if (!map.has(month)) map.set(month, new Set());
-    for (const id of row.pedidos) map.get(month)!.add(String(id));
+  if (error || !data) return empty;
+  const byMonth = new Map<string, Set<string>>();
+  const pedidoToLoad = new Map<string, string>();
+  const pedidoToShipStatus = new Map<string, string>();
+  for (const row of data as { id: string; planned_date: string | null; pedidos: string[] | null; shipment_status: string | null }[]) {
+    if (!row.pedidos?.length) continue;
+    if (row.planned_date) {
+      const month = row.planned_date.slice(0, 7);
+      if (!byMonth.has(month)) byMonth.set(month, new Set());
+      for (const id of row.pedidos) byMonth.get(month)!.add(String(id));
+    }
+    for (const id of row.pedidos) {
+      const sid = String(id);
+      if (!pedidoToLoad.has(sid)) pedidoToLoad.set(sid, String(row.id));
+      if (!pedidoToShipStatus.has(sid) && row.shipment_status) pedidoToShipStatus.set(sid, row.shipment_status);
+    }
   }
-  return map;
+  return { byMonth, pedidoToLoad, pedidoToShipStatus };
 }
 
 async function fetchErpMap(pedidoIds: string[]): Promise<Map<string, ErpRow>> {
@@ -392,8 +488,11 @@ const Programacao: React.FC = () => {
   const [opsRows, setOpsRows] = useState<OpsRow[]>([]);
   const [erpMap, setErpMap] = useState<Map<string, ErpRow>>(new Map());
   const [loadsByMonth, setLoadsByMonth] = useState<Map<string, Set<string>>>(new Map());
+  const [pedidoToLoad, setPedidoToLoad] = useState<Map<string, string>>(new Map());
+  const [pedidoToShipStatus, setPedidoToShipStatus] = useState<Map<string, string>>(new Map());
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
+  const [syncingStatus, setSyncingStatus] = useState(false);
 
   // ── View ─────────────────────────────────────────────────────────────────────
   const [selectedYear, setSelectedYear] = useState<number>(new Date().getFullYear());
@@ -406,6 +505,7 @@ const Programacao: React.FC = () => {
   const [filterClientes, setFilterClientes] = useState<string[]>([]);
   const [filterGrupos, setFilterGrupos] = useState<string[]>([]);
   const [filterConfs, setFilterConfs] = useState<string[]>([]);
+  const [filterCarregamentoStatus, setFilterCarregamentoStatus] = useState<string[]>([]);
   const [filterMeses, setFilterMeses] = useState<string[]>([]);
   const [showSemProg, setShowSemProg] = useState(false);
 
@@ -452,11 +552,13 @@ const Programacao: React.FC = () => {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [ops, lbm] = await Promise.all([fetchOpsRows(), fetchLoadsByMonth()]);
+      const [ops, { byMonth, pedidoToLoad: p2l, pedidoToShipStatus: p2ss }] = await Promise.all([fetchOpsRows(), fetchLoadsByMonth()]);
       const erp = await fetchErpMap(ops.map((r) => r.pedido_id));
       setOpsRows(ops);
       setErpMap(erp);
-      setLoadsByMonth(lbm);
+      setLoadsByMonth(byMonth);
+      setPedidoToLoad(p2l);
+      setPedidoToShipStatus(p2ss);
     } finally {
       setLoading(false);
     }
@@ -541,28 +643,50 @@ const Programacao: React.FC = () => {
     return Array.from(ms).sort((a, b) => b.localeCompare(a));
   }, [allPedidos, selectedYear]);
 
+  // ── Mapas auxiliares de carregamentos (devem ficar ANTES de filteredPedidos) ──
+  // pedidoId → mês do carregamento
+  const pedidoToLoadMonth = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const [month, ids] of loadsByMonth) {
+      for (const id of ids) if (!map.has(id)) map.set(id, month);
+    }
+    return map;
+  }, [loadsByMonth]);
+
+  // carregamentoId → Set<pedidoId>
+  const loadToPedidos = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const [pedidoId, loadId] of pedidoToLoad) {
+      const normalized = loadId.toLowerCase();
+      if (!map.has(normalized)) map.set(normalized, new Set());
+      map.get(normalized)!.add(pedidoId);
+    }
+    return map;
+  }, [pedidoToLoad]);
+
   // ── Apply text + status filters ───────────────────────────────────────────────
   const filteredPedidos = useMemo(() => {
     let result = allPedidos;
     if (filterTextDebounced) {
-      // Split by comma, semicolon, newline or multiple spaces — supports bulk paste
       const terms = filterTextDebounced
         .split(/[,;\n\r]+/)
         .map(t => t.trim().toLowerCase())
         .filter(Boolean);
+
+      const matchesTerm = (t: string, p: Pedido) => {
+        if (p.numeroPedido.toLowerCase().includes(t)) return true;
+        if (p.clienteNome.toLowerCase().includes(t)) return true;
+        for (const [loadId, pedidos] of loadToPedidos) {
+          if (loadId.includes(t) && pedidos.has(p.pedidoId)) return true;
+        }
+        return false;
+      };
+
       if (terms.length > 1) {
-        result = result.filter(p =>
-          terms.some(t =>
-            p.numeroPedido.toLowerCase().includes(t) ||
-            p.clienteNome.toLowerCase().includes(t),
-          ),
-        );
+        result = result.filter(p => terms.some(t => matchesTerm(t, p)));
       } else {
         const q = terms[0];
-        result = result.filter(p =>
-          p.numeroPedido.toLowerCase().includes(q) ||
-          p.clienteNome.toLowerCase().includes(q),
-        );
+        result = result.filter(p => matchesTerm(q, p));
       }
     }
     if (filterStatuses.length > 0) {
@@ -579,29 +703,39 @@ const Programacao: React.FC = () => {
     if (filterConfs.length > 0) {
       result = result.filter(p => p.idNotaConf != null && filterConfs.includes(String(p.idNotaConf)));
     }
+    if (filterCarregamentoStatus.length > 0) {
+      result = result.filter(p => {
+        const shipStatus = pedidoToShipStatus.get(p.pedidoId);
+        return shipStatus ? filterCarregamentoStatus.includes(shipStatus) : false;
+      });
+    }
     return result;
-  }, [allPedidos, filterTextDebounced, filterStatuses, filterClientes, filterGrupos, filterConfs]);
+  }, [allPedidos, filterTextDebounced, filterStatuses, filterClientes, filterGrupos, filterConfs, filterCarregamentoStatus, loadToPedidos, pedidoToShipStatus]);
 
-  // ── Group by month ────────────────────────────────────────────────────────────
   const { groupedMonths, monthOrder } = useMemo(() => {
     const grouped = new Map<string, Pedido[]>();
     for (const p of filteredPedidos) {
-      if (!p.mesProgramacao) continue;
-      const year = parseInt(p.mesProgramacao.split('-')[0], 10);
+      // Mês de referência: mes_programacao definido, ou mês do carregamento para em_carregamento/despachado
+      let mes = p.mesProgramacao;
+      if (!mes && (p.statusAtual === 'em_carregamento' || p.statusAtual === 'despachado')) {
+        mes = pedidoToLoadMonth.get(p.pedidoId) ?? null;
+      }
+      if (!mes) continue;
+      const year = parseInt(mes.split('-')[0], 10);
       if (year !== selectedYear) continue;
-      if (filterMeses.length > 0 && !filterMeses.includes(p.mesProgramacao)) continue;
+      if (filterMeses.length > 0 && !filterMeses.includes(mes)) continue;
       // Pedidos Leroy só contam se estiverem no cronograma de carregamento do mês
       if (p.clienteNome.toUpperCase().includes('LEROY')) {
-        const leroySet = loadsByMonth.get(p.mesProgramacao);
+        const leroySet = loadsByMonth.get(mes);
         if (!leroySet?.has(p.pedidoId)) continue;
       }
-      const list = grouped.get(p.mesProgramacao) ?? [];
+      const list = grouped.get(mes) ?? [];
       list.push(p);
-      grouped.set(p.mesProgramacao, list);
+      grouped.set(mes, list);
     }
     const order = Array.from(grouped.keys()).sort((a, b) => b.localeCompare(a));
     return { groupedMonths: grouped, monthOrder: order };
-  }, [filteredPedidos, selectedYear, filterMeses, loadsByMonth]);
+  }, [filteredPedidos, selectedYear, filterMeses, loadsByMonth, pedidoToLoadMonth]);
 
   const semProgramacao = useMemo(() =>
     filteredPedidos.filter((p) => !p.mesProgramacao),
@@ -616,7 +750,7 @@ const Programacao: React.FC = () => {
     };
   }, [groupedMonths, monthOrder]);
 
-  const hasActiveFilters = !!(filterTextDebounced || filterStatuses.length || filterClientes.length || filterGrupos.length || filterConfs.length || filterMeses.length);
+  const hasActiveFilters = !!(filterTextDebounced || filterStatuses.length || filterClientes.length || filterGrupos.length || filterConfs.length || filterCarregamentoStatus.length || filterMeses.length);
 
   // Auto-expand all months when a filter becomes active
   useEffect(() => {
@@ -629,6 +763,11 @@ const Programacao: React.FC = () => {
   const canEdit =
     user?.role === 'ADMIN' ||
     canFazer(user?.funcionalidades, 'programacao_comercial.editar_mes') ||
+    (!user?.funcionalidades && (user?.role === 'COMERCIAL' || user?.role === 'FATURAMENTO'));
+
+  const canSincronizar =
+    user?.role === 'ADMIN' ||
+    canFazer(user?.funcionalidades, 'programacao_comercial.sincronizar') ||
     (!user?.funcionalidades && (user?.role === 'COMERCIAL' || user?.role === 'FATURAMENTO'));
 
   // ── Accordion ────────────────────────────────────────────────────────────────
@@ -751,6 +890,7 @@ const Programacao: React.FC = () => {
     setFilterClientes([]);
     setFilterGrupos([]);
     setFilterConfs([]);
+    setFilterCarregamentoStatus([]);
     setFilterMeses([]);
     setShowSemProg(false);
   };
@@ -1163,7 +1303,32 @@ const Programacao: React.FC = () => {
             <Upload className="h-4 w-4" />
             Importar lista
           </button>
-          <button
+          {canSincronizar && <button
+            onClick={async () => {
+              setSyncingStatus(true);
+              try {
+                const result = await syncStatusCarregamentos();
+                if (result.errors && result.updated === 0) {
+                  showToast('Erro ao sincronizar status. Veja o console.', 'error');
+                } else {
+                  showToast(`Sync Status: ${result.updated} pedido(s) atualizados.${result.errors ? ' (com alguns erros parciais)' : ''}`);
+                  await load();
+                }
+              } catch (e: any) {
+                console.error('[syncStatus] exception:', e);
+                showToast('Erro inesperado na sincronização de status.', 'error');
+              } finally {
+                setSyncingStatus(false);
+              }
+            }}
+            disabled={syncingStatus}
+            className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-foreground disabled:opacity-50"
+            title="Sincronizar status dos pedidos com base nos carregamentos existentes"
+          >
+            <RefreshCw className={`h-4 w-4 ${syncingStatus ? 'animate-spin' : ''}`} />
+            {syncingStatus ? 'Sincronizando…' : 'Sync Status'}
+          </button>}
+          {canSincronizar && <button
             onClick={async () => {
               setSyncing(true);
               try {
@@ -1187,7 +1352,7 @@ const Programacao: React.FC = () => {
           >
             <RefreshCw className={`h-4 w-4 ${syncing ? 'animate-spin' : ''}`} />
             {syncing ? 'Sincronizando…' : 'Sync Leroy'}
-          </button>
+          </button>}
           <button
             onClick={() => void load()}
             className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-foreground"
@@ -1241,6 +1406,13 @@ const Programacao: React.FC = () => {
           onChange={setFilterConfs}
           placeholder="Conf."
           className="flex-none min-w-[90px]"
+        />
+        <MultiSelectFilter
+          options={['Aguardando Despacho', 'Despachado', 'Em Rota', 'Entregue', 'Cancelado']}
+          selected={filterCarregamentoStatus}
+          onChange={setFilterCarregamentoStatus}
+          placeholder="Status carregamento"
+          className="flex-1 sm:flex-none min-w-[170px]"
         />
         <MultiSelectFilter
           options={availableMonths.map(fmtMesLabel)}

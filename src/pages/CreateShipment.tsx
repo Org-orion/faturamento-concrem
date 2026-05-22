@@ -1509,6 +1509,85 @@ const CreateShipment = () => {
     }
   };
 
+  // Status dos pedidos não-finais que podem avançar com o carregamento
+  const STATUS_JA_ENTREGUES = new Set(['em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado']);
+  const STATUS_REVERTIVEIS   = new Set(['em_carregamento', 'despachado']);
+
+  const CARREGAMENTO_TO_PEDIDO: Record<string, string> = {
+    'Aguardando Despacho': 'em_carregamento',
+    'Despachado':          'despachado',
+    'Em Rota':             'em_entrega',
+    'Entregue':            'entregue',
+  };
+
+  const syncOrderStatusFromCarregamento = async (
+    currentIds: string[],
+    removedIds: string[],
+    shipStatus: string,
+    username: string | null,
+  ) => {
+    if (!supabaseOps) return;
+    const allIds = [...new Set([...currentIds, ...removedIds])];
+    if (!allIds.length) return;
+
+    const rows = await listPedidosStatusByPedidoIds(allIds);
+    const statusMap = new Map(rows.map(r => [r.pedido_id, r.status_atual]));
+    const now = new Date().toISOString();
+
+    const targetStatus = CARREGAMENTO_TO_PEDIDO[shipStatus] ?? null;
+
+    // Pedidos no carregamento → avança para o status alvo
+    if (targetStatus) {
+      const toUpdate = currentIds.filter(id => {
+        const cur = statusMap.get(id) ?? '';
+        return !STATUS_JA_ENTREGUES.has(cur);
+      });
+      for (let i = 0; i < toUpdate.length; i += 200) {
+        const batch = toUpdate.slice(i, i + 200);
+        await supabaseOps.from('concrem_pedidos_status')
+          .update({ status_atual: targetStatus, atualizado_em: now, atualizado_por: username })
+          .in('pedido_id', batch);
+      }
+      if (toUpdate.length) {
+        await supabaseOps.from('concrem_pedidos_status_historico').insert(
+          toUpdate.map(id => ({
+            pedido_id: id, numero_pedido: id,
+            status_anterior: statusMap.get(id) ?? null,
+            status_novo: targetStatus,
+            alterado_em: now, alterado_por: username,
+            observacao: `Carregamento: ${shipStatus}`,
+            notificado_representante: false,
+          })),
+        );
+      }
+    }
+
+    // Pedidos cancelados ou removidos → reverte para liberado_producao
+    const isCancelado = shipStatus === 'Cancelado';
+    const toRevert = (isCancelado ? currentIds : removedIds).filter(id => {
+      const cur = statusMap.get(id) ?? '';
+      return STATUS_REVERTIVEIS.has(cur);
+    });
+    for (let i = 0; i < toRevert.length; i += 200) {
+      const batch = toRevert.slice(i, i + 200);
+      await supabaseOps.from('concrem_pedidos_status')
+        .update({ status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: username })
+        .in('pedido_id', batch);
+    }
+    if (toRevert.length) {
+      await supabaseOps.from('concrem_pedidos_status_historico').insert(
+        toRevert.map(id => ({
+          pedido_id: id, numero_pedido: id,
+          status_anterior: statusMap.get(id) ?? null,
+          status_novo: 'liberado_producao',
+          alterado_em: now, alterado_por: username,
+          observacao: isCancelado ? 'Carregamento cancelado' : 'Removido do carregamento',
+          notificado_representante: false,
+        })),
+      );
+    }
+  };
+
   // Sincroniza mes_programacao de pedidos Leroy com base na data planejada do carregamento
   const syncLeroyMesProgramacao = async (
     keptIds: string[],
@@ -1579,7 +1658,11 @@ const CreateShipment = () => {
           estimatedWeight: totals.weight,
           freightValue: finalFreightValue,
         });
-        await syncLeroyMesProgramacao(selectedOrderIds, removedIds, shipmentDate);
+        const username = user?.username || null;
+        await Promise.all([
+          syncLeroyMesProgramacao(selectedOrderIds, removedIds, shipmentDate),
+          syncOrderStatusFromCarregamento(selectedOrderIds, removedIds, shipmentStatus, username),
+        ]);
         const backTo = location.state?.from === 'cronograma' ? '/carregamento?tab=cronograma' : '/carregamento';
         showToast('Programação atualizada com sucesso!');
         navigate(backTo);
@@ -1597,7 +1680,11 @@ const CreateShipment = () => {
           estimatedWeight: totals.weight,
           freightValue: finalFreightValue,
         });
-        await syncLeroyMesProgramacao(selectedOrderIds, [], shipmentDate);
+        const username = user?.username || null;
+        await Promise.all([
+          syncLeroyMesProgramacao(selectedOrderIds, [], shipmentDate),
+          syncOrderStatusFromCarregamento(selectedOrderIds, [], shipmentStatus, username),
+        ]);
         showToast('Programação criada com sucesso!');
         navigate(`/carregamento/editar/${newId}`);
         return;
