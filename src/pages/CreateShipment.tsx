@@ -77,9 +77,10 @@ const CreateShipment = () => {
     repKey: string;
     repName: string;
     repPhones: string[];
+    selectedPhoneIdx: number;   // índice do número selecionado para envio (faturamento)
     orders: Order[];
-    previsao: string;       // data de previsão para esse rep (yyyy-mm-dd)
-    checked: boolean;       // selecionado para envio
+    previsao: string;           // data de previsão para esse rep (yyyy-mm-dd)
+    checked: boolean;           // selecionado para envio
     notificacao?: RelatorioEntregaNotificacao; // se já foi notificado antes
   };
   const [sendModalOpen, setSendModalOpen] = useState(false);
@@ -1038,6 +1039,7 @@ const CreateShipment = () => {
         repKey,
         repName,
         repPhones: repPhonesRaw,
+        selectedPhoneIdx: 0,
         orders: repOrders,
         previsao: notif?.previsao_entrega || previsaoEntregaDate,
         checked: !jaNotificado, // desmarcado se já foi notificado
@@ -1063,8 +1065,8 @@ const CreateShipment = () => {
     const toSend = sendModalItems.filter(item => item.checked);
 
     for (const item of toSend) {
-      const { repKey, repName, repPhones, orders: repOrders, previsao } = item;
-      const repPhoneRaw = repPhones[0] || '';
+      const { repKey, repName, repPhones, selectedPhoneIdx, orders: repOrders, previsao } = item;
+      const repPhoneRaw = repPhones[selectedPhoneIdx] || repPhones[0] || '';
       const [py, pm, pd] = previsao.split('-');
       const dataPrevisaoEntrega = `${pd}/${pm}/${py}`;
       const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
@@ -1099,21 +1101,24 @@ const CreateShipment = () => {
       // Buscar status atual antes do envio para usar em todo o bloco
       const currentStatusesForSend = await listPedidosStatusByPedidoIds(repOrders.map(o => o.id));
 
-      // Enviar via Evolution API para todos os números cadastrados
-      const validPhones = repPhones
-        .map(p => ({ raw: p, e164: normalizePhoneToE164(p) }))
-        .filter(p => p.e164);
+      // Enviar via Evolution API apenas para o número selecionado no modal
+      const selectedPhone = repPhoneRaw;
+      const selectedE164 = normalizePhoneToE164(selectedPhone);
 
-      if (repPhones.length === 0) {
+      if (!selectedPhone) {
         showToast(`Representante ${repDisplayName} sem telefone cadastrado.`, 'error');
-      } else if (validPhones.length === 0) {
-        showToast(`Número(s) inválido(s) para ${repDisplayName}.`, 'error');
+      } else if (!selectedE164) {
+        showToast(`Número inválido para ${repDisplayName}: ${selectedPhone}`, 'error');
       }
+
+      const validPhones = selectedE164
+        ? [{ raw: selectedPhone, e164: selectedE164 }]
+        : [];
 
       for (const { raw: phoneRaw, e164: phoneE164 } of validPhones) {
         const result = await sendEvolutionText(phoneE164!, message);
         if (result.ok) {
-          showToast(`Mensagem enviada para ${repDisplayName}${validPhones.length > 1 ? ` (${phoneRaw})` : ''}.`);
+          showToast(`Mensagem enviada para ${repDisplayName} (${phoneRaw}).`);
         } else {
           showToast(`Falha ao enviar para ${repDisplayName} (${phoneRaw}): ${result.error}`, 'error');
         }
@@ -2734,18 +2739,28 @@ const CreateShipment = () => {
                                 Sem telefone
                               </span>
                             )}
-                            {item.repPhones.length > 1 && (
-                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-700 border border-blue-200">
-                                {item.repPhones.length} números
-                              </span>
-                            )}
                           </div>
                           <div className="text-xs text-muted-foreground mt-0.5">
                             {item.orders.length} pedido(s): {item.orders.map(o => o.id).join(' · ')}
                           </div>
+                          {/* Seletor de número para envio */}
                           {item.repPhones.length > 0 && (
-                            <div className="text-[11px] text-muted-foreground mt-0.5 font-mono-data">
-                              {item.repPhones.join(' · ')}
+                            <div className="mt-2 space-y-1">
+                              {item.repPhones.map((phone, phoneIdx) => (
+                                <label key={phone} className="flex items-center gap-2 cursor-pointer">
+                                  <input
+                                    type="radio"
+                                    name={`phone-${item.repKey}`}
+                                    checked={item.selectedPhoneIdx === phoneIdx}
+                                    onChange={() => setSendModalItems(prev => prev.map((it, i) => i === idx ? { ...it, selectedPhoneIdx: phoneIdx } : it))}
+                                    className="accent-primary cursor-pointer"
+                                  />
+                                  <span className={`text-[11px] font-mono-data ${item.selectedPhoneIdx === phoneIdx ? 'text-primary font-semibold' : 'text-muted-foreground'}`}>
+                                    {phone}
+                                    {phoneIdx === 0 && <span className="ml-1 text-[10px] text-muted-foreground">(principal)</span>}
+                                  </span>
+                                </label>
+                              ))}
                             </div>
                           )}
                           <div className="flex items-center gap-2 mt-2">

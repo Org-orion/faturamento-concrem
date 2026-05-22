@@ -441,11 +441,13 @@ const ComercialLiberacao = () => {
         .map(o => String(o!.representativeName || o!.representativeId || '').trim())
         .filter(Boolean),
     )];
-    const repPhoneMap = new Map(
+    // Coleta todos os números de cada representante
+    const repPhonesMap = new Map(
       await Promise.all(
         uniqueRepKeys.map(async k => {
           const c = await findRepresentanteContato(k);
-          return [k, c?.telefone ?? null] as const;
+          const phones = [c?.telefone, c?.telefone2, c?.telefone3].filter(Boolean) as string[];
+          return [k, phones] as const;
         }),
       ),
     );
@@ -485,33 +487,35 @@ const ComercialLiberacao = () => {
     if (histRes.error) console.error('[ComercialLiberacao] liberarParaProducao historico error:', histRes.error.message);
 
     // Phase 3: build byRep map (synchronous, no awaits)
-    const byRep = new Map<string, { orders: Order[]; phone: string | null }>();
+    const byRep = new Map<string, { orders: Order[]; phones: string[] }>();
     for (const id of loadIds) {
       const order = directOrdersById.get(id);
       if (!order) continue;
       const repKey = String(order.representativeName || order.representativeId || '').trim();
       if (!byRep.has(repKey)) {
-        byRep.set(repKey, { orders: [], phone: repPhoneMap.get(repKey) ?? order.representativePhone ?? null });
+        const phones = repPhonesMap.get(repKey) ?? (order.representativePhone ? [order.representativePhone] : []);
+        byRep.set(repKey, { orders: [], phones });
       }
       byRep.get(repKey)!.orders.push(order);
     }
 
-    // Phase 4: parallel WhatsApp sends
-    await Promise.all([...byRep.values()].map(async ({ orders, phone }) => {
-      if (!phone) return;
+    // Phase 4: parallel WhatsApp sends — envia para todos os números cadastrados
+    await Promise.all([...byRep.values()].map(async ({ orders, phones }) => {
+      if (!phones.length) return;
       const repName = orders[0].representativeName || '-';
       const repDisplayName = repName.replace(/^\d+\s*[-–]\s*/, '').trim() || repName;
       const notifiable = orders.filter(o => !isLeroy(o.clientName || o.clientCode, repName));
       if (!notifiable.length) return;
-      const phoneE164 = normalizePhoneToE164(phone);
-      if (!phoneE164) return;
       const hora = currentHourBR();
       const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite';
       let msg = `${saudacao}, ${repDisplayName}! 👋\n\n`;
       msg += `Seus pedidos foram liberados para produção e já vão entrar em fabricação 🏭\n\n`;
       msg += `📦 Pedidos:\n`;
       for (const o of notifiable) msg += `• ${o.id} — ${o.clientName || o.clientCode || 'Cliente'}\n`;
-      await sendEvolutionText(phoneE164, msg);
+      for (const phone of phones) {
+        const phoneE164 = normalizePhoneToE164(phone);
+        if (phoneE164) await sendEvolutionText(phoneE164, msg);
+      }
     }));
 
     await refreshOrders();
