@@ -1,4 +1,6 @@
 import { supabaseOps } from '@/lib/supabase';
+import { desativarPrioridade } from '@/lib/prioridadesRepo';
+import { desativarAtencao } from '@/lib/atencaoRepo';
 import { fmtDate } from '@/lib/dateUtils';
 import { sendEvolutionText } from '@/lib/evolutionApi';
 import { canMoveToStatus, getPedidoStatusDef } from '@/lib/pedidoStatusFlow';
@@ -414,6 +416,14 @@ export async function updatePedidoStatus(input: StatusUpdateInput): Promise<{ ok
   } catch (err) {
     console.error('[Supabase OPS] updatePedidoStatus insert historico (fetch):', err);
     return { ok: false, previous: statusAnterior };
+  }
+
+  // Ao virar entregue, arquiva prioridades e atenções
+  if (input.statusNovo === 'entregue') {
+    await Promise.all([
+      desativarPrioridade(input.pedidoId),
+      desativarAtencao(input.pedidoId),
+    ]);
   }
 
   return { ok: true, previous: statusAnterior };
@@ -885,4 +895,127 @@ export async function resetPedidoStatusToPreEmbarque(pedidoId: string, alteradoP
     .update({ status_atual: highestStatus, atualizado_em: new Date().toISOString(), atualizado_por: alteradoPor })
     .eq('pedido_id', pedidoId);
   if (updErr) console.error('[Supabase OPS] resetPedidoStatus update status:', updErr.message);
+}
+
+// Statuses that are already at or beyond entregue — never downgrade
+const STATUS_FINAIS = new Set<PedidoStatusValue>([
+  'entregue', 'aguardando_pagamento', 'finalizado',
+]);
+// Statuses that are already at or beyond parcialmente_entregue
+const STATUS_POS_PARCIAL = new Set<PedidoStatusValue>([
+  'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado',
+]);
+
+const SITUACAO_TO_STATUS: Record<string, PedidoStatusValue> = {
+  'Totalmente Entregue':   'entregue',
+  'Parcialmente Entregue': 'parcialmente_entregue',
+};
+
+/**
+ * Syncs status_atual in OPS based on situacao_entrega from the ERP.
+ * Called automatically after orders load in AppContext.
+ * Only advances status — never downgrades.
+ */
+export async function batchSyncSituacaoEntrega(
+  entries: Array<{ pedidoId: string; situacaoEntrega?: string | null }>,
+  alteradoPor: string | null,
+): Promise<void> {
+  if (!supabaseOps) return;
+
+  const relevant = entries.filter(e => e.situacaoEntrega && SITUACAO_TO_STATUS[e.situacaoEntrega]);
+  if (!relevant.length) return;
+
+  const ids = relevant.map(e => e.pedidoId);
+
+  // Fetch current OPS statuses in batches
+  const currentRows: { pedido_id: string; status_atual: string }[] = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    const { data } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select('pedido_id, status_atual')
+      .in('pedido_id', ids.slice(i, i + 200));
+    if (data) currentRows.push(...(data as { pedido_id: string; status_atual: string }[]));
+  }
+  const currentMap = new Map(currentRows.map(r => [r.pedido_id, r.status_atual as PedidoStatusValue]));
+
+  // Determine which need updating
+  const toUpdate = relevant.filter(e => {
+    const target = SITUACAO_TO_STATUS[e.situacaoEntrega!];
+    const cur = currentMap.get(e.pedidoId);
+    if (!cur) return false; // not in OPS yet — skip
+    if (target === 'entregue' && STATUS_FINAIS.has(cur)) return false;
+    if (target === 'parcialmente_entregue' && STATUS_POS_PARCIAL.has(cur)) return false;
+    return cur !== target;
+  });
+
+  if (!toUpdate.length) return;
+
+  const now = new Date().toISOString();
+
+  // Group by target status and batch update
+  const byTarget = new Map<PedidoStatusValue, string[]>();
+  for (const e of toUpdate) {
+    const t = SITUACAO_TO_STATUS[e.situacaoEntrega!];
+    if (!byTarget.has(t)) byTarget.set(t, []);
+    byTarget.get(t)!.push(e.pedidoId);
+  }
+
+  for (const [targetStatus, pedidoIds] of byTarget) {
+    for (let i = 0; i < pedidoIds.length; i += 200) {
+      const batch = pedidoIds.slice(i, i + 200);
+      const { error } = await supabaseOps
+        .from('concrem_pedidos_status')
+        .update({ status_atual: targetStatus, atualizado_em: now, atualizado_por: alteradoPor ?? 'sync_erp' })
+        .in('pedido_id', batch);
+      if (error) console.error('[batchSyncSituacaoEntrega] update error:', error.message);
+    }
+
+    // Ao virar entregue, arquiva prioridades e atenções (ficam visíveis no pedido, somem das telas)
+    if (targetStatus === 'entregue') {
+      await Promise.all(pedidoIds.map(id => Promise.all([
+        desativarPrioridade(id),
+        desativarAtencao(id),
+      ])));
+    }
+  }
+}
+
+/**
+ * Retroactively archives priorities and atenções for orders already at entregue/finalizado.
+ * Runs on startup to fix orders that reached entregue before this logic existed.
+ */
+export async function archiveEntreguesPrioAtencao(): Promise<void> {
+  if (!supabaseOps) return;
+
+  // Get all active prioridades and atenções
+  const [prioData, atencData] = await Promise.all([
+    supabaseOps.from('concrem_pedido_prioridades').select('pedido_id').eq('ativo', true),
+    supabaseOps.from('concrem_pedido_atencao').select('pedido_id').eq('ativo', true),
+  ]);
+
+  const activePrioIds = ((prioData.data ?? []) as { pedido_id: string }[]).map(r => r.pedido_id);
+  const activeAtencIds = ((atencData.data ?? []) as { pedido_id: string }[]).map(r => r.pedido_id);
+  const allActiveIds = Array.from(new Set([...activePrioIds, ...activeAtencIds]));
+  if (!allActiveIds.length) return;
+
+  // Check which of those are already entregue/finalizado in OPS
+  const statusRows: { pedido_id: string; status_atual: string }[] = [];
+  for (let i = 0; i < allActiveIds.length; i += 200) {
+    const { data } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select('pedido_id, status_atual')
+      .in('pedido_id', allActiveIds.slice(i, i + 200));
+    if (data) statusRows.push(...(data as { pedido_id: string; status_atual: string }[]));
+  }
+
+  const toArchive = statusRows
+    .filter(r => STATUS_FINAIS.has(r.status_atual as PedidoStatusValue))
+    .map(r => r.pedido_id);
+
+  if (!toArchive.length) return;
+
+  await Promise.all(toArchive.map(id => Promise.all([
+    activePrioIds.includes(id) ? desativarPrioridade(id) : Promise.resolve(),
+    activeAtencIds.includes(id) ? desativarAtencao(id) : Promise.resolve(),
+  ])));
 }

@@ -34,7 +34,7 @@ import {
 } from '@/lib/opsRepo';
 import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
-import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque, batchSetEmEntregaForLoad } from '@/lib/pedidosStatusRepo';
+import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque, batchSetEmEntregaForLoad, batchSyncSituacaoEntrega, archiveEntreguesPrioAtencao } from '@/lib/pedidosStatusRepo';
 import { fetchAllPages } from '@/lib/supabaseUtils';
 import { recordEmbarqueCriado, recordEmbarqueAlterado } from '@/lib/embarqueHistoricoRepo';
 
@@ -278,13 +278,7 @@ const sampleFreightEntries: FreightEntry[] = [
   },
 ];
 
-const seedUsers: AppUser[] = [
-  { id: 'USR-001', username: 'admin', password: '1234', name: 'Admin', role: 'ADMIN' },
-  { id: 'USR-002', username: 'faturamento', password: '1234', name: 'Faturamento', role: 'FATURAMENTO' },
-  { id: 'USR-003', username: 'comercial', password: '1234', name: 'Comercial', role: 'COMERCIAL' },
-  { id: 'USR-004', username: 'producao', password: '1234', name: 'Produção', role: 'PRODUCAO' },
-  { id: 'USR-005', username: 'logistica', password: '1234', name: 'Logística', role: 'LOGISTICA' },
-];
+const seedUsers: AppUser[] = [];
 
 const counters = { client: 5, driver: 3, order: 18, load: 1, invoice: 3, support: 4, schedule: 2, expenseType: 5, freightEntry: 2 };
 const nextId = (prefix: string, key: keyof typeof counters) => {
@@ -689,6 +683,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     ensurePedidosStatusInitializedBatch(payload, user?.username || null).then(({ upgradedCount }) => {
       if (upgradedCount > 0) setPedidoStatusVersion((v) => v + 1);
     });
+
+    // Sync status based on situacao_entrega from ERP (only Order has this field)
+    const situacaoEntries = (orders || []).map(o => ({ pedidoId: o.id, situacaoEntrega: o.situacaoEntrega }));
+    batchSyncSituacaoEntrega(situacaoEntries, user?.username || null).catch(e =>
+      console.error('[AppContext] batchSyncSituacaoEntrega:', e),
+    );
+
+    // Retroactively archive priorities/atenções for orders already at entregue/finalizado
+    archiveEntreguesPrioAtencao().catch(e =>
+      console.error('[AppContext] archiveEntreguesPrioAtencao:', e),
+    );
   }, [orders, supportOrders, user?.username]);
 
   // One-time migration: bulk set known suporte orders to liberado_producao

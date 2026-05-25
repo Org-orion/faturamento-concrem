@@ -12,6 +12,19 @@ export interface PedidoPrioridade {
   ativo: boolean;
 }
 
+export async function listTodasPrioridades(): Promise<PedidoPrioridade[]> {
+  if (!supabaseOps) return [];
+  const { data, error } = await supabaseOps
+    .from('concrem_pedido_prioridades')
+    .select('*')
+    .order('criado_em', { ascending: false });
+  if (error) {
+    console.error('[Supabase OPS] list todas pedido_prioridades:', error.message);
+    return [];
+  }
+  return (data || []) as PedidoPrioridade[];
+}
+
 export async function listPrioridadesAtivas(): Promise<PedidoPrioridade[]> {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps

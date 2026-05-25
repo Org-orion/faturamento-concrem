@@ -38,8 +38,8 @@ const Commercial = () => {
   const { showToast } = useToast();
   const navigate = useNavigate();
 
-  const { map: prioMap } = usePrioridades();
-  const { map: atencaoMap } = useAtencao();
+  const { mapTodas: prioMap } = usePrioridades();
+  const { mapTodas: atencaoMap } = useAtencao();
   const [moveOverride, setMoveOverride] = useState<Record<string, 'VENDA' | 'SUPORTE'>>({});
 
   const { sortState, toggleSort } = useTableSort();

@@ -9,6 +9,19 @@ export interface PedidoAtencao {
   ativo: boolean;
 }
 
+export async function listTodasAtencoes(): Promise<PedidoAtencao[]> {
+  if (!supabaseOps) return [];
+  const { data, error } = await supabaseOps
+    .from('concrem_pedido_atencao')
+    .select('*')
+    .order('criado_em', { ascending: false });
+  if (error) {
+    console.error('[Supabase OPS] list todas pedido_atencao:', error.message);
+    return [];
+  }
+  return (data || []) as PedidoAtencao[];
+}
+
 export async function listAtencaoAtiva(): Promise<PedidoAtencao[]> {
   if (!supabaseOps) return [];
   const { data, error } = await supabaseOps

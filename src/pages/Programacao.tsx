@@ -35,6 +35,7 @@ type ErpRow = {
   total_qtd: number | null;
   grupo_cliente: string | null;
   id_nota_conf: number | null;
+  ped_compra_cliente: string | null;
 };
 
 // Pre-formatted fields avoid calling toLocaleString per row on every render
@@ -56,6 +57,7 @@ type Pedido = {
   totalQtd: number | null;
   grupoCliente: string | null;
   idNotaConf: number | null;
+  pedCompraCliente: string | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -68,7 +70,7 @@ const PRODUCAO_STATUSES: string[] = [
 ];
 
 const OPS_COLS = 'pedido_id, numero_pedido, status_atual, mes_programacao, atualizado_em';
-const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente, id_nota_conf';
+const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente, id_nota_conf, ped_compra_cliente';
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
 // ─── Module-level helpers (instantiated once, not per render) ─────────────────
@@ -358,6 +360,27 @@ async function fetchLoadsByMonth(): Promise<LoadsMaps> {
   return { byMonth, pedidoToLoad, pedidoToShipStatus };
 }
 
+const VALID_NOTA_CONF = [307, 309, 665, 613];
+
+/** Resolve ped_compra_cliente values to internal numero_pedido via ERP.
+ *  Only considers orders with id_nota_conf in VALID_NOTA_CONF.
+ *  Returns Map<originalPoValue, numeroPedido> — only for values that matched. */
+async function resolvePoToInternalIds(rawIds: string[]): Promise<Map<string, string>> {
+  if (!supabasePedidos || !rawIds.length) return new Map();
+  const poMap = new Map<string, string>();
+  for (const batch of chunk(rawIds, 200)) {
+    const { data } = await supabasePedidos
+      .from(ERP_TABLE)
+      .select('numero_pedido, ped_compra_cliente, id_nota_conf')
+      .in('ped_compra_cliente', batch)
+      .in('id_nota_conf', VALID_NOTA_CONF);
+    for (const row of (data ?? []) as { numero_pedido: string; ped_compra_cliente: string | null; id_nota_conf: number | null }[]) {
+      if (row.ped_compra_cliente) poMap.set(row.ped_compra_cliente, String(row.numero_pedido));
+    }
+  }
+  return poMap;
+}
+
 async function fetchErpMap(pedidoIds: string[]): Promise<Map<string, ErpRow>> {
   if (!supabasePedidos || !pedidoIds.length) return new Map();
   const unique = Array.from(new Set(pedidoIds));
@@ -529,6 +552,7 @@ const Programacao: React.FC = () => {
     wrongMes: Array<{ id: string; mes: string | null }>;
     notFound: string[];
     duplicates: string[];
+    poResolved: Array<{ po: string; id: string }>;
   } | null>(null);
 
   // ── Bulk select & action ─────────────────────────────────────────────────────
@@ -542,11 +566,57 @@ const Programacao: React.FC = () => {
   const [printMes, setPrintMes] = useState<string | null>(null);
   const [printOverrides, setPrintOverrides] = useState<Map<string, string>>(new Map());
 
+  // ── ERP quick-search (orders not yet in view) ────────────────────────────────
+  const [erpQuickSearch, setErpQuickSearch] = useState<ErpRow[]>([]);
+  const [erpQuickLoading, setErpQuickLoading] = useState(false);
+  const [showErpDropdown, setShowErpDropdown] = useState(false);
+  const searchWrapperRef = useRef<HTMLDivElement>(null);
+
+  // ── Quick-add from ERP search ─────────────────────────────────────────────────
+  const [quickAddOrder, setQuickAddOrder] = useState<ErpRow | null>(null);
+  const [quickAddMes, setQuickAddMes] = useState('');
+  const [quickAddSaving, setQuickAddSaving] = useState(false);
+
   // ── Debounce text filter ─────────────────────────────────────────────────────
   useEffect(() => {
     const t = setTimeout(() => setFilterTextDebounced(filterText), 300);
     return () => clearTimeout(t);
   }, [filterText]);
+
+  // ERP live search: find orders matching the query that aren't already in opsRows
+  useEffect(() => {
+    const term = filterTextDebounced.trim();
+    if (!term || !supabasePedidos || /[,;\n\r]/.test(term)) {
+      setErpQuickSearch([]);
+      setShowErpDropdown(false);
+      return;
+    }
+    setErpQuickLoading(true);
+    const alreadyIds = new Set(opsRows.map(r => r.pedido_id));
+    supabasePedidos
+      .from(ERP_TABLE)
+      .select(ERP_COLS)
+      .or(`numero_pedido.ilike.%${term}%,cliente_nome.ilike.%${term}%,ped_compra_cliente.ilike.%${term}%`)
+      .in('id_nota_conf', VALID_NOTA_CONF)
+      .limit(10)
+      .then(({ data }) => {
+        const results = ((data ?? []) as ErpRow[]).filter(r => !alreadyIds.has(String(r.numero_pedido)));
+        setErpQuickSearch(results);
+        setShowErpDropdown(results.length > 0);
+        setErpQuickLoading(false);
+      });
+  }, [filterTextDebounced, opsRows]);
+
+  // Close ERP dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (searchWrapperRef.current && !searchWrapperRef.current.contains(e.target as Node)) {
+        setShowErpDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
 
   // ── Load ─────────────────────────────────────────────────────────────────────
   const load = useCallback(async () => {
@@ -590,6 +660,7 @@ const Programacao: React.FC = () => {
         totalQtd: erp?.total_qtd ?? null,
         grupoCliente: erp?.grupo_cliente ?? null,
         idNotaConf: erp?.id_nota_conf ?? null,
+        pedCompraCliente: erp?.ped_compra_cliente ?? null,
       };
     }),
   [opsRows, erpMap]);
@@ -676,6 +747,7 @@ const Programacao: React.FC = () => {
       const matchesTerm = (t: string, p: Pedido) => {
         if (p.numeroPedido.toLowerCase().includes(t)) return true;
         if (p.clienteNome.toLowerCase().includes(t)) return true;
+        if (p.pedCompraCliente && p.pedCompraCliente.toLowerCase().includes(t)) return true;
         for (const [loadId, pedidos] of loadToPedidos) {
           if (loadId.includes(t) && pedidos.has(p.pedidoId)) return true;
         }
@@ -762,13 +834,11 @@ const Programacao: React.FC = () => {
   // ── Permission ────────────────────────────────────────────────────────────────
   const canEdit =
     user?.role === 'ADMIN' ||
-    canFazer(user?.funcionalidades, 'programacao_comercial.editar_mes') ||
-    (!user?.funcionalidades && (user?.role === 'COMERCIAL' || user?.role === 'FATURAMENTO'));
+    canFazer(user?.funcionalidades, 'programacao_comercial.editar_mes');
 
   const canSincronizar =
     user?.role === 'ADMIN' ||
-    canFazer(user?.funcionalidades, 'programacao_comercial.sincronizar') ||
-    (!user?.funcionalidades && (user?.role === 'COMERCIAL' || user?.role === 'FATURAMENTO'));
+    canFazer(user?.funcionalidades, 'programacao_comercial.sincronizar');
 
   // ── Accordion ────────────────────────────────────────────────────────────────
   const toggleMonth = useCallback((mes: string) => {
@@ -893,6 +963,49 @@ const Programacao: React.FC = () => {
     setFilterCarregamentoStatus([]);
     setFilterMeses([]);
     setShowSemProg(false);
+  };
+
+  // ── Quick-add order from ERP search ──────────────────────────────────────────
+  const quickAddFromErp = async () => {
+    if (!quickAddOrder || !supabaseOps || !YYYYMM_RE.test(quickAddMes)) return;
+    const id = String(quickAddOrder.numero_pedido);
+    setQuickAddSaving(true);
+    try {
+      const now = new Date().toISOString();
+      const username = user?.username || null;
+      const { data: existing } = await supabaseOps
+        .from('concrem_pedidos_status')
+        .select('pedido_id')
+        .eq('pedido_id', id)
+        .maybeSingle();
+      if (existing) {
+        await supabaseOps
+          .from('concrem_pedidos_status')
+          .update({ mes_programacao: quickAddMes, atualizado_em: now, atualizado_por: username })
+          .eq('pedido_id', id);
+      } else {
+        await supabaseOps
+          .from('concrem_pedidos_status')
+          .insert({
+            pedido_id: id,
+            numero_pedido: id,
+            status_atual: 'liberado_producao',
+            mes_programacao: quickAddMes,
+            atualizado_em: now,
+            atualizado_por: username,
+          });
+      }
+      showToast(`Pedido ${id} adicionado à programação de ${fmtMesLabel(quickAddMes)}.`);
+      setQuickAddOrder(null);
+      setQuickAddMes('');
+      setShowErpDropdown(false);
+      await load();
+    } catch (e: any) {
+      console.error('[quickAdd]', e);
+      showToast('Erro ao adicionar pedido.', 'error');
+    } finally {
+      setQuickAddSaving(false);
+    }
   };
 
   // ── Print relatório mensal ────────────────────────────────────────────────────
@@ -1093,13 +1206,18 @@ const Programacao: React.FC = () => {
 
   const verifyImport = async () => {
     if (!supabaseOps || !importMes || !YYYYMM_RE.test(importMes)) return;
-    const { unique: ids, duplicates } = parseImportIds();
-    if (!ids.length) return;
+    const { unique: rawIds, duplicates } = parseImportIds();
+    if (!rawIds.length) return;
 
     setVerifyLoading(true);
     setVerifyResult(null);
     setImportResult(null);
     try {
+      // Resolve ped_compra_cliente → numero_pedido
+      const poMap = await resolvePoToInternalIds(rawIds);
+      const poResolved = Array.from(poMap.entries()).map(([po, id]) => ({ po, id }));
+      const ids = Array.from(new Set(rawIds.map(id => poMap.get(id) ?? id)));
+
       const results = await Promise.all(
         chunk(ids, 200).map(batch =>
           supabaseOps!
@@ -1126,7 +1244,7 @@ const Programacao: React.FC = () => {
         }
       }
 
-      setVerifyResult({ okMes, wrongMes, notFound, duplicates });
+      setVerifyResult({ okMes, wrongMes, notFound, duplicates, poResolved });
     } catch (e: any) {
       console.error('[Programacao] verifyImport:', e);
       showToast('Erro ao verificar pedidos.', 'error');
@@ -1138,8 +1256,12 @@ const Programacao: React.FC = () => {
   const processImport = async () => {
     if (!supabaseOps || !importMes || !YYYYMM_RE.test(importMes)) return;
 
-    const { unique: ids } = parseImportIds();
-    if (!ids.length) return;
+    const { unique: rawIds } = parseImportIds();
+    if (!rawIds.length) return;
+
+    // Resolve ped_compra_cliente → numero_pedido
+    const poMap = await resolvePoToInternalIds(rawIds);
+    const ids = Array.from(new Set(rawIds.map(id => poMap.get(id) ?? id)));
 
     setImportLoading(true);
     setImportResult(null);
@@ -1365,15 +1487,45 @@ const Programacao: React.FC = () => {
 
       {/* Filter Bar */}
       <div className="flex flex-wrap items-center gap-2 p-3 rounded-lg border border-border bg-card">
-        <div className="relative flex-1 min-w-[140px] max-w-full sm:max-w-[260px]">
+        <div ref={searchWrapperRef} className="relative flex-1 min-w-[140px] max-w-full sm:max-w-[260px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
           <input
             type="text"
             placeholder="Pedido, cliente… (vários: 100012, 100013)"
             value={filterText}
             onChange={(e) => setFilterText(e.target.value)}
+            onFocus={() => { if (erpQuickSearch.length > 0) setShowErpDropdown(true); }}
             className="w-full pl-8 pr-3 py-1.5 text-sm border border-border rounded bg-background focus:outline-none focus:ring-1 focus:ring-primary"
           />
+          {/* ERP quick-search dropdown */}
+          {erpQuickLoading && (
+            <div className="absolute top-full mt-1 left-0 right-0 z-50 bg-background border border-border rounded-lg shadow-lg px-3 py-2 text-xs text-muted-foreground flex items-center gap-1.5">
+              <RefreshCw className="h-3 w-3 animate-spin" />
+              Buscando no ERP…
+            </div>
+          )}
+          {showErpDropdown && !erpQuickLoading && erpQuickSearch.length > 0 && (
+            <div className="absolute top-full mt-1 left-0 z-50 bg-background border border-border rounded-lg shadow-lg overflow-hidden w-80">
+              <div className="px-3 py-1.5 text-xs text-muted-foreground border-b border-border bg-muted/30 flex items-center justify-between">
+                <span>{erpQuickSearch.length} pedido(s) no ERP não programados</span>
+                <button onClick={() => setShowErpDropdown(false)} className="text-muted-foreground hover:text-foreground"><X className="h-3 w-3" /></button>
+              </div>
+              {erpQuickSearch.map(r => (
+                <div key={r.numero_pedido} className="flex items-center gap-2 px-3 py-2 hover:bg-muted/40 text-sm border-b border-border/40 last:border-0">
+                  <span className="font-mono font-semibold text-xs shrink-0">{r.numero_pedido}</span>
+                  <span className="flex-1 truncate text-xs text-muted-foreground">{r.cliente_nome ?? '—'}</span>
+                  {canEdit && (
+                    <button
+                      onClick={() => { setQuickAddOrder(r); setQuickAddMes(''); setShowErpDropdown(false); }}
+                      className="shrink-0 text-xs px-2 py-0.5 rounded bg-primary/10 text-primary hover:bg-primary/20 font-medium transition-colors"
+                    >
+                      + Adicionar
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <MultiSelectFilter
           options={availableStatuses.map(s => getPedidoStatusLabel(s as PedidoStatusValue))}
@@ -1693,7 +1845,7 @@ const Programacao: React.FC = () => {
               <div>
                 <h2 className="text-base font-bold font-display text-foreground">Importar lista de pedidos</h2>
                 <p className="text-xs text-muted-foreground mt-1">
-                  Cole os números dos pedidos (vírgula, espaço ou quebra de linha). Os que não existirem no sistema serão criados como <strong>Liberado Produção</strong>.
+                  Cole os números dos pedidos ou POs do cliente (vírgula, espaço ou quebra de linha). POs são resolvidos automaticamente para o número interno. Os que não existirem no sistema serão criados como <strong>Liberado Produção</strong>.
                 </p>
               </div>
               <button onClick={() => setShowImportModal(false)} className="text-muted-foreground hover:text-foreground shrink-0">
@@ -1729,9 +1881,50 @@ const Programacao: React.FC = () => {
                   <span><strong>{verifyResult.okMes.length}</strong> pedido(s) já no mês correto ({importMes && fmtMesLabel(importMes)})</span>
                 </div>
 
+                {verifyResult.poResolved.length > 0 && (
+                  <div className="p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-blue-800 dark:text-blue-300">
+                    <p className="font-semibold mb-1">POs resolvidos ({verifyResult.poResolved.length}) — convertidos para número interno:</p>
+                    <div className="font-mono text-xs space-y-0.5 max-h-28 overflow-y-auto">
+                      {verifyResult.poResolved.map(({ po, id }) => (
+                        <div key={po}><span className="font-bold">{po}</span> → {id}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {verifyResult.duplicates.length > 0 && (
                   <div className="p-2.5 rounded-lg bg-muted border border-border text-muted-foreground">
-                    <p className="font-semibold mb-1">Duplicados na lista ({verifyResult.duplicates.length}):</p>
+                    <div className="flex items-center justify-between gap-2 mb-1">
+                      <p className="font-semibold">Duplicados na lista ({verifyResult.duplicates.length}):</p>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const { unique, duplicates: dups } = parseImportIds();
+                          // Mantém no textarea apenas os que apareceram UMA vez (remove completamente os duplicados)
+                          const dupSet = new Set(dups);
+                          const semDups = unique.filter(id => !dupSet.has(id));
+                          setImportText(semDups.join('\n'));
+                          setVerifyResult(null);
+                          setImportResult(null);
+                          // Limpa mes_programacao dos duplicados no banco
+                          if (supabaseOps && dups.length) {
+                            for (let i = 0; i < dups.length; i += 200) {
+                              await supabaseOps
+                                .from('concrem_pedidos_status')
+                                .update({ mes_programacao: null })
+                                .in('pedido_id', dups.slice(i, i + 200));
+                            }
+                            setOpsRows(prev => prev.map(r =>
+                              dupSet.has(r.pedido_id) ? { ...r, mes_programacao: null } : r,
+                            ));
+                            showToast(`${dups.length} pedido(s) duplicado(s) removidos da programação do mês.`);
+                          }
+                        }}
+                        className="text-xs px-2 py-1 rounded border border-border bg-background hover:bg-muted text-foreground font-semibold transition-colors whitespace-nowrap"
+                      >
+                        Remover duplicados
+                      </button>
+                    </div>
                     <p className="font-mono text-xs break-all">{verifyResult.duplicates.join(', ')}</p>
                   </div>
                 )}
@@ -1841,6 +2034,52 @@ const Programacao: React.FC = () => {
                 {bulkSaving
                   ? (bulkAction === 'set' ? 'Aplicando…' : 'Removendo…')
                   : (bulkAction === 'set' ? 'Confirmar' : 'Remover')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Quick-add order from ERP */}
+      {quickAddOrder && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-base font-bold font-display">Adicionar à programação</h2>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Pedido <span className="font-mono font-bold">{quickAddOrder.numero_pedido}</span>
+                  {quickAddOrder.cliente_nome && <> — {quickAddOrder.cliente_nome}</>}
+                </p>
+              </div>
+              <button onClick={() => setQuickAddOrder(null)} className="text-muted-foreground hover:text-foreground shrink-0">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div>
+              <label className="text-xs text-muted-foreground">Mês de programação</label>
+              <input
+                type="month"
+                value={quickAddMes}
+                onChange={(e) => setQuickAddMes(e.target.value)}
+                autoFocus
+                className="mt-1 w-full border border-border rounded px-3 py-1.5 text-sm bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+              />
+            </div>
+            <div className="flex gap-2 pt-1">
+              <button
+                onClick={() => void quickAddFromErp()}
+                disabled={!quickAddMes || !YYYYMM_RE.test(quickAddMes) || quickAddSaving}
+                className={cn(btnPrimary, 'flex-1')}
+              >
+                {quickAddSaving ? 'Salvando…' : 'Confirmar'}
+              </button>
+              <button
+                onClick={() => setQuickAddOrder(null)}
+                className={cn(btnSecondary, 'flex-1')}
+                disabled={quickAddSaving}
+              >
+                Cancelar
               </button>
             </div>
           </div>

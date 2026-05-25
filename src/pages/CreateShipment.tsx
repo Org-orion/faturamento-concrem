@@ -1593,7 +1593,8 @@ const CreateShipment = () => {
     }
   };
 
-  // Sincroniza mes_programacao de pedidos Leroy com base na data planejada do carregamento
+  // Sincroniza mes_programacao de pedidos Leroy com base na data planejada do carregamento.
+  // Detecta Leroy diretamente no ERP (não depende do estado local) para garantir cobertura total.
   const syncLeroyMesProgramacao = async (
     keptIds: string[],
     removedIds: string[],
@@ -1601,17 +1602,38 @@ const CreateShipment = () => {
   ) => {
     if (!supabaseOps) return;
     const mes = plannedDate.slice(0, 7); // YYYY-MM
-    const allById = new Map<string, { clientName?: string; clientCode?: string; representativeName?: string }>();
-    for (const o of [...orders, ...allCandidates]) allById.set(o.id, o);
+    const erpTable = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
-    const leroyKept = keptIds.filter(id => {
-      const o = allById.get(id);
-      return o && isLeroy(o.clientName || o.clientCode, o.representativeName);
-    });
-    const leroyRemoved = removedIds.filter(id => {
-      const o = allById.get(id);
-      return o && isLeroy(o.clientName || o.clientCode, o.representativeName);
-    });
+    const allIds = Array.from(new Set([...keptIds, ...removedIds]));
+    if (!allIds.length) return;
+
+    // Consulta ERP para identificar quais são Leroy
+    const leroySet = new Set<string>();
+    if (supabasePedidos) {
+      for (let i = 0; i < allIds.length; i += 200) {
+        const batch = allIds.slice(i, i + 200);
+        const { data } = await supabasePedidos
+          .from(erpTable)
+          .select('numero_pedido, cliente_nome')
+          .in('numero_pedido', batch);
+        for (const row of (data ?? []) as { numero_pedido: string; cliente_nome: string | null }[]) {
+          if ((row.cliente_nome || '').toUpperCase().includes('LEROY')) {
+            leroySet.add(String(row.numero_pedido));
+          }
+        }
+      }
+    } else {
+      // Fallback: usa estado local se ERP não disponível
+      const allById = new Map<string, { clientName?: string; clientCode?: string; representativeName?: string }>();
+      for (const o of [...orders, ...allCandidates]) allById.set(o.id, o);
+      for (const id of allIds) {
+        const o = allById.get(id);
+        if (o && isLeroy(o.clientName || o.clientCode, o.representativeName)) leroySet.add(id);
+      }
+    }
+
+    const leroyKept    = keptIds.filter(id => leroySet.has(id));
+    const leroyRemoved = removedIds.filter(id => leroySet.has(id));
 
     const tasks: Promise<any>[] = [];
 
