@@ -417,6 +417,62 @@ async function fetchErpMap(pedidoIds: string[]): Promise<Map<string, ErpRow>> {
   return map;
 }
 
+// ─── MiniCal — custom calendar picker (avoids Chrome native date-nav auto-set) ─
+
+type MiniCalProps = {
+  selectedIso: string;
+  displayMonth: string;
+  onChangeMonth: (m: string) => void;
+  onSelect: (iso: string) => void;
+  onClose: () => void;
+};
+
+const MiniCal = React.memo<MiniCalProps>(({ selectedIso, displayMonth, onChangeMonth, onSelect, onClose }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const [y, m] = displayMonth.split('-').map(Number);
+  const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+  const firstDow = new Date(y, m - 1, 1).getDay();
+  const daysInMonth = new Date(y, m, 0).getDate();
+
+  const goPrev = () => { const d = new Date(y, m - 2, 1); onChangeMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); };
+  const goNext = () => { const d = new Date(y, m, 1); onChangeMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`); };
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  return (
+    <div ref={ref} className="absolute z-30 right-0 top-8 bg-card border border-border rounded-xl shadow-2xl p-3 w-56 select-none">
+      <div className="flex items-center justify-between mb-2">
+        <button onClick={goPrev} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">‹</button>
+        <span className="text-xs font-semibold capitalize">{monthLabel}</span>
+        <button onClick={goNext} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">›</button>
+      </div>
+      <div className="grid grid-cols-7 gap-0.5 text-center">
+        {['D','S','T','Q','Q','S','S'].map((d, i) => (
+          <div key={i} className="text-[10px] font-medium text-muted-foreground py-0.5">{d}</div>
+        ))}
+        {Array.from({ length: firstDow }, (_, i) => <div key={`e${i}`} />)}
+        {Array.from({ length: daysInMonth }, (_, i) => {
+          const day = i + 1;
+          const iso = `${y}-${String(m).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+          const isSelected = iso === selectedIso;
+          return (
+            <button key={day} onClick={() => { onSelect(iso); onClose(); }}
+              className={cn('text-[11px] py-1 rounded transition-colors hover:bg-primary/20',
+                isSelected ? 'bg-primary text-primary-foreground hover:bg-primary/90 font-bold' : '')}>
+              {day}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+});
+MiniCal.displayName = 'MiniCal';
+
 // ─── PedidoRow — memoized so only the affected row re-renders ─────────────────
 
 type PedidoRowProps = {
@@ -467,6 +523,7 @@ const PedidoRow = React.memo<PedidoRowProps>(({
               type="month"
               value={editValue}
               onChange={(e) => onEditValueChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') onSaveEdit(p.pedidoId); if (e.key === 'Escape') onCancelEdit(); }}
               className="border border-border rounded px-2 py-0.5 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
               autoFocus
             />
@@ -474,11 +531,11 @@ const PedidoRow = React.memo<PedidoRowProps>(({
               onClick={() => onSaveEdit(p.pedidoId)}
               disabled={saving}
               className="text-green-600 hover:text-green-700 disabled:opacity-40"
-              title="Confirmar"
+              title="Confirmar (Enter)"
             >
               <Check className="h-4 w-4" />
             </button>
-            <button onClick={onCancelEdit} className="text-muted-foreground hover:text-foreground" title="Cancelar">
+            <button onClick={onCancelEdit} disabled={saving} className="text-muted-foreground hover:text-foreground disabled:opacity-40" title="Cancelar (Esc)">
               <X className="h-4 w-4" />
             </button>
           </div>
@@ -585,6 +642,8 @@ const Programacao: React.FC = () => {
   const [printOverrides, setPrintOverrides] = useState<Map<string, string>>(new Map());
   const [printScrolled, setPrintScrolled] = useState(false);
   const printScrollRef = useRef<HTMLDivElement>(null);
+  const [calendarForId, setCalendarForId] = useState<string | null>(null);
+  const [calendarMonth, setCalendarMonth] = useState<string>('');
 
   // ── ERP quick-search (orders not yet in view) ────────────────────────────────
   const [erpQuickSearch, setErpQuickSearch] = useState<ErpRow[]>([]);
@@ -1032,6 +1091,23 @@ const Programacao: React.FC = () => {
   };
 
   // ── Print relatório mensal ────────────────────────────────────────────────────
+  const savePrintDate = useCallback(async (pedidoId: string, iso: string | null) => {
+    setPrintOverrides(prev => {
+      const next = new Map(prev);
+      if (iso) next.set(pedidoId, iso);
+      else next.delete(pedidoId);
+      return next;
+    });
+    if (!supabaseOps) return;
+    await supabaseOps
+      .from('concrem_pedidos_status')
+      .update({ data_embarque_programacao: iso })
+      .eq('pedido_id', pedidoId);
+    setOpsRows(prev => prev.map(r =>
+      r.pedido_id === pedidoId ? { ...r, data_embarque_programacao: iso } : r,
+    ));
+  }, []);
+
   const openPrintModal = (mes: string) => {
     const pedidos = groupedMonths.get(mes) ?? [];
     const initialOverrides = new Map<string, string>();
@@ -1862,41 +1938,41 @@ const Programacao: React.FC = () => {
                           <td className="px-3 py-2 text-xs text-center text-muted-foreground">{p.ufCliente ?? '—'}</td>
                           <td className="px-3 py-2 text-xs text-right tabular-nums">{p.valorFormatado}</td>
                           <td className="px-3 py-2 text-center">
-                            <div className="inline-flex items-center">
+                            <div className="relative inline-flex items-center">
                               <input
                                 type="text"
                                 placeholder="DD/MM/AAAA"
                                 maxLength={10}
-                                value={isoToBr(printOverrides.get(p.pedidoId) ?? '')}
+                                value={isoToBr(printOverrides.get(p.pedidoId) ?? p.dataEmbarqueProgramacao ?? '')}
                                 onChange={e => {
                                   const val = e.target.value;
                                   const iso = brToIso(val);
-                                  setPrintOverrides(prev => {
-                                    const next = new Map(prev);
-                                    if (iso) next.set(p.pedidoId, iso);
-                                    else if (!val) next.delete(p.pedidoId);
-                                    return next;
-                                  });
+                                  if (iso) void savePrintDate(p.pedidoId, iso);
+                                  else if (!val) void savePrintDate(p.pedidoId, null);
+                                  else setPrintOverrides(prev => { const next = new Map(prev); next.set(p.pedidoId, val); return next; });
                                 }}
                                 className="w-24 border border-r-0 border-input rounded-l px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary text-center"
                               />
-                              <div className="relative border border-input rounded-r bg-muted h-[26px] w-7 flex items-center justify-center overflow-hidden shrink-0">
-                                <CalendarDays className="h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
-                                <input
-                                  type="date"
-                                  value={printOverrides.get(p.pedidoId) ?? ''}
-                                  onChange={e => {
-                                    setPrintOverrides(prev => {
-                                      const next = new Map(prev);
-                                      if (e.target.value) next.set(p.pedidoId, e.target.value);
-                                      else next.delete(p.pedidoId);
-                                      return next;
-                                    });
-                                  }}
-                                  className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                                  tabIndex={-1}
+                              <button
+                                onClick={() => {
+                                  const cur = printOverrides.get(p.pedidoId) ?? p.dataEmbarqueProgramacao ?? '';
+                                  const month = cur ? cur.slice(0, 7) : new Date().toISOString().slice(0, 7);
+                                  setCalendarMonth(month);
+                                  setCalendarForId(prev => prev === p.pedidoId ? null : p.pedidoId);
+                                }}
+                                className="border border-input rounded-r bg-muted h-[26px] w-7 flex items-center justify-center shrink-0 hover:bg-muted/80 transition-colors"
+                              >
+                                <CalendarDays className="h-3.5 w-3.5 text-muted-foreground" />
+                              </button>
+                              {calendarForId === p.pedidoId && (
+                                <MiniCal
+                                  selectedIso={printOverrides.get(p.pedidoId) ?? p.dataEmbarqueProgramacao ?? ''}
+                                  displayMonth={calendarMonth}
+                                  onChangeMonth={setCalendarMonth}
+                                  onSelect={iso => void savePrintDate(p.pedidoId, iso)}
+                                  onClose={() => setCalendarForId(null)}
                                 />
-                              </div>
+                              )}
                             </div>
                           </td>
                         </tr>
