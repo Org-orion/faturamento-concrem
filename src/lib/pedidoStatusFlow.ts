@@ -101,40 +101,43 @@ export function toStageDates(history: Array<{ status_novo: PedidoStatusValue; al
 export function getStageForTimeline(value: PedidoStatusValue): number {
   const def = getPedidoStatusDef(value);
   if (!def.order) return 0;
-  if (def.order <= 1)  return 1;  // Aguardando Avaliação
+  if (def.order <= 1)  return 1;  // Avaliação
   if (def.order <= 3)  return 2;  // Mapeamento
-  if (def.order <= 5)  return 3;  // Ferragens
+  if (def.order <= 5)  return 3;  // Ferragem
   if (def.order <= 8)  return 4;  // Comercial
   if (def.order <= 11) return 5;  // Produção
-  if (def.order <= 12) return 6;  // Faturado
-  if (def.order <= 13) return 7;  // Em Rota
-  if (def.order <= 15) return 8;  // Entregue
-  return 9; // Finalizado
+  if (def.order <= 13) return 6;  // Carregamento (em_carregamento=12, despachado=13)
+  if (def.order <= 14) return 7;  // Faturado (faturado=14)
+  if (def.order <= 16) return 8;  // Em Rota (em_entrega=15, parcialmente_entregue=16)
+  if (def.order <= 17) return 9;  // Entregue
+  return 10;                       // Finalizado (aguardando_pagamento=18, finalizado=19)
 }
 
 export const panelTimelineStages: Array<{ id: number; label: string }> = [
-  { id: 1, label: 'Avaliação' },
-  { id: 2, label: 'Mapeamento' },
-  { id: 3, label: 'Ferragem' },
-  { id: 4, label: 'Comercial' },
-  { id: 5, label: 'Produção' },
-  { id: 6, label: 'Faturado' },
-  { id: 7, label: 'Em Rota' },
-  { id: 8, label: 'Entregue' },
-  { id: 9, label: 'Finalizado' },
+  { id: 1,  label: 'Avaliação' },
+  { id: 2,  label: 'Mapeamento' },
+  { id: 3,  label: 'Ferragem' },
+  { id: 4,  label: 'Comercial' },
+  { id: 5,  label: 'Produção' },
+  { id: 6,  label: 'Carregamento' },
+  { id: 7,  label: 'Faturado' },
+  { id: 8,  label: 'Em Rota' },
+  { id: 9,  label: 'Entregue' },
+  { id: 10, label: 'Finalizado' },
 ];
 
 // The order at which each stage is considered fully *completed* (not just entered).
 const stageCompletionOrder: Record<number, number> = {
-  1: 1,  // aguardando_avaliacao
-  2: 3,  // mapeamento_concluido
-  3: 5,  // ferragem_recebida
-  4: 8,  // confirmado_gerencia
-  5: 11, // producao_finalizada
-  6: 12, // faturado
-  7: 13, // em_entrega
-  8: 15, // entregue
-  9: 17, // finalizado
+  1:  1,  // aguardando_avaliacao
+  2:  3,  // mapeamento_concluido
+  3:  5,  // ferragem_recebida
+  4:  8,  // confirmado_gerencia
+  5:  11, // producao_finalizada
+  6:  13, // despachado
+  7:  14, // faturado
+  8:  15, // em_entrega
+  9:  17, // entregue
+  10: 19, // finalizado
 };
 
 export function getStageState(

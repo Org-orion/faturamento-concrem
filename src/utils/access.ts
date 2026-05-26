@@ -35,7 +35,7 @@ export type PagePermission = {
 };
 
 export type MenuItem =
-  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' }
+  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' }
   | { type: 'group'; label: string; icon: 'users' | 'box'; items: { label: string; href: string }[] };
 
 // ---------------------------------------------------------------------------
@@ -346,7 +346,7 @@ type MenuItemDef = {
   routeKey: AppRouteKey;
   label: string;
   href: string;
-  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor';
+  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2';
   group?: string;
 };
 
@@ -425,6 +425,7 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
       { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
       { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
       { type: 'link', label: 'Painel TV', href: '/painel-tv', icon: 'monitor' },
+      { type: 'link', label: 'Análise de Pedidos', href: '/analise-pedidos', icon: 'bar-chart-2' },
       { type: 'group', label: 'Cadastro', icon: 'users', items: [
         { label: 'Representantes', href: '/representantes' },
         { label: 'Motoristas', href: '/motoristas' },

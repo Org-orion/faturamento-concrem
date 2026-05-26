@@ -31,6 +31,7 @@ const PrioridadesPage = lazy(() => import('@/pages/Prioridades'));
 const AccessDenied = lazy(() => import('@/pages/AccessDenied'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 const PainelTVPage = lazy(() => import('@/pages/PainelTV'));
+const AnalisePedidosPage = lazy(() => import('@/pages/AnalisePedidos'));
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, user } = useApp();
@@ -74,6 +75,7 @@ const AppRoutes = () => {
         <Route path="/usuarios" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
         <Route path="/permissoes" element={<ProtectedRoute><PermissoesPage /></ProtectedRoute>} />
         <Route path="/painel-tv" element={<PainelTVPage />} />
+        <Route path="/analise-pedidos" element={<ProtectedRoute><AnalisePedidosPage /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

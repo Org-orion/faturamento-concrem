@@ -8,11 +8,13 @@ import {
   ChevronLeft, ChevronRight, Truck, Package, DollarSign,
   Search, X, Pencil, Calendar, CalendarCheck, User, FileText,
   Paperclip, Trash2, Upload, Save, ExternalLink,
+  Target, TrendingUp, TrendingDown, AlertTriangle,
 } from 'lucide-react';
 import type { Load } from '@/types';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeDot, PrioridadeBadge } from '@/components/pedidos/PrioridadeBadge';
 import { supabasePedidos, supabaseOps } from '@/lib/supabase';
+import { fetchProgramacaoMes, type ProgramacaoMesResult } from '@/lib/programacaoValor';
 import { listEmbarqueHistorico, type EmbarqueHistoricoRow } from '@/lib/embarqueHistoricoRepo';
 import { fmtDateTime } from '@/lib/dateUtils';
 
@@ -78,6 +80,44 @@ function daysInMonth(dateStr: string) {
   const d = parseISO(dateStr);
   return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
 }
+
+// ── Meta helpers ──────────────────────────────────────────────────────────────
+
+type MonthGoal = {
+  month: string;
+  goalValue: number;
+  workingDays: number;
+};
+
+async function fetchGoalForMonth(month: string): Promise<MonthGoal | null> {
+  if (!supabaseOps) return null;
+  const { data, error } = await supabaseOps
+    .from('concrem_faturamento_metas')
+    .select('*')
+    .eq('month', month)
+    .maybeSingle();
+  if (error || !data) return null;
+  return { month: data.month, goalValue: Number(data.goal_value), workingDays: Number(data.working_days) };
+}
+
+async function fetchJustificativasForMonth(month: string): Promise<{ date: string; type: string }[]> {
+  if (!supabaseOps) return [];
+  const [y, m] = month.split('-').map(Number);
+  const lastDay = new Date(y, m, 0).getDate();
+  const { data } = await supabaseOps
+    .from('concrem_faturamento_justificativas')
+    .select('date, type')
+    .gte('date', `${month}-01`)
+    .lte('date', `${month}-${String(lastDay).padStart(2, '0')}`);
+  return data || [];
+}
+
+function loadRealValue(l: Load, ovm: Map<string, number>): number {
+  const orderVal = l.orderIds.reduce((s, id) => s + (ovm.get(id) || 0), 0);
+  return orderVal + (l.freightValue || 0);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function getLoadPriorityNivel(load: Load, prioMap: Map<string, { nivel: string }>): string | undefined {
   for (const nivel of ['urgente', 'alta', 'media'] as const) {
@@ -970,12 +1010,116 @@ const CarregamentoDashboard = () => {
     }).catch((err) => console.error('[CarregamentoDashboard] listOrderValues:', err));
   }, [listOrderIds, view]);
 
+  // ── Estado da meta ──
+  const [monthGoal, setMonthGoal] = useState<MonthGoal | null>(null);
+  const [justDates, setJustDates] = useState<{ date: string; type: string }[]>([]);
+  const [programacao, setProgramacao] = useState<ProgramacaoMesResult | null>(null);
+
+  useEffect(() => {
+    fetchGoalForMonth(monthStr).then(setMonthGoal);
+    fetchJustificativasForMonth(monthStr).then(setJustDates);
+  }, [monthStr]);
+
+  useEffect(() => {
+    if (!monthGoal) { setProgramacao(null); return; }
+    fetchProgramacaoMes(monthStr, monthGoal.goalValue).then(setProgramacao);
+  }, [monthStr, monthGoal]);
+
   // ── keep selectedLoad in sync with updated loads state ──
   useEffect(() => {
     if (!selectedLoad) return;
     const updated = loads.find((l) => l.id === selectedLoad.id);
     if (updated) setSelectedLoad(updated);
   }, [loads]);
+
+  // ── Cálculos de meta por visualização ──────────────────────────────────────
+  const goalBanner = useMemo(() => {
+    if (!monthGoal) return null;
+
+    const today = todayBR();
+    const { goalValue, workingDays } = monthGoal;
+    const [y, m] = monthGoal.month.split('-').map(Number);
+    const lastDay = new Date(y, m, 0).getDate();
+    const lastDayStr = `${monthGoal.month}-${String(lastDay).padStart(2, '0')}`;
+
+    // Dias perdidos = dias úteis passados sem carregamento e sem antecipação/recuperação
+    const exemptTypes = new Set(['antecipacao', 'antecipado_saiu', 'recuperado']);
+    let lostDays = 0;
+    let cur = `${monthGoal.month}-01`;
+    while (cur < today && cur <= lastDayStr) {
+      const d = new Date(cur + 'T12:00:00');
+      const isWeekend = d.getDay() === 0 || d.getDay() === 6;
+      if (!isWeekend) {
+        const hasLoad = (loadsByDate.get(cur) || []).length > 0;
+        const just = justDates.find(j => j.date === cur);
+        if (!hasLoad && !(just && exemptTypes.has(just.type))) lostDays++;
+      }
+      const next = new Date(d); next.setDate(next.getDate() + 1);
+      cur = next.toISOString().slice(0, 10);
+    }
+
+    // Faturado e programado no mês
+    let billedMonth = 0;
+    let programmedMonth = 0;
+    for (let d = `${monthGoal.month}-01`; d <= lastDayStr; ) {
+      for (const l of loadsByDate.get(d) || []) {
+        if (l.shipmentStatus === 'Cancelado') continue;
+        const val = loadRealValue(l, monthOrderValueMap);
+        if (['Entregue', 'Despachado', 'Em Rota'].includes(l.shipmentStatus || ''))
+          billedMonth += val;
+        else
+          programmedMonth += val;
+      }
+      const next = new Date(d + 'T12:00:00'); next.setDate(next.getDate() + 1);
+      d = next.toISOString().slice(0, 10);
+    }
+
+    const remaining = Math.max(0, goalValue - billedMonth);
+
+    // Dias úteis restantes a partir de hoje (inclusive)
+    let remainingWorkDays = 0;
+    cur = today;
+    while (cur <= lastDayStr) {
+      const d = new Date(cur + 'T12:00:00');
+      if (d.getDay() !== 0 && d.getDay() !== 6) remainingWorkDays++;
+      const next = new Date(d); next.setDate(next.getDate() + 1);
+      cur = next.toISOString().slice(0, 10);
+    }
+
+    const dailyTarget = remainingWorkDays > 0 ? remaining / remainingWorkDays : 0;
+    const progressPct = goalValue > 0 ? (billedMonth / goalValue) * 100 : 0;
+
+    // Meta da semana visível
+    const weekGoal = (() => {
+      if (view !== 'semana') return null;
+      const wDays = visibleWeekDays.filter(d => {
+        const wd = new Date(d + 'T12:00:00').getDay();
+        return wd !== 0 && wd !== 6;
+      });
+      if (wDays.length === 0) return null;
+      const wTarget = dailyTarget * wDays.length;
+      const wBilled = wDays.reduce((s, d) => {
+        const dl = loadsByDate.get(d) || [];
+        return s + dl
+          .filter(l => ['Entregue', 'Despachado', 'Em Rota'].includes(l.shipmentStatus || ''))
+          .reduce((a, l) => a + loadRealValue(l, weekOrderValueMap), 0);
+      }, 0);
+      const wProgrammed = wDays.reduce((s, d) => {
+        const dl = loadsByDate.get(d) || [];
+        return s + dl
+          .filter(l => l.shipmentStatus === 'Aguardando Despacho' || !l.shipmentStatus)
+          .reduce((a, l) => a + loadRealValue(l, weekOrderValueMap), 0);
+      }, 0);
+      return { target: wTarget, billed: wBilled, programmed: wProgrammed, days: wDays.length };
+    })();
+
+    return {
+      goalValue, workingDays, lostDays,
+      billedMonth, programmedMonth, remaining,
+      remainingWorkDays, dailyTarget, progressPct,
+      weekGoal,
+    };
+  }, [monthGoal, justDates, loadsByDate, view, visibleWeekDays, monthOrderValueMap, weekOrderValueMap]);
 
   const ALL_STATUSES = Object.keys(STATUS_COLORS);
   const hasActiveFilters = statusFilter.length > 0 || dateFrom || dateTo;
@@ -1081,6 +1225,147 @@ const CarregamentoDashboard = () => {
           )}
         </div>
       </div>
+
+      {/* ── Banner de Meta ── */}
+      {goalBanner && (
+        <div className="rounded-xl border border-border bg-card px-4 py-3 shadow-card">
+
+          {/* Linha superior */}
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <div className="flex items-center gap-2 shrink-0">
+              <Target className="h-4 w-4 text-primary shrink-0" />
+              <span className="text-xs text-muted-foreground font-semibold">Meta:</span>
+              <span className="text-sm font-bold text-foreground">{formatCurrency(goalBanner.goalValue)}</span>
+            </div>
+
+            <div className="w-px h-4 bg-border shrink-0 hidden sm:block" />
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="h-2 w-2 rounded-full bg-emerald-500 shrink-0" />
+              <span className="text-xs text-muted-foreground">Faturado:</span>
+              <span className="text-xs font-bold text-emerald-600">{formatCurrency(goalBanner.billedMonth)}</span>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="h-2 w-2 rounded-full bg-amber-400 shrink-0" />
+              <span className="text-xs text-muted-foreground">Programado:</span>
+              <span className="text-xs font-bold text-amber-600">{formatCurrency(goalBanner.programmedMonth)}</span>
+            </div>
+
+            <div className="w-px h-4 bg-border shrink-0 hidden sm:block" />
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <span className="text-xs text-muted-foreground">Restante:</span>
+              <span className={`text-xs font-bold ${goalBanner.remaining > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                {goalBanner.remaining > 0 ? formatCurrency(goalBanner.remaining) : '✓ Meta atingida'}
+              </span>
+            </div>
+
+            {goalBanner.lostDays > 0 && (
+              <>
+                <div className="w-px h-4 bg-border shrink-0 hidden sm:block" />
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-500 shrink-0" />
+                  <span className="text-xs font-semibold text-red-600">
+                    {goalBanner.lostDays} dia{goalBanner.lostDays > 1 ? 's' : ''} perdido{goalBanner.lostDays > 1 ? 's' : ''}
+                  </span>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Barra de progresso */}
+          <div className="mt-2.5 space-y-1">
+            <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
+              <div
+                className={`h-full rounded-full transition-all duration-500 ${goalBanner.progressPct >= 100 ? 'bg-emerald-500' : goalBanner.progressPct >= 70 ? 'bg-primary' : 'bg-amber-500'}`}
+                style={{ width: `${Math.min(100, goalBanner.progressPct)}%` }}
+              />
+            </div>
+            <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+              <span>{goalBanner.progressPct.toFixed(1)}% da meta</span>
+              <span>
+                {goalBanner.remainingWorkDays > 0
+                  ? <><>Meta/dia necessária: </><strong className="text-foreground">{formatCurrency(goalBanner.dailyTarget)}</strong><> · {goalBanner.remainingWorkDays} dias úteis restantes</></>
+                  : 'Sem dias úteis restantes neste mês'
+                }
+              </span>
+            </div>
+          </div>
+
+          {/* Programação × Meta */}
+          {programacao && (
+            <div className="mt-2.5 pt-2.5 border-t border-border flex flex-wrap items-center gap-x-5 gap-y-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Programado:</span>
+                <span className="text-xs font-bold text-foreground">
+                  {formatCurrency(programacao.totalProgramado)}
+                </span>
+                <span className="text-[11px] text-muted-foreground">
+                  ({programacao.totalPedidos} pedidos 307/309)
+                </span>
+              </div>
+
+              {programacao.gap != null && (
+                <div className={`flex items-center gap-1.5 shrink-0 text-xs font-bold ${
+                  programacao.gap >= 0 ? 'text-emerald-600' : 'text-red-500'
+                }`}>
+                  {programacao.gap >= 0
+                    ? <><TrendingUp className="h-3.5 w-3.5" /> Folga de {formatCurrency(programacao.gap)} sobre a meta</>
+                    : <><AlertTriangle className="h-3.5 w-3.5" /> Faltam {formatCurrency(Math.abs(programacao.gap))} em pedidos programados para cobrir a meta</>
+                  }
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Linha inferior — semana */}
+          {view === 'semana' && goalBanner.weekGoal && (
+            <div className="mt-2.5 pt-2.5 border-t border-border flex flex-wrap items-center gap-x-5 gap-y-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Esta semana:</span>
+                <span className="text-xs font-bold text-foreground">{formatCurrency(goalBanner.weekGoal.target)}</span>
+                <span className="text-[11px] text-muted-foreground">de meta ({goalBanner.weekGoal.days} dias úteis × {formatCurrency(goalBanner.dailyTarget)}/dia)</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="text-[11px] text-muted-foreground">Faturado:</span>
+                <span className="text-xs font-bold text-emerald-600">{formatCurrency(goalBanner.weekGoal.billed)}</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <span className="h-2 w-2 rounded-full bg-amber-400" />
+                <span className="text-[11px] text-muted-foreground">Programado:</span>
+                <span className="text-xs font-bold text-amber-600">{formatCurrency(goalBanner.weekGoal.programmed)}</span>
+              </div>
+              {goalBanner.weekGoal.billed >= goalBanner.weekGoal.target ? (
+                <span className="flex items-center gap-1 text-[11px] font-bold text-emerald-600">
+                  <TrendingUp className="h-3.5 w-3.5" />
+                  Meta da semana atingida ✓
+                </span>
+              ) : (
+                <span className="flex items-center gap-1 text-[11px] font-semibold text-amber-600">
+                  <TrendingDown className="h-3.5 w-3.5" />
+                  Faltam {formatCurrency(goalBanner.weekGoal.target - goalBanner.weekGoal.billed)} para bater a meta da semana
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Linha inferior — lista */}
+          {view === 'lista' && (
+            <div className="mt-2.5 pt-2.5 border-t border-border flex flex-wrap items-center gap-x-5 gap-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-bold text-muted-foreground uppercase tracking-wide">Meta por dia útil:</span>
+                <span className="text-sm font-bold text-primary">{formatCurrency(goalBanner.dailyTarget)}</span>
+              </div>
+              <span className="text-[11px] text-muted-foreground">
+                Calculada sobre {goalBanner.remainingWorkDays} dias úteis restantes · {formatCurrency(goalBanner.remaining)} ainda a faturar
+              </span>
+            </div>
+          )}
+
+        </div>
+      )}
 
       {/* ── WEEK VIEW ── */}
       {view === 'semana' && (

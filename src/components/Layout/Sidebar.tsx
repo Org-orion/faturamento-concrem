@@ -12,6 +12,7 @@ import {
   TriangleAlert,
   Factory,
   Monitor,
+  BarChart2,
   Sun,
   Moon,
   Menu,
@@ -53,6 +54,7 @@ const iconMap = {
   flame: TriangleAlert,
   factory: Factory,
   monitor: Monitor,
+  'bar-chart-2': BarChart2,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,7 @@ const HREF_TO_SECTION: Record<string, string> = {
   '/financeiro': 'GESTÃO',
   '/painel-pedidos': 'ANÁLISES',
   '/painel-tv': 'ANÁLISES',
+  '/analise-pedidos': 'ANÁLISES',
 };
 
 const GROUP_TITLE_TO_SECTION: Record<string, string> = {
