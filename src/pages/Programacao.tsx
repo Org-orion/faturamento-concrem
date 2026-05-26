@@ -583,6 +583,8 @@ const Programacao: React.FC = () => {
   // ── Print ─────────────────────────────────────────────────────────────────────
   const [printMes, setPrintMes] = useState<string | null>(null);
   const [printOverrides, setPrintOverrides] = useState<Map<string, string>>(new Map());
+  const [printScrolled, setPrintScrolled] = useState(false);
+  const printScrollRef = useRef<HTMLDivElement>(null);
 
   // ── ERP quick-search (orders not yet in view) ────────────────────────────────
   const [erpQuickSearch, setErpQuickSearch] = useState<ErpRow[]>([]);
@@ -1803,97 +1805,118 @@ const Programacao: React.FC = () => {
         const semPrevisao = pedidos.filter(p => !(printOverrides.get(p.pedidoId) ?? p.dataEmbarqueProgramacao));
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h2 className="text-base font-bold font-display text-foreground">
-                    Relatório — {fmtMesLabel(printMes)}
-                  </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">{pedidos.length} pedidos · {semPrevisao.length} sem previsão</p>
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-3xl flex flex-col max-h-[90vh]">
+
+              {/* Header fixo */}
+              <div className="px-6 pt-5 pb-4 border-b border-border shrink-0">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <h2 className="text-base font-bold font-display text-foreground">
+                      Relatório — {fmtMesLabel(printMes)}
+                    </h2>
+                    <p className="text-xs text-muted-foreground mt-0.5">{pedidos.length} pedidos · {semPrevisao.length} sem previsão</p>
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <button onClick={generatePrintPdf} className={btnPrimary}>
+                      <Printer className="h-4 w-4" />
+                      Gerar PDF
+                    </button>
+                    <button onClick={() => setPrintMes(null)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
                 </div>
-                <button onClick={() => setPrintMes(null)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground">
-                  <X className="h-4 w-4" />
-                </button>
+
+                {semPrevisao.length > 0 && (
+                  <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
+                    <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
+                    <span>Pedidos sem previsão de embarque aparecem como <strong>A DEFINIR</strong> no PDF. Preencha abaixo antes de imprimir.</span>
+                  </div>
+                )}
               </div>
 
-              {semPrevisao.length > 0 && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-3 py-2 text-xs text-amber-800 dark:text-amber-200 flex items-start gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5 mt-0.5 shrink-0" />
-                  <span>Pedidos sem previsão de embarque aparecem como <strong>A DEFINIR</strong> no PDF. Preencha abaixo antes de imprimir.</span>
-                </div>
-              )}
-
-              <div className="border border-border rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-muted/30 border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
-                      <th className="text-left px-3 py-2">Pedido</th>
-                      <th className="text-left px-3 py-2">Cliente</th>
-                      <th className="text-left px-3 py-2">Cidade</th>
-                      <th className="text-center px-3 py-2">UF</th>
-                      <th className="text-right px-3 py-2">Valor</th>
-                      <th className="text-center px-3 py-2 w-40">Prev. Embarque</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pedidos.map(p => (
-                      <tr key={p.pedidoId} className="border-b border-border/40 hover:bg-muted/20">
-                        <td className="px-3 py-2 font-mono font-bold text-xs">{p.numeroPedido}</td>
-                        <td className="px-3 py-2 text-xs truncate max-w-[180px]">{p.clienteNome}</td>
-                        <td className="px-3 py-2 text-xs truncate max-w-[120px] text-muted-foreground">{p.cidadeCliente ?? '—'}</td>
-                        <td className="px-3 py-2 text-xs text-center text-muted-foreground">{p.ufCliente ?? '—'}</td>
-                        <td className="px-3 py-2 text-xs text-right tabular-nums">{p.valorFormatado}</td>
-                        <td className="px-3 py-2 text-center">
-                          <div className="inline-flex items-center">
-                            <input
-                              type="text"
-                              placeholder="DD/MM/AAAA"
-                              maxLength={10}
-                              value={isoToBr(printOverrides.get(p.pedidoId) ?? '')}
-                              onChange={e => {
-                                const val = e.target.value;
-                                const iso = brToIso(val);
-                                setPrintOverrides(prev => {
-                                  const next = new Map(prev);
-                                  if (iso) next.set(p.pedidoId, iso);
-                                  else if (!val) next.delete(p.pedidoId);
-                                  return next;
-                                });
-                              }}
-                              className="w-24 border border-r-0 border-input rounded-l px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary text-center"
-                            />
-                            <div className="relative border border-input rounded-r bg-muted h-[26px] w-7 flex items-center justify-center overflow-hidden shrink-0">
-                              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+              {/* Corpo scrollável */}
+              <div
+                ref={printScrollRef}
+                className="overflow-y-auto flex-1 px-6 py-4 relative"
+                onScroll={e => setPrintScrolled((e.currentTarget.scrollTop) > 100)}
+              >
+                <div className="border border-border rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-muted/30 border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
+                        <th className="text-left px-3 py-2">Pedido</th>
+                        <th className="text-left px-3 py-2">Cliente</th>
+                        <th className="text-left px-3 py-2">Cidade</th>
+                        <th className="text-center px-3 py-2">UF</th>
+                        <th className="text-right px-3 py-2">Valor</th>
+                        <th className="text-center px-3 py-2 w-40">Prev. Embarque</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pedidos.map(p => (
+                        <tr key={p.pedidoId} className="border-b border-border/40 hover:bg-muted/20">
+                          <td className="px-3 py-2 font-mono font-bold text-xs">{p.numeroPedido}</td>
+                          <td className="px-3 py-2 text-xs truncate max-w-[180px]">{p.clienteNome}</td>
+                          <td className="px-3 py-2 text-xs truncate max-w-[120px] text-muted-foreground">{p.cidadeCliente ?? '—'}</td>
+                          <td className="px-3 py-2 text-xs text-center text-muted-foreground">{p.ufCliente ?? '—'}</td>
+                          <td className="px-3 py-2 text-xs text-right tabular-nums">{p.valorFormatado}</td>
+                          <td className="px-3 py-2 text-center">
+                            <div className="inline-flex items-center">
                               <input
-                                type="date"
-                                value={printOverrides.get(p.pedidoId) ?? ''}
+                                type="text"
+                                placeholder="DD/MM/AAAA"
+                                maxLength={10}
+                                value={isoToBr(printOverrides.get(p.pedidoId) ?? '')}
                                 onChange={e => {
+                                  const val = e.target.value;
+                                  const iso = brToIso(val);
                                   setPrintOverrides(prev => {
                                     const next = new Map(prev);
-                                    if (e.target.value) next.set(p.pedidoId, e.target.value);
-                                    else next.delete(p.pedidoId);
+                                    if (iso) next.set(p.pedidoId, iso);
+                                    else if (!val) next.delete(p.pedidoId);
                                     return next;
                                   });
                                 }}
-                                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
-                                tabIndex={-1}
+                                className="w-24 border border-r-0 border-input rounded-l px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary text-center"
                               />
+                              <div className="relative border border-input rounded-r bg-muted h-[26px] w-7 flex items-center justify-center overflow-hidden shrink-0">
+                                <CalendarDays className="h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                                <input
+                                  type="date"
+                                  value={printOverrides.get(p.pedidoId) ?? ''}
+                                  onChange={e => {
+                                    setPrintOverrides(prev => {
+                                      const next = new Map(prev);
+                                      if (e.target.value) next.set(p.pedidoId, e.target.value);
+                                      else next.delete(p.pedidoId);
+                                      return next;
+                                    });
+                                  }}
+                                  className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                                  tabIndex={-1}
+                                />
+                              </div>
                             </div>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Voltar ao Topo */}
+                {printScrolled && (
+                  <button
+                    onClick={() => printScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                    className="sticky bottom-4 left-1/2 -translate-x-1/2 flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-foreground text-background text-xs font-semibold shadow-lg hover:opacity-90 transition-opacity"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5 rotate-180" />
+                    Voltar ao Topo
+                  </button>
+                )}
               </div>
 
-              <div className="flex justify-end gap-2 pt-1">
-                <button onClick={() => setPrintMes(null)} className={btnSecondary}>Cancelar</button>
-                <button onClick={generatePrintPdf} className={btnPrimary}>
-                  <Printer className="h-4 w-4" />
-                  Gerar PDF
-                </button>
-              </div>
             </div>
           </div>
         );
