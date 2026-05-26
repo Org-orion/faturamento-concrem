@@ -300,6 +300,7 @@ function usePainel() {
   const activeFilterRef  = useRef<string | null>(null);
   const popupTimer       = useRef<ReturnType<typeof setTimeout>>();
   const feedKey          = useRef(0);
+  const audioCtxRef      = useRef<AudioContext | null>(null);
   const initialized      = useRef(false);
   const isFirstLoad      = useRef(true);
   const pollInProgress   = useRef(false);
@@ -499,6 +500,27 @@ function usePainel() {
             shownStatus.current = new Map(entries.slice(-250));
           }
 
+          // Som de notificação via Web Audio API (sem arquivo externo)
+          const playNotifSound = () => {
+            try {
+              if (!audioCtxRef.current) audioCtxRef.current = new AudioContext();
+              const ctx = audioCtxRef.current;
+              const gain = ctx.createGain();
+              gain.connect(ctx.destination);
+              [[880, 0, 0.12], [1100, 0.13, 0.12], [1320, 0.27, 0.15]].forEach(([freq, start, dur]) => {
+                const osc = ctx.createOscillator();
+                osc.type = 'sine';
+                osc.frequency.value = freq as number;
+                gain.gain.setValueAtTime(0, ctx.currentTime + (start as number));
+                gain.gain.linearRampToValueAtTime(0.25, ctx.currentTime + (start as number) + 0.02);
+                gain.gain.linearRampToValueAtTime(0, ctx.currentTime + (start as number) + (dur as number));
+                osc.connect(gain);
+                osc.start(ctx.currentTime + (start as number));
+                osc.stop(ctx.currentTime + (start as number) + (dur as number) + 0.01);
+              });
+            } catch { /* autoplay bloqueado ou não suportado */ }
+          };
+
           // Busca nome do cliente e exibe popup + feed
           const notify = async () => {
             let client = '—';
@@ -520,6 +542,7 @@ function usePainel() {
             };
             setFeed((f) => [entry, ...f].slice(0, 40));
             setPopup(entry);
+            playNotifSound();
             clearTimeout(popupTimer.current);
             popupTimer.current = setTimeout(() => setPopup(null), POPUP_DURATION_MS);
           };
