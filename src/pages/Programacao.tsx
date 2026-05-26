@@ -86,6 +86,18 @@ function chunk<T>(arr: T[], size: number): T[][] {
 const BRL_FMT = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const DATE_FMT = new Intl.DateTimeFormat('pt-BR');
 
+// Date helpers — timezone-safe (no Date constructor)
+const isoToBr = (iso: string) => {
+  if (!iso || iso.length < 10) return '';
+  const [y, m, d] = iso.slice(0, 10).split('-');
+  return `${d}/${m}/${y}`;
+};
+const brToIso = (br: string) => {
+  const match = br.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!match) return '';
+  return `${match[3]}-${match[2]}-${match[1]}`;
+};
+
 function fmtDateSafe(iso: string | null | undefined): string {
   if (!iso) return '—';
   try { return DATE_FMT.format(new Date(iso)); } catch { return '—'; }
@@ -1811,15 +1823,21 @@ const Programacao: React.FC = () => {
                         <td className="px-3 py-2 text-xs text-right tabular-nums">{p.valorFormatado}</td>
                         <td className="px-3 py-2 text-center">
                           <input
-                            type="date"
-                            value={printOverrides.get(p.pedidoId) ?? ''}
-                            onChange={e => setPrintOverrides(prev => {
-                              const next = new Map(prev);
-                              if (e.target.value) next.set(p.pedidoId, e.target.value);
-                              else next.delete(p.pedidoId);
-                              return next;
-                            })}
-                            className="w-36 border border-input rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary"
+                            type="text"
+                            placeholder="DD/MM/AAAA"
+                            maxLength={10}
+                            value={isoToBr(printOverrides.get(p.pedidoId) ?? '')}
+                            onChange={e => {
+                              const val = e.target.value;
+                              const iso = brToIso(val);
+                              setPrintOverrides(prev => {
+                                const next = new Map(prev);
+                                if (iso) next.set(p.pedidoId, iso);
+                                else if (!val) next.delete(p.pedidoId);
+                                return next;
+                              });
+                            }}
+                            className="w-28 border border-input rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary text-center"
                           />
                         </td>
                       </tr>
