@@ -1822,23 +1822,42 @@ const Programacao: React.FC = () => {
                         <td className="px-3 py-2 text-xs truncate max-w-[200px]">{p.clienteNome}</td>
                         <td className="px-3 py-2 text-xs text-right tabular-nums">{p.valorFormatado}</td>
                         <td className="px-3 py-2 text-center">
-                          <input
-                            type="text"
-                            placeholder="DD/MM/AAAA"
-                            maxLength={10}
-                            value={isoToBr(printOverrides.get(p.pedidoId) ?? '')}
-                            onChange={e => {
-                              const val = e.target.value;
-                              const iso = brToIso(val);
-                              setPrintOverrides(prev => {
-                                const next = new Map(prev);
-                                if (iso) next.set(p.pedidoId, iso);
-                                else if (!val) next.delete(p.pedidoId);
-                                return next;
-                              });
-                            }}
-                            className="w-28 border border-input rounded px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary text-center"
-                          />
+                          <div className="inline-flex items-center">
+                            <input
+                              type="text"
+                              placeholder="DD/MM/AAAA"
+                              maxLength={10}
+                              value={isoToBr(printOverrides.get(p.pedidoId) ?? '')}
+                              onChange={e => {
+                                const val = e.target.value;
+                                const iso = brToIso(val);
+                                setPrintOverrides(prev => {
+                                  const next = new Map(prev);
+                                  if (iso) next.set(p.pedidoId, iso);
+                                  else if (!val) next.delete(p.pedidoId);
+                                  return next;
+                                });
+                              }}
+                              className="w-24 border border-r-0 border-input rounded-l px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary text-center"
+                            />
+                            <div className="relative border border-input rounded-r bg-muted h-[26px] w-7 flex items-center justify-center overflow-hidden shrink-0">
+                              <CalendarDays className="h-3.5 w-3.5 text-muted-foreground pointer-events-none" />
+                              <input
+                                type="date"
+                                value={printOverrides.get(p.pedidoId) ?? ''}
+                                onChange={e => {
+                                  setPrintOverrides(prev => {
+                                    const next = new Map(prev);
+                                    if (e.target.value) next.set(p.pedidoId, e.target.value);
+                                    else next.delete(p.pedidoId);
+                                    return next;
+                                  });
+                                }}
+                                className="absolute inset-0 opacity-0 w-full h-full cursor-pointer"
+                                tabIndex={-1}
+                              />
+                            </div>
+                          </div>
                         </td>
                       </tr>
                     ))}
