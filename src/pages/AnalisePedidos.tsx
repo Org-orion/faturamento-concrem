@@ -188,12 +188,18 @@ async function fetchPedidosDoMes(month: string): Promise<PedidoAnalise[]> {
     const erp = erpMap.get(ops.pedido_id);
     if (!erp) continue;
 
-    // id_nota_conf 613/665 → valor = 0 via resolveValor, mas pedido aparece na listagem
-    // Leroy sem carregamento no mês → aparece no grupo "Sem carregamento programado"
+    const nc = erp.id_nota_conf;
 
-    const loadInfo     = pedidoToLoad.get(ops.pedido_id) ?? null;
-    const hasLoad      = loadInfo != null;
-    const monthDivergent = hasLoad && loadInfo!.loadMonth !== month;
+    // Inclui apenas pedidos de venda reais (307 e 309) e os que não movimentam financeiro (613 e 665)
+    if (nc !== 307 && nc !== 309 && nc !== 613 && nc !== 665) continue;
+
+    // Regra Leroy — idêntica à Programacao.tsx: só aparece se estiver em carregamento do mesmo mês
+    const isLeroy = (erp.cliente_nome ?? '').toUpperCase().includes('LEROY');
+    if (isLeroy && !pedidosNoMes.has(ops.pedido_id)) continue;
+
+    const loadInfo  = pedidoToLoad.get(ops.pedido_id) ?? null;
+    const hasLoad   = loadInfo != null;
+    const monthDiv  = hasLoad && loadInfo!.loadMonth !== month;
 
     result.push({
       pedidoId:       ops.pedido_id,
@@ -206,7 +212,7 @@ async function fetchPedidosDoMes(month: string): Promise<PedidoAnalise[]> {
       loadDate:       loadInfo?.loadDate ?? null,
       loadMonth:      loadInfo?.loadMonth ?? null,
       hasLoad,
-      monthDivergent,
+      monthDivergent: monthDiv,
     });
   }
 
