@@ -566,7 +566,7 @@ const ComercialLiberacao = () => {
     const now = new Date();
     const mesRef = pdfMesRef.trim();
     const fmtCurrency = (v?: number) => v != null ? `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
-    const fmtDateLocal = (iso: string) => new Date(iso + 'T00:00:00').toLocaleDateString('pt-BR');
+    const fmtDateLocal = (iso: string) => { const [y, m, d] = iso.split('-'); return `${d}/${m}/${y}`; };
 
     let totalValor = 0;
     let totalQtdKits = 0;
