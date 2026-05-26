@@ -188,12 +188,8 @@ async function fetchPedidosDoMes(month: string): Promise<PedidoAnalise[]> {
     const erp = erpMap.get(ops.pedido_id);
     if (!erp) continue;
 
-    const nc = erp.id_nota_conf;
-    if (nc != null && EXCLUDED_NOTA_CONF.has(nc)) continue;
-    if (nc !== 307 && nc !== 309) continue;
-
-    const isLeroy = (erp.cliente_nome ?? '').toUpperCase().includes('LEROY');
-    if (isLeroy && !pedidosNoMes.has(ops.pedido_id)) continue;
+    // id_nota_conf 613/665 → valor = 0 via resolveValor, mas pedido aparece na listagem
+    // Leroy sem carregamento no mês → aparece no grupo "Sem carregamento programado"
 
     const loadInfo     = pedidoToLoad.get(ops.pedido_id) ?? null;
     const hasLoad      = loadInfo != null;
