@@ -464,6 +464,11 @@ const ComercialLiberacao = () => {
           if (existingMes !== mes) {
             row.mes_programacao = mes;
           }
+          // Garante que a data de embarque do PDF é salva mesmo para registros novos
+          const embarquePdf = pdfOrderDates[id]?.embarque;
+          if (embarquePdf) {
+            row.data_embarque_programacao = embarquePdf;
+          }
           return row;
         }),
         { onConflict: 'pedido_id' },
