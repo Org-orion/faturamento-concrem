@@ -21,6 +21,7 @@ type OpsRow = {
   status_atual: string;
   mes_programacao: string | null;
   atualizado_em: string;
+  data_embarque_programacao: string | null;
 };
 
 type ErpRow = {
@@ -58,6 +59,7 @@ type Pedido = {
   grupoCliente: string | null;
   idNotaConf: number | null;
   pedCompraCliente: string | null;
+  dataEmbarqueProgramacao: string | null;
 };
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -69,7 +71,7 @@ const PRODUCAO_STATUSES: string[] = [
   'entregue', 'aguardando_pagamento', 'finalizado',
 ];
 
-const OPS_COLS = 'pedido_id, numero_pedido, status_atual, mes_programacao, atualizado_em';
+const OPS_COLS = 'pedido_id, numero_pedido, status_atual, mes_programacao, atualizado_em, data_embarque_programacao';
 const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente, id_nota_conf, ped_compra_cliente';
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
@@ -661,6 +663,7 @@ const Programacao: React.FC = () => {
         grupoCliente: erp?.grupo_cliente ?? null,
         idNotaConf: erp?.id_nota_conf ?? null,
         pedCompraCliente: erp?.ped_compra_cliente ?? null,
+        dataEmbarqueProgramacao: ops.data_embarque_programacao ?? null,
       };
     }),
   [opsRows, erpMap]);
@@ -1013,7 +1016,7 @@ const Programacao: React.FC = () => {
     const pedidos = groupedMonths.get(mes) ?? [];
     const initialOverrides = new Map<string, string>();
     for (const p of pedidos) {
-      if (p.previsaoEmbarque) initialOverrides.set(p.pedidoId, p.previsaoEmbarque.slice(0, 10));
+      if (p.dataEmbarqueProgramacao) initialOverrides.set(p.pedidoId, p.dataEmbarqueProgramacao.slice(0, 10));
     }
     setPrintOverrides(initialOverrides);
     setPrintMes(mes);

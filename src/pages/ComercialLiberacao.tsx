@@ -530,6 +530,22 @@ const ComercialLiberacao = () => {
     const missing = pedidos.filter(o => { const d = pdfOrderDates[o.id]; return !d?.embarque || !d?.liberacao; });
     if (missing.length > 0) { showToast(`Informe as datas para todos os pedidos (${missing.length} sem data).`, 'error'); return; }
 
+    // Salva data_embarque_programacao no OPS por pedido — usada na tela de Programação
+    if (supabaseOps) {
+      const opsResults = await Promise.all(
+        pedidos.map(o =>
+          supabaseOps!.from('concrem_pedidos_status')
+            .update({ data_embarque_programacao: pdfOrderDates[o.id]!.embarque })
+            .eq('pedido_id', o.id)
+        )
+      );
+      const opsErrors = opsResults.filter(r => r.error);
+      if (opsErrors.length > 0) {
+        console.error('[ComercialLiberacao] Erro ao salvar data_embarque_programacao:', opsErrors.map(r => r.error?.message));
+        showToast(`Aviso: ${opsErrors.length} data(s) de embarque não foram salvas.`, 'error');
+      }
+    }
+
     // Salva previsao_embarque no ERP para cada pedido — aparece na tela de carregamento
     if (supabasePedidos) {
       const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
