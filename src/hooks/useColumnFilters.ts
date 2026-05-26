@@ -73,7 +73,8 @@ export function useColumnFilters() {
           const def = defMap.get(key);
           if (!def) return true;
           const cell = String(def.getter(item) ?? '').toLowerCase();
-          return vals.some(v => cell.includes(v.toLowerCase()));
+          // Exact match: "ENGENHARIA" must not match "ENGENHARIA JANDERSON"
+          return vals.some(v => cell === v.toLowerCase());
         });
         return passesCol && passesMulti;
       });
