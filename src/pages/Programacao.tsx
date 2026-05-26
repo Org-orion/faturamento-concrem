@@ -37,6 +37,8 @@ type ErpRow = {
   grupo_cliente: string | null;
   id_nota_conf: number | null;
   ped_compra_cliente: string | null;
+  cliente_cidade: string | null;
+  cliente_uf: string | null;
 };
 
 // Pre-formatted fields avoid calling toLocaleString per row on every render
@@ -59,6 +61,8 @@ type Pedido = {
   grupoCliente: string | null;
   idNotaConf: number | null;
   pedCompraCliente: string | null;
+  cidadeCliente: string | null;
+  ufCliente: string | null;
   dataEmbarqueProgramacao: string | null;
 };
 
@@ -72,7 +76,7 @@ const PRODUCAO_STATUSES: string[] = [
 ];
 
 const OPS_COLS = 'pedido_id, numero_pedido, status_atual, mes_programacao, atualizado_em, data_embarque_programacao';
-const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente, id_nota_conf, ped_compra_cliente';
+const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente, id_nota_conf, ped_compra_cliente, cliente_cidade, cliente_uf';
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
 // ─── Module-level helpers (instantiated once, not per render) ─────────────────
@@ -675,6 +679,8 @@ const Programacao: React.FC = () => {
         grupoCliente: erp?.grupo_cliente ?? null,
         idNotaConf: erp?.id_nota_conf ?? null,
         pedCompraCliente: erp?.ped_compra_cliente ?? null,
+        cidadeCliente: erp?.cliente_cidade ?? null,
+        ufCliente: erp?.cliente_uf ?? null,
         dataEmbarqueProgramacao: ops.data_embarque_programacao ?? null,
       };
     }),
@@ -1036,9 +1042,14 @@ const Programacao: React.FC = () => {
 
   const generatePrintPdf = () => {
     if (!printMes) return;
-    const pedidos = (groupedMonths.get(printMes) ?? []).slice().sort((a, b) =>
-      a.clienteNome.localeCompare(b.clienteNome, 'pt-BR'),
-    );
+    const pedidos = (groupedMonths.get(printMes) ?? []).slice().sort((a, b) => {
+      const da = printOverrides.get(a.pedidoId) ?? a.dataEmbarqueProgramacao ?? '';
+      const db = printOverrides.get(b.pedidoId) ?? b.dataEmbarqueProgramacao ?? '';
+      if (da && db) return da.localeCompare(db);
+      if (da) return -1;
+      if (db) return 1;
+      return a.clienteNome.localeCompare(b.clienteNome, 'pt-BR');
+    });
     const mesLabel = fmtMesLabel(printMes);
     const now = new Date();
     const emissao = `${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
@@ -1046,14 +1057,14 @@ const Programacao: React.FC = () => {
     const fmtD = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
 
     let totalValor = 0;
-    let totalQtd = 0;
     const rows = pedidos.map(p => {
       totalValor += p.valor;
-      totalQtd += p.totalQtd ?? 0;
-      const previsao = printOverrides.get(p.pedidoId);
+      const previsao = printOverrides.get(p.pedidoId) ?? p.dataEmbarqueProgramacao;
       return `<tr>
         <td style="font-weight:700">${p.numeroPedido}</td>
         <td>${p.clienteNome}</td>
+        <td style="font-size:10px;color:#555">${p.cidadeCliente ?? '—'}</td>
+        <td style="font-size:10px;text-align:center">${p.ufCliente ?? '—'}</td>
         <td style="font-size:10px;color:#555">${p.representante ?? '—'}</td>
         <td style="text-align:center">${p.totalQtd != null ? p.totalQtd : '—'}</td>
         <td style="text-align:right">${fmtCurrency(p.valor)}</td>
@@ -1094,6 +1105,8 @@ const Programacao: React.FC = () => {
     <thead><tr>
       <th style="text-align:left">Nº Pedido</th>
       <th style="text-align:left">Cliente</th>
+      <th style="text-align:left">Cidade</th>
+      <th style="text-align:center">UF</th>
       <th style="text-align:left">Representante</th>
       <th style="text-align:center">Qtd Kits</th>
       <th style="text-align:right">Valor</th>
@@ -1102,9 +1115,9 @@ const Programacao: React.FC = () => {
     <tbody>
       ${rows}
       <tr class="total-row">
-        <td colspan="3" style="text-align:right">TOTAL</td>
-        <td style="text-align:center">${totalQtd || '—'}</td>
-        <td style="text-align:right">${fmtCurrency(totalValor)}</td>
+        <td colspan="5" style="text-align:right">TOTAL</td>
+        <td></td>
+        <td style="text-align:right;white-space:nowrap">${fmtCurrency(totalValor)}</td>
         <td></td>
       </tr>
     </tbody>
@@ -1779,13 +1792,18 @@ const Programacao: React.FC = () => {
 
       {/* Print Modal */}
       {printMes && (() => {
-        const pedidos = (groupedMonths.get(printMes) ?? []).slice().sort((a, b) =>
-          a.clienteNome.localeCompare(b.clienteNome, 'pt-BR'),
-        );
-        const semPrevisao = pedidos.filter(p => !printOverrides.has(p.pedidoId) || !printOverrides.get(p.pedidoId));
+        const pedidos = (groupedMonths.get(printMes) ?? []).slice().sort((a, b) => {
+          const da = printOverrides.get(a.pedidoId) ?? a.dataEmbarqueProgramacao ?? '';
+          const db = printOverrides.get(b.pedidoId) ?? b.dataEmbarqueProgramacao ?? '';
+          if (da && db) return da.localeCompare(db);
+          if (da) return -1;
+          if (db) return 1;
+          return a.clienteNome.localeCompare(b.clienteNome, 'pt-BR');
+        });
+        const semPrevisao = pedidos.filter(p => !(printOverrides.get(p.pedidoId) ?? p.dataEmbarqueProgramacao));
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-2xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="bg-card border border-border rounded-2xl shadow-2xl w-full max-w-3xl p-6 space-y-4 max-h-[90vh] overflow-y-auto">
               <div className="flex items-center justify-between">
                 <div>
                   <h2 className="text-base font-bold font-display text-foreground">
@@ -1811,6 +1829,8 @@ const Programacao: React.FC = () => {
                     <tr className="bg-muted/30 border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
                       <th className="text-left px-3 py-2">Pedido</th>
                       <th className="text-left px-3 py-2">Cliente</th>
+                      <th className="text-left px-3 py-2">Cidade</th>
+                      <th className="text-center px-3 py-2">UF</th>
                       <th className="text-right px-3 py-2">Valor</th>
                       <th className="text-center px-3 py-2 w-40">Prev. Embarque</th>
                     </tr>
@@ -1819,7 +1839,9 @@ const Programacao: React.FC = () => {
                     {pedidos.map(p => (
                       <tr key={p.pedidoId} className="border-b border-border/40 hover:bg-muted/20">
                         <td className="px-3 py-2 font-mono font-bold text-xs">{p.numeroPedido}</td>
-                        <td className="px-3 py-2 text-xs truncate max-w-[200px]">{p.clienteNome}</td>
+                        <td className="px-3 py-2 text-xs truncate max-w-[180px]">{p.clienteNome}</td>
+                        <td className="px-3 py-2 text-xs truncate max-w-[120px] text-muted-foreground">{p.cidadeCliente ?? '—'}</td>
+                        <td className="px-3 py-2 text-xs text-center text-muted-foreground">{p.ufCliente ?? '—'}</td>
                         <td className="px-3 py-2 text-xs text-right tabular-nums">{p.valorFormatado}</td>
                         <td className="px-3 py-2 text-center">
                           <div className="inline-flex items-center">
