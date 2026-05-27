@@ -3,6 +3,7 @@ import { useApp } from '@/contexts/AppContext';
 import { can } from '@/utils/access';
 import Modal from '@/components/Modal';
 import { btnPrimary, btnSecondary, btnDanger, formatCurrency, inputClass } from '@/components/shared';
+import { getValorTotalPedido } from '@/lib/valorPedido';
 import { ProductionSchedule, Order, SupportOrder, PedidoStatusRow } from '@/types';
 import { Calendar, Eye, Play, CheckCircle2, Printer, Plus, Pencil, RotateCcw } from 'lucide-react';
 import { desfazerProducaoConcluido, insertProducaoConcluido, listProducaoConcluidos } from '@/lib/opsRepo';
@@ -45,13 +46,12 @@ async function fetchErpValores(ids: string[]): Promise<ErpMaps> {
   for (let i = 0; i < unique.length; i += BATCH) chunks.push(unique.slice(i, i + BATCH));
   const results = await Promise.all(
     chunks.map(batch =>
-      supabasePedidos!.from(ERP_TABLE).select('numero_pedido, total_pedido_venda, total_produtos, cliente_nome, total_qtd, previsao_embarque').in('numero_pedido', batch).then(({ data }) => data || [])
+      supabasePedidos!.from(ERP_TABLE).select('numero_pedido, total_pedido_venda, id_nota_conf, cliente_nome, total_qtd, previsao_embarque').in('numero_pedido', batch).then(({ data }) => data || [])
     )
   );
   for (const row of results.flat()) {
     const key = String(row.numero_pedido);
-    const venda = Number(row.total_pedido_venda) || 0;
-    valorMap.set(key, venda > 0 ? venda : (Number(row.total_produtos) || 0));
+    valorMap.set(key, getValorTotalPedido(row));
     clienteMap.set(key, String(row.cliente_nome || ''));
     qtdMap.set(key, row.total_qtd != null ? Number(row.total_qtd) : null);
     if (row.previsao_embarque) previsaoMap.set(key, String(row.previsao_embarque).slice(0, 10));

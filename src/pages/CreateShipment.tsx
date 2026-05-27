@@ -14,6 +14,7 @@ import {
   formatCurrency,
   getOrderTotal
 } from '@/components/shared';
+import { getValorTotalOrder } from '@/lib/valorPedido';
 import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle } from 'lucide-react';
 import { DriverSelectField } from '@/components/drivers/DriverSelectField';
 import { cn } from '@/lib/utils';
@@ -203,8 +204,8 @@ const CreateShipment = () => {
         const storedFreight = loadToEdit.freightValue ?? 0;
         setFreightValue(storedFreight);
         setFreightRaw(storedFreight > 0 ? storedFreight.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
-        // Only lock manual if there's an actual stored freight value;
-        // otherwise let auto-calc fill it from the orders
+        // Se o frete salvo é > 0, preserva e bloqueia o auto-calc.
+        // Se é 0 (carregamento antigo), deixa o auto-calc calcular o valor real.
         setFreightManual(storedFreight > 0);
         setShipmentStatusDate(loadToEdit.plannedDate || todayBR());
         setRealizationDate(loadToEdit.realizationDate || '');
@@ -293,20 +294,45 @@ const CreateShipment = () => {
 
   const [directPedidos, setDirectPedidos] = useState<Order[]>([]);
   const [editExtraOrders, setEditExtraOrders] = useState<Order[]>([]);
+  const [erpFreteMap, setErpFreteMap] = useState<Map<string, number>>(new Map());
+  const [erpFreteMapAll, setErpFreteMapAll] = useState<Map<string, number>>(new Map());
+
+  useEffect(() => {
+    if (!selectedOrderIds.length || !supabasePedidos) return;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
+    const BATCH = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < selectedOrderIds.length; i += BATCH) {
+      chunks.push(selectedOrderIds.slice(i, i + BATCH));
+    }
+    Promise.all(
+      chunks.map(batch =>
+        supabasePedidos!
+          .from(table)
+          .select('numero_pedido, frete, id_nota_conf')
+          .in('numero_pedido', batch)
+          .then(({ data }) => data || [])
+      )
+    ).then(results => {
+      const m = new Map<string, number>();
+      for (const row of results.flat() as any[]) {
+        const nc = row.id_nota_conf;
+        const freteVal = (nc === 613 || nc === 665) ? 0 : Number(row.frete ?? 0);
+        m.set(String(row.numero_pedido), freteVal);
+      }
+      setErpFreteMap(m);
+    });
+  }, [selectedOrderIds]);
 
   useEffect(() => {
     if (freightManual) return;
     const totalFreight = selectedOrderIds.reduce((acc, orderId) => {
-      const order = orders.find(o => o.id === orderId)
-        ?? (supportOrders as unknown as Order[]).find(o => o.id === orderId)
-        ?? directPedidos.find(o => o.id === orderId)
-        ?? editExtraOrders.find(o => o.id === orderId);
-      return acc + (order?.freightValue || 0);
+      return acc + (erpFreteMap.get(orderId) ?? 0);
     }, 0);
     const rounded = Math.round(totalFreight * 100) / 100;
     setFreightValue(rounded);
-    setFreightRaw(rounded > 0 ? String(rounded).replace('.', ',') : '');
-  }, [freightManual, selectedOrderIds, orders, supportOrders, directPedidos, editExtraOrders]);
+    setFreightRaw(rounded > 0 ? rounded.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '');
+  }, [freightManual, selectedOrderIds, erpFreteMap]);
 
   const selectedDriver = drivers.find(d => d.id === driverId);
   const [pedidoStatusRows, setPedidoStatusRows] = useState<import('@/types').PedidoStatusRow[]>([]);
@@ -372,6 +398,24 @@ const CreateShipment = () => {
 
       const mapped = allPedidos.map((row: any) => rowToOrder(row, 'CLI-001'));
       setDirectPedidos(mapped);
+
+      // Busca frete ERP de todos os pedidos disponíveis para exibição na lista
+      const allIds = mapped.map((o: Order) => o.id);
+      if (allIds.length && supabasePedidos) {
+        const tbl = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
+        const fChunks: string[][] = [];
+        for (let i = 0; i < allIds.length; i += 200) fChunks.push(allIds.slice(i, i + 200));
+        Promise.all(fChunks.map((b: string[]) =>
+          supabasePedidos!.from(tbl).select('numero_pedido, frete, id_nota_conf').in('numero_pedido', b).then(({ data }) => data || [])
+        )).then((fResults: any[][]) => {
+          const m = new Map<string, number>();
+          for (const row of fResults.flat() as any[]) {
+            const nc = row.id_nota_conf;
+            m.set(String(row.numero_pedido), (nc === 613 || nc === 665) ? 0 : Number(row.frete ?? 0));
+          }
+          setErpFreteMapAll(m);
+        });
+      }
     };
     void load();
   }, []);
@@ -1984,8 +2028,8 @@ const CreateShipment = () => {
                           </div>
                         </div>
                         <div className="text-right min-w-[100px]">
-                          <p className="font-bold text-sm text-[#1E3A5F] group-hover:text-primary transition-colors">{formatCurrency(order.totalPedidoVenda || getOrderTotal(order))}</p>
-                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight">Frete: {formatCurrency(order.freightValue || 0)}</p>
+                          <p className="font-bold text-sm text-[#1E3A5F] group-hover:text-primary transition-colors">{formatCurrency(getValorTotalOrder(order))}</p>
+                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight">Frete: {formatCurrency(erpFreteMapAll.get(order.id) ?? 0)}</p>
                         </div>
                       </div>
                     );
@@ -2083,8 +2127,8 @@ const CreateShipment = () => {
                           </div>
                         </div>
                         <div className="text-right min-w-[100px]">
-                          <p className="font-bold text-sm text-[#1E3A5F]">{formatCurrency(order.totalPedidoVenda || getOrderTotal(order))}</p>
-                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight">Frete: {formatCurrency(order.freightValue || 0)}</p>
+                          <p className="font-bold text-sm text-[#1E3A5F]">{formatCurrency(getValorTotalOrder(order))}</p>
+                          <p className="text-[10px] text-muted-foreground font-bold uppercase tracking-tight">Frete: {formatCurrency(erpFreteMap.get(order.id) ?? 0)}</p>
                         </div>
                       </div>
                     );
@@ -2216,7 +2260,7 @@ const CreateShipment = () => {
                                     {client?.cpfCnpj || order?.clientCode || '-'}
                                   </td>
                                   <td className="py-3 px-4 font-mono-data font-bold text-right text-[#1E3A5F]">
-                                    {formatCurrency(order?.totalPedidoVenda || getOrderTotal(order))}
+                                    {formatCurrency(getValorTotalOrder(order ?? {}))}
                                   </td>
                                 </>
                               )}

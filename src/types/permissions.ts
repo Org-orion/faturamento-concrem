@@ -65,6 +65,9 @@ export type Funcionalidade =
   // Painel TV
   | 'painel_tv.view'
 
+  // Análise de Pedidos
+  | 'analise_pedidos.view'
+
   // Representantes
   | 'representantes.view'
   | 'representantes.criar_editar'
@@ -139,6 +142,8 @@ export const funcionalidadeLabels: Record<Funcionalidade, string> = {
 
   'painel_tv.view': 'Acessar Painel TV',
 
+  'analise_pedidos.view': 'Acessar análise de pedidos',
+
   'representantes.view':        'Visualizar representantes',
   'representantes.criar_editar':'Criar / editar representante',
   'representantes.excluir':     'Excluir representante',
@@ -166,6 +171,10 @@ export const funcionalidadeSections: FuncionalidadeSection[] = [
   {
     label: 'Geral',
     keys: ['dashboard.view', 'painel_pedidos.view', 'painel_tv.view'],
+  },
+  {
+    label: 'Análises',
+    keys: ['analise_pedidos.view'] as Funcionalidade[],
   },
   {
     label: 'Pedidos de Venda',

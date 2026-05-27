@@ -9,6 +9,7 @@ import { pedidoStatusFlow, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { fetchAllPages } from '@/lib/supabaseUtils'; // mantido para fallback listPedidosStatusByPedidoIds
 import { rowToOrder } from '@/lib/pedidoMapper';
+import { getValorTotalOrder } from '@/lib/valorPedido';
 import { cn } from '@/lib/utils';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -63,7 +64,7 @@ async function fetchExtraPedidosInParallel(missingIds: string[]): Promise<Unifie
   });
   return rows.map((row: any) => {
     const o = rowToOrder(row, 'CLI-001');
-    return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: o.totalPedidoVenda ?? 0, identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
+    return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: getValorTotalOrder(o), identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
   });
 }
 
@@ -113,7 +114,7 @@ const PainelPedidos = () => {
       numero: o.id,
       cliente: o.clientName || o.clientCode || 'Cliente',
       representante: o.representativeName || '-',
-      valor: o.totalPedidoVenda ?? 0,
+      valor: getValorTotalOrder(o),
       identificacao: o.pedCompraCliente,
       grupoCliente: o.grupoCliente,
       previsaoEmbarque: o.previsaoCarregamento,
@@ -125,7 +126,7 @@ const PainelPedidos = () => {
       numero: o.id,
       cliente: o.clientName || o.clientCode || 'Cliente',
       representante: o.representativeName || '-',
-      valor: o.totalPedidoVenda ?? 0,
+      valor: getValorTotalOrder(o),
       identificacao: o.pedCompraCliente,
       grupoCliente: o.grupoCliente,
       previsaoEmbarque: o.previsaoCarregamento,

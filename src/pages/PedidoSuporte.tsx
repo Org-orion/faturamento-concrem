@@ -5,6 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
 import { btnPrimary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
+import { getValorTotalOrder } from '@/lib/valorPedido';
 import { CheckCircle2, Eye, Plus } from 'lucide-react';
 import { supabase, supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { Order, PedidoStatusRow, PedidoStatusValue, SupportOrder } from '@/types';
@@ -82,7 +83,7 @@ const PedidoSuporte = () => {
   const eligibleForSchedule = useMemo(() => {
     return supportOrders
       .filter((o) => o.status === 'Liberado p/ Produção' && !o.carregamentoId)
-      .map((o) => ({ id: o.id, representativeName: o.representativeName || '-', total: getOrderTotal(o) }))
+      .map((o) => ({ id: o.id, representativeName: o.representativeName || '-', total: getValorTotalOrder(o) }))
       .sort((a, b) => a.id.localeCompare(b.id));
   }, [supportOrders]);
 
@@ -334,7 +335,7 @@ const PedidoSuporte = () => {
       const last = (o.history || []).slice(-1)[0];
       return o.status === 'Liberado p/ Produção' && last?.action === 'Liberou pedido para produção' && (last.at || '').slice(0, 10) === today;
     });
-    const inAnalysisValue = awaiting.reduce((sum, o) => sum + getOrderTotal(o), 0);
+    const inAnalysisValue = awaiting.reduce((sum, o) => sum + getValorTotalOrder(o), 0);
 
     return {
       awaitingCount: awaiting.length,
@@ -577,7 +578,7 @@ const PedidoSuporte = () => {
                       <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? fmtDate(o.expiryDate) : '-'}</td>
                       <td className="py-4 px-6 font-display text-muted-foreground">{o.clientCity || '—'}</td>
                       <td className="py-4 px-6 font-display text-muted-foreground">{o.clientUF || '—'}</td>
-                      <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
+                      <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getValorTotalOrder(o))}</td>
                       <td className="py-4 px-6">
                         <div className="flex items-center gap-2">
                           <PedidoStatusBadge value={(statusByPedidoId.get(o.id)?.status_atual ?? 'aguardando_avaliacao') as PedidoStatusValue} />
@@ -650,7 +651,7 @@ const PedidoSuporte = () => {
                   <PedidoStatusBadge value={(statusByPedidoId.get(selectedOrderDetails.id)?.status_atual ?? 'aguardando_avaliacao') as PedidoStatusValue} />
                 </div>
                 {selectedOrderDetails.previsaoCarregamento && <p className="text-xs text-muted-foreground mt-3">Previsão de Carregamento: <span className="font-semibold text-foreground">{selectedOrderDetails.previsaoCarregamento}</span></p>}
-                <p className="text-xs text-muted-foreground mt-3">Valor total: <span className="font-mono-data font-bold text-foreground">{formatCurrency(getOrderTotal(selectedOrderDetails))}</span></p>
+                <p className="text-xs text-muted-foreground mt-3">Valor total: <span className="font-mono-data font-bold text-foreground">{formatCurrency(getValorTotalOrder(selectedOrderDetails))}</span></p>
               </div>
             </div>
 

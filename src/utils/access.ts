@@ -23,7 +23,8 @@ export type AppRouteKey =
   | 'atualizacao-status'
   | 'pedidos'
   | 'prioridades'
-  | 'painel-tv';
+  | 'painel-tv'
+  | 'analise-pedidos';
 
 /** Actions a user can perform on a page */
 export type PageAction = 'view' | 'edit' | 'execute';
@@ -215,6 +216,7 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   if (path.startsWith('/atualizacao-status')) return 'atualizacao-status';
   if (path === '/prioridades') return 'prioridades';
   if (path === '/painel-tv') return 'painel-tv';
+  if (path === '/analise-pedidos') return 'analise-pedidos';
   return null;
 }
 
@@ -237,6 +239,7 @@ export const routeToFuncionalidades: Partial<Record<AppRouteKey, Funcionalidade[
   financeiro:                 ['financeiro.view'],
   'painel-pedidos':           ['painel_pedidos.view'],
   'atualizacao-status':       ['atualizacao_status.view'],
+  'analise-pedidos':          ['analise_pedidos.view'],
   pedidos:                    ['comercial.view', 'suporte.view', 'painel_pedidos.view', 'atualizacao_status.view', 'programacao_comercial.view'],
   prioridades:                ['prioridades.view'],
   'painel-tv':                ['painel_tv.view'],

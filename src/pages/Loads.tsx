@@ -2,7 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useApp, tableColumns } from '@/contexts/AppContext';
 import { can } from '@/utils/access';
-import { formatCurrency, getOrderTotal, loadStatusColors, StatusBadge, btnSecondary } from '@/components/shared';
+import { formatCurrency, loadStatusColors, StatusBadge, btnSecondary } from '@/components/shared';
+import { getValorTotalOrder, getValorTotalPedido } from '@/lib/valorPedido';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import type { Order, PedidoStatusRow } from '@/types';
@@ -105,6 +106,28 @@ const LoadsPage = () => {
     })();
   }, [loads, orders.length, supportOrders.length]);
 
+  // Mapa direto ao ERP para total_pedido_venda — fonte autoritativa de valor
+  const [loadsOrderValueMap, setLoadsOrderValueMap] = useState<Map<string, number>>(new Map());
+  useEffect(() => {
+    if (!loads.length || !supabasePedidos) return;
+    const allOrderIds = Array.from(new Set(loads.flatMap((l) => l.orderIds)));
+    if (!allOrderIds.length) return;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
+    const BATCH = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < allOrderIds.length; i += BATCH) chunks.push(allOrderIds.slice(i, i + BATCH));
+    Promise.all(chunks.map((batch) =>
+      supabasePedidos!.from(table)
+        .select('numero_pedido, total_pedido_venda, id_nota_conf')
+        .in('numero_pedido', batch)
+        .then(({ data }) => data || [])
+    )).then((results) => {
+      const m = new Map<string, number>();
+      for (const row of results.flat()) m.set(String(row.numero_pedido), getValorTotalPedido(row));
+      setLoadsOrderValueMap(m);
+    }).catch((err) => console.error('[Loads] loadsOrderValueMap:', err));
+  }, [loads]);
+
   const { sortState, toggleSort, sortItems } = useTableSort();
   const { query, setQuery, filterItems, activeStatus, setActiveStatus } = useQuickFilter<Load>('Aguardando Despacho');
   const colFilter = useColumnFilters();
@@ -136,14 +159,11 @@ const LoadsPage = () => {
       id: (l: Load) => l.id,
       driver: (l: Load) => drivers.find((d) => d.id === l.driverId)?.name ?? '',
       date: (l: Load) => l.plannedDate,
-      orderValue: (l: Load) => {
-        const all = [...orders, ...supportOrders as unknown as Order[], ...extraOrders];
-        return all.filter((o) => l.orderIds.includes(o.id)).reduce((acc, o) => acc + (o.totalPedidoVenda || getOrderTotal(o)), 0);
-      },
+      orderValue: (l: Load) => l.orderIds.reduce((acc, id) => acc + (loadsOrderValueMap.get(id) || 0), 0),
       freightValue: (l: Load) => l.freightValue || 0,
       status: (l: Load) => l.shipmentStatus,
     }),
-    [drivers, orders, supportOrders],
+    [drivers, loadsOrderValueMap],
   );
 
   const colDefs: ColDef<Load>[] = useMemo(() => [
@@ -216,7 +236,7 @@ const LoadsPage = () => {
           orderId: src.id,
           company: (src.clientName || src.clientCode || '-').toUpperCase(),
           uf: (src.clientUF || '-').toUpperCase(),
-          value: getOrderTotal(src),
+          value: loadsOrderValueMap.get(src.id) || 0,
         });
       }
 
@@ -227,7 +247,7 @@ const LoadsPage = () => {
 
     groups.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.loadId.localeCompare(b.loadId));
     return groups;
-  }, [selectedIds, loads, drivers, allOrdersMap]);
+  }, [selectedIds, loads, drivers, allOrdersMap, loadsOrderValueMap]);
 
   // Flat rows for Excel export
   const reportRows = useMemo((): ReportRow[] => {
@@ -466,7 +486,7 @@ const LoadsPage = () => {
                   Data
                 </SortableHeader>
                 <SortableHeader columnKey="orderValue" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
-                  Valor do Pedido
+                  Valor Total
                 </SortableHeader>
                 <SortableHeader columnKey="freightValue" sortState={sortState} onToggle={toggleSort} className="text-left py-4 px-6">
                   Valor do Frete
@@ -480,9 +500,7 @@ const LoadsPage = () => {
             <tbody className="divide-y divide-border/50">
               {filteredAndSorted.map((load, index) => {
                 const driver = drivers.find((d) => d.id === load.driverId);
-                const allAvailable = [...orders, ...supportOrders as unknown as Order[], ...extraOrders];
-                const loadOrders = allAvailable.filter((o) => load.orderIds.includes(o.id));
-                const totalOrderValue = loadOrders.reduce((acc, o) => acc + (o.totalPedidoVenda || getOrderTotal(o)), 0);
+                const totalOrderValue = load.orderIds.reduce((acc, id) => acc + (loadsOrderValueMap.get(id) || 0), 0);
 
 
                 return (
@@ -562,7 +580,7 @@ const LoadsPage = () => {
         const allAvailable = [...orders, ...supportOrders as unknown as Order[], ...extraOrders];
         const loadOrders = allAvailable.filter(o => quickViewLoad.orderIds.includes(o.id));
         const driver = drivers.find(d => d.id === quickViewLoad.driverId);
-        const totalOrderValue = loadOrders.reduce((acc, o) => acc + (o.totalPedidoVenda || getOrderTotal(o)), 0);
+        const totalOrderValue = quickViewLoad.orderIds.reduce((acc, id) => acc + (loadsOrderValueMap.get(id) || 0), 0);
         const priorityOrders = loadOrders.filter(o => prioMap.has(o.id));
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50" onClick={() => setQuickViewLoad(null)}>
@@ -646,7 +664,7 @@ const LoadsPage = () => {
                           </td>
                           <td className="py-3 px-4 font-medium truncate max-w-[180px]">{o.clientName || o.clientCode || '-'}</td>
                           <td className="py-3 px-4 text-muted-foreground">{o.clientCity && o.clientUF ? `${o.clientCity}/${o.clientUF}` : '-'}</td>
-                          <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(o.totalPedidoVenda || getOrderTotal(o))}</td>
+                          <td className="py-3 px-4 text-right font-mono-data font-bold">{formatCurrency(loadsOrderValueMap.get(o.id) || 0)}</td>
                         </tr>
                       ))}
                     </tbody>

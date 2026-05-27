@@ -1,7 +1,9 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
-import { canDo, type UserRole } from '@/utils/access';
+import { canDo, canFazer, type UserRole } from '@/utils/access';
+import { isFaturadoStatus, isProgramadoStatus } from '@/lib/constants';
+import { getValorTotalPedido } from '@/lib/valorPedido';
 import { formatCurrency } from '@/components/shared';
 import { todayBR, fmtDate } from '@/lib/dateUtils';
 import {
@@ -48,6 +50,13 @@ const STATUS_ABBR: Record<string, string> = {
 
 const DAYS_BR = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTHS_BR = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+type MoveJustType = 'adiamento' | 'antecipacao';
+
+const MOVE_JUST_LABELS: Record<MoveJustType, string> = {
+  adiamento:   'Adiamento — movido para data posterior',
+  antecipacao: 'Antecipação — movido para data anterior',
+};
 
 // ── date helpers ──────────────────────────────────────────────────────────────
 
@@ -113,8 +122,9 @@ async function fetchJustificativasForMonth(month: string): Promise<{ date: strin
 }
 
 function loadRealValue(l: Load, ovm: Map<string, number>): number {
-  const orderVal = l.orderIds.reduce((s, id) => s + (ovm.get(id) || 0), 0);
-  return orderVal + (l.freightValue || 0);
+  // ovm contém total_pedido_venda, que já inclui o frete do pedido.
+  // freightValue é o custo de transporte do embarque — não entra no valor de faturamento.
+  return l.orderIds.reduce((s, id) => s + (ovm.get(id) || 0), 0);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -185,7 +195,7 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, or
           <span className="flex items-center gap-1"><Package className="h-3 w-3" />{load.orderIds.length} pedido{load.orderIds.length !== 1 ? 's' : ''}</span>
           <span className="flex items-center gap-1 text-emerald-600 font-semibold">
             <DollarSign className="h-3 w-3" />
-            {formatCurrency((productsValue ?? 0) + (load.freightValue || 0))}
+            {formatCurrency(productsValue ?? 0)}
           </span>
         </div>
       </div>
@@ -217,7 +227,7 @@ function DayColumn({
   const isToday = dateStr === today;
   const isDragOver = dragOverDate === dateStr;
   const dayTotal = loads.reduce((s, l) =>
-    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0) + (l.freightValue || 0), 0);
+    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -295,7 +305,7 @@ function MonthCell({
   const isCurrentMonth = dateStr.slice(0, 7) === currentMonth;
   const isDragOver = dragOverDate === dateStr;
   const dayTotal = loads.reduce((s, l) =>
-    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0) + (l.freightValue || 0), 0);
+    s + l.orderIds.reduce((a, id) => a + ((orderValueMap?.get(id)) || 0), 0), 0);
 
   return (
     <div
@@ -342,6 +352,32 @@ function MonthCell({
 type OrderDetail = { clientName: string; orderValue: number; freight: number };
 type LoadAttachment = { name: string; path: string; url: string };
 
+type MoveJustificativa = {
+  date:         string;
+  type:         'adiamento' | 'antecipacao';
+  related_date: string | null;
+  reason:       string;
+  updated_at:   string;
+};
+
+const JUST_TYPE_LABEL: Record<string, string> = {
+  adiamento:       'Adiamento',
+  antecipacao:     'Antecipação',
+  antecipado_saiu: 'Antecipação (saiu)',
+  cancelamento:    'Cancelamento',
+  recuperado:      'Recuperado',
+  outro:           'Outro',
+};
+
+const JUST_TYPE_COLOR: Record<string, string> = {
+  adiamento:       'text-amber-600',
+  antecipacao:     'text-blue-600',
+  antecipado_saiu: 'text-indigo-600',
+  cancelamento:    'text-red-600',
+  recuperado:      'text-emerald-600',
+  outro:           'text-gray-500',
+};
+
 const STORAGE_BUCKET = 'relatorio-entrega';
 
 function LoadDetailsPanel({
@@ -367,15 +403,15 @@ function LoadDetailsPanel({
   useEffect(() => {
     if (!load.orderIds.length || !supabasePedidos) return;
     setLoadingDetails(true);
-    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
     supabasePedidos
       .from(table)
-      .select('numero_pedido, cliente_nome, total_pedido_venda, total_produtos, frete')
+      .select('numero_pedido, cliente_nome, total_pedido_venda, frete')
       .in('numero_pedido', load.orderIds)
       .then(({ data }) => {
         const m = new Map<string, OrderDetail>();
         for (const row of data || []) {
-          const orderValue = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
+          const orderValue = Number(row.total_pedido_venda ?? 0);
           m.set(String(row.numero_pedido), { clientName: row.cliente_nome || '-', orderValue, freight: row.frete || 0 });
         }
         setOrderDetails(m);
@@ -384,7 +420,7 @@ function LoadDetailsPanel({
   }, [load.id]);
 
   const totalOrderValue = Array.from(orderDetails.values()).reduce((s, d) => s + d.orderValue, 0);
-  const grandTotal = totalOrderValue + (load.freightValue || 0);
+  const grandTotal = totalOrderValue;
 
   // ── obs ──
   const [obsValue, setObsValue] = useState(load.obs || '');
@@ -415,6 +451,22 @@ function LoadDetailsPanel({
     });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [load.id, load.plannedDate, load.shipmentStatus, load.productionStatus, load.driverId, load.freightValue, load.obs, load.previsaoEntrega, load.realizationDate, load.orderIds.length]);
+
+  // ── justificativas de movimentação ──
+  const [moveJustificativas, setMoveJustificativas] = useState<MoveJustificativa[]>([]);
+
+  useEffect(() => {
+    if (!supabaseOps || !load.plannedDate) return;
+    const date = load.plannedDate.slice(0, 10);
+    supabaseOps
+      .from('concrem_faturamento_justificativas')
+      .select('date, type, related_date, reason, updated_at')
+      .or(`date.eq.${date},related_date.eq.${date}`)
+      .order('updated_at', { ascending: false })
+      .then(({ data }) => {
+        if (data) setMoveJustificativas(data as MoveJustificativa[]);
+      });
+  }, [load.id, load.plannedDate]);
 
   // ── attachments ──
   const [attachments, setAttachments] = useState<LoadAttachment[]>([]);
@@ -480,7 +532,10 @@ function LoadDetailsPanel({
         <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
           <div className="flex items-center gap-2">
             <Truck className="h-4 w-4 text-primary" />
-            <span className="font-bold text-base text-foreground">Detalhes do Carregamento</span>
+            <div>
+              <span className="font-bold text-base text-foreground">Detalhes do Carregamento</span>
+              <p className="text-[11px] text-muted-foreground font-mono leading-tight">{load.id} · {driverName}</p>
+            </div>
           </div>
           <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
             <X className="h-4 w-4" />
@@ -580,7 +635,7 @@ function LoadDetailsPanel({
                           <div className="text-right shrink-0">
                             <p className="text-xs font-semibold text-foreground">{formatCurrency(detail.orderValue)}</p>
                             {detail.freight > 0 && (
-                              <p className="text-[10px] text-muted-foreground">+ {formatCurrency(detail.freight)} frete</p>
+                              <p className="text-[10px] text-muted-foreground">(inclui {formatCurrency(detail.freight)} frete)</p>
                             )}
                           </div>
                         )}
@@ -698,16 +753,18 @@ function LoadDetailsPanel({
         </div>
 
         {/* ── Histórico de movimentações ── */}
-        <div className="border-t border-border pt-4 pb-2">
+        <div className="border-t border-border pt-4 pb-2 px-5">
           <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-3 flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" /> Histórico
           </p>
           {loadingHistorico ? (
             <p className="text-xs text-muted-foreground animate-pulse">Carregando histórico...</p>
-          ) : historico.length === 0 ? (
+          ) : historico.length === 0 && moveJustificativas.length === 0 ? (
             <p className="text-[11px] text-muted-foreground/50 text-center">Nenhuma movimentação registrada.</p>
           ) : (
-            <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div className="space-y-2 max-h-64 overflow-y-auto">
+
+              {/* Entradas do histórico normal */}
               {historico.map((h) => (
                 <div key={h.id} className="flex items-start gap-2 text-xs">
                   <div className="w-1.5 h-1.5 rounded-full bg-primary/50 mt-1.5 shrink-0" />
@@ -738,6 +795,47 @@ function LoadDetailsPanel({
                   </div>
                 </div>
               ))}
+
+              {/* Separador visual apenas quando ambas as listas têm entradas */}
+              {moveJustificativas.length > 0 && historico.length > 0 && (
+                <div className="h-px bg-border my-1" />
+              )}
+
+              {/* Justificativas de movimentação */}
+              {moveJustificativas.map((j) => {
+                const isOrigin  = j.date === load.plannedDate?.slice(0, 10);
+                const typeLabel = JUST_TYPE_LABEL[j.type] ?? j.type;
+                const typeColor = JUST_TYPE_COLOR[j.type] ?? 'text-muted-foreground';
+                return (
+                  <div key={`${j.date}-${j.type}`} className="flex items-start gap-2 text-xs">
+                    <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                      j.type === 'adiamento'    ? 'bg-amber-400'   :
+                      j.type === 'antecipacao'  ? 'bg-blue-400'    :
+                      j.type === 'recuperado'   ? 'bg-emerald-400' :
+                      j.type === 'cancelamento' ? 'bg-red-400'     : 'bg-gray-400'
+                    }`} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className={`font-semibold ${typeColor}`}>{typeLabel}</span>
+                        {isOrigin ? (
+                          <span className="text-[10px] text-muted-foreground">
+                            (de {fmtDate(j.date)}{j.related_date ? ` → ${fmtDate(j.related_date)}` : ''})
+                          </span>
+                        ) : (
+                          <span className="text-[10px] text-muted-foreground">
+                            (veio de {fmtDate(j.date)}{j.related_date ? ` → ${fmtDate(j.related_date)}` : ''})
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-foreground/80 text-[11px] mt-0.5 leading-relaxed">{j.reason}</p>
+                      <p className="text-muted-foreground/60 text-[10px] mt-0.5">
+                        {j.updated_at ? fmtDateTime(j.updated_at) : ''}
+                      </p>
+                    </div>
+                  </div>
+                );
+              })}
+
             </div>
           )}
         </div>
@@ -769,6 +867,7 @@ const CarregamentoDashboard = () => {
 
   const canEditLoad = useMemo(() => {
     if (!user) return false;
+    if (user.funcionalidades) return canFazer(user.funcionalidades, 'carregamento.criar_editar');
     return canDo(user.role as UserRole, user.permissions ?? null, 'programacao', 'edit');
   }, [user]);
 
@@ -794,6 +893,18 @@ const CarregamentoDashboard = () => {
   const [pedidoFilter, setPedidoFilter] = useState('');
   const [selectedLoad, setSelectedLoad] = useState<Load | null>(null);
   const [dragOverDate, setDragOverDate] = useState<string | null>(null);
+
+  // ── Modal de justificativa de movimentação ──
+  type PendingMove = {
+    loadId:         string;
+    fromDate:       string;
+    toDate:         string;
+    type:           MoveJustType;
+    driverConflict: boolean;
+  };
+  const [pendingMove, setPendingMove] = useState<PendingMove | null>(null);
+  const [moveReason,  setMoveReason]  = useState('');
+  const [moveSaving,  setMoveSaving]  = useState(false);
 
   // ── mobile detection ──
   const [windowWidth, setWindowWidth] = useState(() => typeof window !== 'undefined' ? window.innerWidth : 1024);
@@ -858,14 +969,75 @@ const CarregamentoDashboard = () => {
     return m;
   }, [filteredLoads, dateMode]);
 
+  // Mapa não filtrado — usado para cálculos de meta (independente de filtros de UI)
+  const loadsAllByDate = useMemo(() => {
+    const m = new Map<string, Load[]>();
+    for (const l of loads) {
+      const d = l.plannedDate?.slice(0, 10);
+      if (!d) continue;
+      if (!m.has(d)) m.set(d, []);
+      m.get(d)!.push(l);
+    }
+    return m;
+  }, [loads]);
+
   // ── list view ──
   const listDates = useMemo(() => Array.from(loadsByDate.keys()).sort(), [loadsByDate]);
 
   // ── drag and drop ──
   const handleDropLoad = async (loadId: string, newDate: string) => {
     const load = loads.find((l) => l.id === loadId);
-    if (!load || load.plannedDate?.slice(0, 10) === newDate) return;
-    await updateLoad({ ...load, plannedDate: newDate });
+    if (!load) return;
+    const fromDate = load.plannedDate?.slice(0, 10) ?? '';
+    if (fromDate === newDate) return;
+
+    const moveType: MoveJustType = newDate > fromDate ? 'adiamento' : 'antecipacao';
+
+    const loadsOnDestDay = loadsByDate.get(newDate) ?? [];
+    const driverConflict = loadsOnDestDay.some(
+      (l) => l.driverId === load.driverId && l.id !== load.id
+    );
+
+    setMoveReason('');
+    setPendingMove({ loadId, fromDate, toDate: newDate, type: moveType, driverConflict });
+  };
+
+  const handleConfirmMove = async () => {
+    if (!pendingMove || !moveReason.trim()) return;
+    setMoveSaving(true);
+    try {
+      const load = loads.find((l) => l.id === pendingMove.loadId);
+      if (!load) return;
+
+      await updateLoad({ ...load, plannedDate: pendingMove.toDate });
+
+      if (supabaseOps) {
+        await supabaseOps
+          .from('concrem_faturamento_justificativas')
+          .upsert(
+            {
+              date:         pendingMove.fromDate,
+              type:         pendingMove.type,
+              related_date: pendingMove.toDate,
+              reason:       moveReason.trim(),
+              updated_at:   new Date().toISOString(),
+            },
+            { onConflict: 'date' }
+          );
+      }
+
+      setPendingMove(null);
+      setMoveReason('');
+    } catch (err: any) {
+      console.error('[handleConfirmMove]', err);
+    } finally {
+      setMoveSaving(false);
+    }
+  };
+
+  const handleCancelMove = () => {
+    setPendingMove(null);
+    setMoveReason('');
   };
 
   // ── navigation ──
@@ -916,17 +1088,16 @@ const CarregamentoDashboard = () => {
     const fetchKey = weekOrderIds.join(',');
     if (!fetchKey || fetchKey === lastFetchKey.current || !supabasePedidos) return;
     lastFetchKey.current = fetchKey;
-    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
     const BATCH = 200;
     const chunks: string[][] = [];
     for (let i = 0; i < weekOrderIds.length; i += BATCH) chunks.push(weekOrderIds.slice(i, i + BATCH));
     Promise.all(chunks.map((batch) =>
-      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, total_produtos').in('numero_pedido', batch).then(({ data }) => data || [])
+      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, id_nota_conf').in('numero_pedido', batch).then(({ data }) => data || [])
     )).then((results) => {
       const m = new Map<string, number>();
       for (const row of results.flat()) {
-        const orderVal = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
-        m.set(String(row.numero_pedido), orderVal);
+        m.set(String(row.numero_pedido), getValorTotalPedido(row));
       }
       setWeekOrderValueMap(m);
     }).catch((err) => console.error('[CarregamentoDashboard] weekOrderValues:', err));
@@ -955,17 +1126,16 @@ const CarregamentoDashboard = () => {
     const fetchKey = monthOrderIds.join(',');
     if (!fetchKey || fetchKey === lastMonthFetchKey.current || !supabasePedidos) return;
     lastMonthFetchKey.current = fetchKey;
-    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
     const BATCH = 200;
     const chunks: string[][] = [];
     for (let i = 0; i < monthOrderIds.length; i += BATCH) chunks.push(monthOrderIds.slice(i, i + BATCH));
     Promise.all(chunks.map((batch) =>
-      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, total_produtos').in('numero_pedido', batch).then(({ data }) => data || [])
+      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, id_nota_conf').in('numero_pedido', batch).then(({ data }) => data || [])
     )).then((results) => {
       const m = new Map<string, number>();
       for (const row of results.flat()) {
-        const orderVal = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
-        m.set(String(row.numero_pedido), orderVal);
+        m.set(String(row.numero_pedido), getValorTotalPedido(row));
       }
       setMonthOrderValueMap(m);
     }).catch((err) => console.error('[CarregamentoDashboard] monthOrderValues:', err));
@@ -994,17 +1164,16 @@ const CarregamentoDashboard = () => {
     const fetchKey = listOrderIds.join(',');
     if (!fetchKey || fetchKey === lastListFetchKey.current || !supabasePedidos) return;
     lastListFetchKey.current = fetchKey;
-    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
     const BATCH = 200;
     const chunks: string[][] = [];
     for (let i = 0; i < listOrderIds.length; i += BATCH) chunks.push(listOrderIds.slice(i, i + BATCH));
     Promise.all(chunks.map((batch) =>
-      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, total_produtos').in('numero_pedido', batch).then(({ data }) => data || [])
+      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, id_nota_conf').in('numero_pedido', batch).then(({ data }) => data || [])
     )).then((results) => {
       const m = new Map<string, number>();
       for (const row of results.flat()) {
-        const orderVal = (row.total_pedido_venda > 0 ? row.total_pedido_venda : row.total_produtos) || 0;
-        m.set(String(row.numero_pedido), orderVal);
+        m.set(String(row.numero_pedido), getValorTotalPedido(row));
       }
       setListOrderValueMap(m);
     }).catch((err) => console.error('[CarregamentoDashboard] listOrderValues:', err));
@@ -1050,7 +1219,7 @@ const CarregamentoDashboard = () => {
       const d = new Date(cur + 'T12:00:00');
       const isWeekend = d.getDay() === 0 || d.getDay() === 6;
       if (!isWeekend) {
-        const hasLoad = (loadsByDate.get(cur) || []).length > 0;
+        const hasLoad = (loadsAllByDate.get(cur) || []).length > 0;
         const just = justDates.find(j => j.date === cur);
         if (!hasLoad && !(just && exemptTypes.has(just.type))) lostDays++;
       }
@@ -1059,16 +1228,19 @@ const CarregamentoDashboard = () => {
     }
 
     // Faturado e programado no mês
+    // Faturado: só conta datas passadas + hoje (igual ao Dashboard Stats)
+    // Programado: conta todas as datas do mês (incluindo futuras)
     let billedMonth = 0;
     let programmedMonth = 0;
     for (let d = `${monthGoal.month}-01`; d <= lastDayStr; ) {
-      for (const l of loadsByDate.get(d) || []) {
+      for (const l of loadsAllByDate.get(d) || []) {
         if (l.shipmentStatus === 'Cancelado') continue;
         const val = loadRealValue(l, monthOrderValueMap);
-        if (['Entregue', 'Despachado', 'Em Rota'].includes(l.shipmentStatus || ''))
-          billedMonth += val;
-        else
+        if (isFaturadoStatus(l.shipmentStatus)) {
+          if (d <= today) billedMonth += val;
+        } else if (isProgramadoStatus(l.shipmentStatus)) {
           programmedMonth += val;
+        }
       }
       const next = new Date(d + 'T12:00:00'); next.setDate(next.getDate() + 1);
       d = next.toISOString().slice(0, 10);
@@ -1101,13 +1273,13 @@ const CarregamentoDashboard = () => {
       const wBilled = wDays.reduce((s, d) => {
         const dl = loadsByDate.get(d) || [];
         return s + dl
-          .filter(l => ['Entregue', 'Despachado', 'Em Rota'].includes(l.shipmentStatus || ''))
+          .filter(l => isFaturadoStatus(l.shipmentStatus))
           .reduce((a, l) => a + loadRealValue(l, weekOrderValueMap), 0);
       }, 0);
       const wProgrammed = wDays.reduce((s, d) => {
         const dl = loadsByDate.get(d) || [];
         return s + dl
-          .filter(l => l.shipmentStatus === 'Aguardando Despacho' || !l.shipmentStatus)
+          .filter(l => isProgramadoStatus(l.shipmentStatus) || !l.shipmentStatus)
           .reduce((a, l) => a + loadRealValue(l, weekOrderValueMap), 0);
       }, 0);
       return { target: wTarget, billed: wBilled, programmed: wProgrammed, days: wDays.length };
@@ -1119,7 +1291,7 @@ const CarregamentoDashboard = () => {
       remainingWorkDays, dailyTarget, progressPct,
       weekGoal,
     };
-  }, [monthGoal, justDates, loadsByDate, view, visibleWeekDays, monthOrderValueMap, weekOrderValueMap]);
+  }, [monthGoal, justDates, loadsAllByDate, view, visibleWeekDays, monthOrderValueMap, weekOrderValueMap]);
 
   const ALL_STATUSES = Object.keys(STATUS_COLORS);
   const hasActiveFilters = statusFilter.length > 0 || dateFrom || dateTo;
@@ -1451,6 +1623,122 @@ const CarregamentoDashboard = () => {
           onUpdateLoad={updateLoad}
           prioMap={prioMap}
         />
+      )}
+
+      {/* ── Modal de justificativa de movimentação ── */}
+      {pendingMove && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50"
+          onClick={handleCancelMove}
+        >
+          <div
+            className="bg-card rounded-2xl border border-border shadow-2xl w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between p-5 border-b border-border">
+              <div className="flex items-center gap-3">
+                <div className={`h-9 w-9 rounded-lg flex items-center justify-center ${
+                  pendingMove.type === 'adiamento' ? 'bg-amber-500/10' : 'bg-blue-500/10'
+                }`}>
+                  <AlertTriangle className={`h-5 w-5 ${
+                    pendingMove.type === 'adiamento' ? 'text-amber-500' : 'text-blue-500'
+                  }`} />
+                </div>
+                <div>
+                  <p className="text-sm font-bold text-foreground">
+                    {pendingMove.type === 'adiamento' ? 'Adiamento de Carregamento' : 'Antecipação de Carregamento'}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {fmtDate(pendingMove.fromDate)} → {fmtDate(pendingMove.toDate)}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleCancelMove}
+                className="h-8 w-8 rounded-lg hover:bg-muted flex items-center justify-center transition-colors"
+              >
+                <X className="h-4 w-4 text-muted-foreground" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4">
+              {/* Aviso de conflito de motorista */}
+              {pendingMove.driverConflict && (
+                <div className="rounded-xl bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800/40 p-3 flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-red-500 shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-red-700 dark:text-red-400">
+                      Atenção — motorista já tem carregamento neste dia
+                    </p>
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-0.5">
+                      O dia de destino ficará marcado com irregularidade por ter 2 carregamentos do mesmo motorista.
+                      Confirme apenas se isso for intencional.
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Tipo */}
+              <div>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Tipo</p>
+                <p className={`text-sm font-semibold px-3 py-1.5 rounded-lg border w-fit ${
+                  pendingMove.type === 'adiamento'
+                    ? 'text-amber-700 bg-amber-50 border-amber-200'
+                    : 'text-blue-700 bg-blue-50 border-blue-200'
+                }`}>
+                  {MOVE_JUST_LABELS[pendingMove.type]}
+                </p>
+              </div>
+
+              {/* Motivo */}
+              <div>
+                <label className="block text-xs font-semibold text-foreground mb-1.5">
+                  Motivo <span className="text-red-500">*</span>
+                </label>
+                <textarea
+                  value={moveReason}
+                  onChange={(e) => setMoveReason(e.target.value)}
+                  rows={3}
+                  placeholder="Descreva o motivo da movimentação..."
+                  className="w-full px-3 py-2.5 rounded-lg border border-input bg-background text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary resize-none"
+                  autoFocus
+                />
+                {moveReason.trim() === '' && (
+                  <p className="text-[11px] text-red-500 mt-1">O motivo é obrigatório para continuar.</p>
+                )}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="flex items-center justify-end gap-3 p-5 border-t border-border">
+              <button
+                type="button"
+                onClick={handleCancelMove}
+                className="px-4 py-2 rounded-lg border border-border text-sm font-semibold hover:bg-muted transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmMove}
+                disabled={moveSaving || !moveReason.trim()}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-opacity disabled:opacity-50 ${
+                  pendingMove.driverConflict
+                    ? 'bg-amber-600 text-white hover:opacity-90'
+                    : 'bg-primary text-primary-foreground hover:opacity-90'
+                }`}
+              >
+                {moveSaving
+                  ? <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                  : <Save className="h-3.5 w-3.5" />
+                }
+                {pendingMove.driverConflict ? 'Confirmar mesmo assim' : 'Confirmar movimentação'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

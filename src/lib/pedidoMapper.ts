@@ -237,10 +237,7 @@ export function rowToOrder(row: Row, defaultClientId: string): Order {
   const items = normalizeItems(row.dados_tabela ?? row.items ?? row.itens ?? row.produtos);
   const idNotaConf = pickNumber(row, ['id_nota_conf', 'idNotaConf']);
   const isSuporte = idNotaConf === 613 || idNotaConf === 665;
-  const totalPedidoVendaRaw = pickNumber(row, ['total_pedido_venda']);
-  const totalPedidoVenda = isSuporte ? 0 : (totalPedidoVendaRaw > 0
-    ? totalPedidoVendaRaw
-    : pickNumber(row, ['total_produtos']));
+  const totalPedidoVenda = isSuporte ? 0 : pickNumber(row, ['total_pedido_venda']);
   const totalQtdM3 = pickNumber(row, ['total_qtd_m3', 'totalQtdM3', 'qtd_m3', 'volume_m3']);
   const totalQtd = pickNumber(row, ['total_qtd', 'totalQtd', 'qtd_total', 'quantidade_total']);
   const pesoLiquidoItem = pickNumber(row, ['peso_liquido_item', 'pesoLiquidoItem', 'peso_liquido', 'peso']);
@@ -293,10 +290,7 @@ export function rowToSupportOrder(row: Row): SupportOrder {
   const status: SupportOrderStatus = isSupportStatus(statusRaw) ? statusRaw : 'Aguardando Avaliação';
   const idNotaConf = pickNumber(row, ['id_nota_conf', 'idNotaConf']);
   const isSuporte = idNotaConf === 613 || idNotaConf === 665;
-  const totalPedidoVendaRaw = pickNumber(row, ['total_pedido_venda']);
-  const totalPedidoVenda = isSuporte ? 0 : (totalPedidoVendaRaw > 0
-    ? totalPedidoVendaRaw
-    : pickNumber(row, ['total_produtos']));
+  const totalPedidoVenda = isSuporte ? 0 : pickNumber(row, ['total_pedido_venda']);
   const totalQtdM3 = pickNumber(row, ['total_qtd_m3', 'totalQtdM3', 'qtd_m3', 'volume_m3']);
   const totalQtd = pickNumber(row, ['total_qtd', 'totalQtd', 'qtd_total', 'quantidade_total']);
   const pesoLiquidoItem = pickNumber(row, ['peso_liquido_item', 'pesoLiquidoItem', 'peso_liquido', 'peso']);

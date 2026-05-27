@@ -9,6 +9,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import type { PedidoStatusValue } from '@/types';
 import { btnPrimary, btnSecondary } from '@/components/shared';
+import { getValorTotalPedido } from '@/lib/valorPedido';
 import { canFazer } from '@/utils/access';
 
 const YYYYMM_RE = /^\d{4}-\d{2}$/;
@@ -28,7 +29,6 @@ type ErpRow = {
   numero_pedido: string;
   cliente_nome: string | null;
   total_pedido_venda: number | null;
-  total_produtos: number | null;
   frete: number | null;
   data_emissao: string | null;
   representante: string | null;
@@ -76,7 +76,7 @@ const PRODUCAO_STATUSES: string[] = [
 ];
 
 const OPS_COLS = 'pedido_id, numero_pedido, status_atual, mes_programacao, atualizado_em, data_embarque_programacao';
-const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_produtos, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente, id_nota_conf, ped_compra_cliente, cliente_cidade, cliente_uf';
+const ERP_COLS = 'numero_pedido, cliente_nome, total_pedido_venda, total_qtd, frete, data_emissao, representante, previsao_embarque, grupo_cliente, id_nota_conf, ped_compra_cliente, cliente_cidade, cliente_uf';
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
 // ─── Module-level helpers (instantiated once, not per render) ─────────────────
@@ -116,10 +116,7 @@ function fmtMesLabel(mesStr: string): string {
 
 function resolveValor(erp: ErpRow | undefined): number {
   if (!erp) return 0;
-  if (erp.id_nota_conf === 613 || erp.id_nota_conf === 665) return 0;
-  const v = erp.total_pedido_venda ?? 0;
-  const base = v > 0 ? v : (erp.total_produtos ?? 0);
-  return isFinite(base) && base > 0 ? base : 0;
+  return getValorTotalPedido(erp);
 }
 
 // ─── Data fetchers ────────────────────────────────────────────────────────────

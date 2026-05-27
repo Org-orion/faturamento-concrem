@@ -4,6 +4,7 @@
  */
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { getValorTotalPedido } from '@/lib/valorPedido';
 import { cn } from '@/lib/utils';
 import logoSidebar from '@/assets/logo-sidebar.png';
 
@@ -158,7 +159,7 @@ async function enrichWithErp(rows: StatusRow[]): Promise<PainelOrder[]> {
     chunkArr(ids, 200).map((batch) =>
       supabasePedidos!
         .from(erpTable)
-        .select('numero_pedido, cliente_nome, representante, total_pedido_venda')
+        .select('numero_pedido, cliente_nome, representante, total_pedido_venda, id_nota_conf')
         .in('numero_pedido', batch)
         .then(({ data }) => (data || []) as ErpRow[]),
     ),
@@ -170,7 +171,7 @@ async function enrichWithErp(rows: StatusRow[]): Promise<PainelOrder[]> {
       id:          String(s.pedido_id),
       client:      erp?.cliente_nome || '—',
       rep:         erp?.representante || '—',
-      value:       erp?.total_pedido_venda || 0,
+      value:       erp ? getValorTotalPedido(erp) : 0,
       statusRaw:   s.status_atual,
       statusLabel: STATUS_LABEL[s.status_atual] || s.status_atual.toUpperCase(),
       updatedAt:   s.atualizado_em,

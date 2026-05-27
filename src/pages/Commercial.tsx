@@ -5,6 +5,7 @@ import { useApp } from '@/contexts/AppContext';
 import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
 import { btnDanger, btnPrimary, btnSecondary, formatCurrency, getOrderTotal, inputClass } from '@/components/shared';
+import { getValorTotalOrder } from '@/lib/valorPedido';
 import { CheckCircle2, Eye, Plus } from 'lucide-react';
 import { useDebounce } from '@/hooks/useDebounce';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
@@ -181,7 +182,7 @@ const Commercial = () => {
       .map((o) => ({
         id: o.id,
         representativeName: o.representativeName || '-',
-        total: getOrderTotal(o),
+        total: getValorTotalOrder(o),
         kind: 'VENDA' as const,
       }));
 
@@ -416,7 +417,7 @@ const Commercial = () => {
       const last = (o.history || []).slice(-1)[0];
       return o.status === 'Liberado p/ Produção' && last?.action === 'Liberou pedido para produção' && (last.at || '').slice(0, 10) === today;
     });
-    const inAnalysisValue = awaiting.reduce((sum, o) => sum + getOrderTotal(o), 0);
+    const inAnalysisValue = awaiting.reduce((sum, o) => sum + getValorTotalOrder(o), 0);
 
     return {
       awaitingCount: awaiting.length,
@@ -655,7 +656,7 @@ const Commercial = () => {
                       <td className="py-4 px-6 font-display font-semibold text-foreground">{o.clientName || o.clientCode || '-'}</td>
                       <td className="py-4 px-6 font-mono-data text-muted-foreground">{o.date ? fmtDate(o.date) : '-'}</td>
                       <td className="py-4 px-6 text-muted-foreground">{o.expiryDate ? fmtDate(o.expiryDate) : '-'}</td>
-                      <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getOrderTotal(o))}</td>
+                      <td className="py-4 px-6 text-right font-mono-data font-bold">{formatCurrency(getValorTotalOrder(o))}</td>
                       <td className="py-4 px-6">
                         <PedidoStatusBadge value={statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao'} />
                       </td>
@@ -724,7 +725,7 @@ const Commercial = () => {
                   <PedidoStatusBadge value={statusByPedidoId.get(selectedOrderDetails.id)?.status_atual || 'aguardando_avaliacao'} />
                 </div>
                 {selectedOrderDetails.previsaoCarregamento && <p className="text-xs text-muted-foreground mt-3">Previsão de Embarque: <span className="font-semibold text-foreground">{selectedOrderDetails.previsaoCarregamento}</span></p>}
-                <p className="text-xs text-muted-foreground mt-3">Valor total: <span className="font-mono-data font-bold text-foreground">{formatCurrency(getOrderTotal(selectedOrderDetails))}</span></p>
+                <p className="text-xs text-muted-foreground mt-3">Valor total: <span className="font-mono-data font-bold text-foreground">{formatCurrency(getValorTotalOrder(selectedOrderDetails))}</span></p>
                 <p className="text-xs text-muted-foreground mt-1">Frete: <span className="font-mono-data font-bold text-foreground">{formatCurrency(selectedOrderDetails.freightValue || 0)}</span></p>
               </div>
             </div>

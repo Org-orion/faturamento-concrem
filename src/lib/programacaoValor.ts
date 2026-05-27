@@ -8,13 +8,14 @@
  *   - Fonte B: concrem_pedidos_status com mes_programacao = null,
  *              status em_carregamento ou despachado,
  *              e pedido presente em carregamento do mês
- *   - Valor: total_pedido_venda → fallback total_produtos (sem frete)
+ *   - Valor: total_pedido_venda (sem fallback)
  *   - Exclui id_nota_conf 613 e 665 (não movimentam financeiro)
  *   - Pedidos Leroy só contam se estiverem em carregamento do mês
  *   - totalPedidos conta todos os pedidos do grupo (igual a pedidos.length)
  */
 
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
+import { getValorTotalPedido } from '@/lib/valorPedido';
 
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
 
@@ -26,25 +27,12 @@ const PRODUCAO_STATUSES = [
   'entregue', 'aguardando_pagamento', 'finalizado',
 ];
 
-// id_nota_conf que NÃO movimentam financeiro — excluídos do valor
-// (igual a resolveValor da Programacao.tsx: só exclui 613 e 665)
-const EXCLUDED_NOTA_CONF = new Set([613, 665]);
-
 type ErpRow = {
   numero_pedido: string;
   cliente_nome: string | null;
   total_pedido_venda: number | null;
-  total_produtos: number | null;
   id_nota_conf: number | null;
 };
-
-// Idêntico a resolveValor da Programacao.tsx
-function resolveValor(erp: ErpRow): number {
-  if (erp.id_nota_conf != null && EXCLUDED_NOTA_CONF.has(erp.id_nota_conf)) return 0;
-  const v = erp.total_pedido_venda ?? 0;
-  const base = v > 0 ? v : (erp.total_produtos ?? 0);
-  return isFinite(base) && base > 0 ? base : 0;
-}
 
 /**
  * Busca todos os pedidos presentes em carregamentos com planned_date no mês.
@@ -176,7 +164,7 @@ export async function fetchProgramacaoMes(
 
     const { data, error } = await supabasePedidos
       .from(ERP_TABLE)
-      .select('numero_pedido, cliente_nome, total_pedido_venda, total_produtos, id_nota_conf')
+      .select('numero_pedido, cliente_nome, total_pedido_venda, id_nota_conf')
       .in('numero_pedido', batch);
 
     if (error || !data) continue;
@@ -188,9 +176,7 @@ export async function fetchProgramacaoMes(
       const isLeroy = (row.cliente_nome ?? '').toUpperCase().includes('LEROY');
       if (isLeroy && !pedidosEmCarregamento.has(String(row.numero_pedido))) continue;
 
-      // ── Valor (igual a resolveValor da Programacao.tsx) ───────────────────
-      // Exclui apenas 613 e 665. id_nota_conf null e outros valores passam.
-      const val = resolveValor(row);
+      const val = getValorTotalPedido(row);
 
       // ── Contagem (igual a pedidos.length da Programacao.tsx) ──────────────
       // Conta todos os pedidos do grupo, inclusive os com valor = 0.

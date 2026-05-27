@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { formatCurrency, getOrderTotal, statusColors, StatusBadge } from '@/components/shared';
+import { getValorTotalOrder } from '@/lib/valorPedido';
 import { roleLabel } from '@/utils/access';
 import { useTableSort } from '@/hooks/useTableSort';
 import { useQuickFilter } from '@/hooks/useQuickFilter';
@@ -138,7 +139,7 @@ const Dashboard = () => {
     for (const o of visibleOrders) {
       const key = o.representativeName || o.representativeId || o.clientId;
       if (!key) continue;
-      acc.set(key, (acc.get(key) || 0) + getOrderTotal(o));
+      acc.set(key, (acc.get(key) || 0) + getValorTotalOrder(o));
     }
     return [...acc.entries()]
       .map(([name, total]) => ({ name, total }))
@@ -171,7 +172,7 @@ const Dashboard = () => {
           { label: 'Aguardando Avaliação', value: awaitingEval, color: 'bg-card-orange' },
           { label: 'Liberados', value: releasedForProd, color: 'bg-card-green' },
           { label: 'Total de Pedidos', value: visibleOrders.length, color: 'bg-card-red' },
-          { label: 'Valor em Análise', value: orders.filter(o => o.status === 'Aguardando Avaliação').reduce((s, o) => s + getOrderTotal(o), 0), prefix: 'R$ ', color: 'bg-card-dark-blue' },
+          { label: 'Valor em Análise', value: orders.filter(o => o.status === 'Aguardando Avaliação').reduce((s, o) => s + getValorTotalOrder(o), 0), prefix: 'R$ ', color: 'bg-card-dark-blue' },
         ];
 
   return (
@@ -246,7 +247,7 @@ const Dashboard = () => {
                   <td className="py-4 px-4 font-medium text-foreground">{o.id}</td>
                   <td className="py-4 px-4 text-foreground">{o.representativeName || '-'}</td>
                   <td className="py-4 px-4 text-muted-foreground">{fmtDate(o.date)}</td>
-                  <td className="py-4 px-4 text-right font-semibold text-foreground">{formatCurrency(getOrderTotal(o))}</td>
+                  <td className="py-4 px-4 text-right font-semibold text-foreground">{formatCurrency(getValorTotalOrder(o))}</td>
                   <td className="py-4 px-4"><StatusBadge status={o.status} colorMap={statusColors} /></td>
                 </tr>
               ))}

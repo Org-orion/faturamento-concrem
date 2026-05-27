@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '@/contexts/AppContext';
 import { formatCurrency } from '@/components/shared';
+import { getValorTotalPedido } from '@/lib/valorPedido';
 import { todayBR } from '@/lib/dateUtils';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import {
@@ -16,12 +17,12 @@ import {
   X,
 } from 'lucide-react';
 import { getPedidoStatusLabel, getPedidoStatusBadgeClass } from '@/lib/pedidoStatusFlow';
+import { canFazer } from '@/utils/access';
 import type { PedidoStatusValue } from '@/types';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const ERP_TABLE = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
-const EXCLUDED_NOTA_CONF = new Set([613, 665]);
 const MONTHS_BR = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 const PRODUCAO_STATUSES = [
@@ -48,15 +49,8 @@ type PedidoAnalise = {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-function resolveValor(erp: {
-  total_pedido_venda: number | null;
-  total_produtos: number | null;
-  id_nota_conf: number | null;
-}): number {
-  if (erp.id_nota_conf != null && EXCLUDED_NOTA_CONF.has(erp.id_nota_conf)) return 0;
-  const v = erp.total_pedido_venda ?? 0;
-  const base = v > 0 ? v : (erp.total_produtos ?? 0);
-  return isFinite(base) && base > 0 ? base : 0;
+function resolveValor(erp: { total_pedido_venda: number | null; id_nota_conf: number | null }): number {
+  return getValorTotalPedido(erp);
 }
 
 function monthLabel(month: string): string {
@@ -176,7 +170,7 @@ async function fetchPedidosDoMes(month: string): Promise<PedidoAnalise[]> {
   for (const batch of chunk(allIds, 200)) {
     const { data } = await supabasePedidos
       .from(ERP_TABLE)
-      .select('numero_pedido, cliente_nome, total_pedido_venda, total_produtos, id_nota_conf, data_emissao')
+      .select('numero_pedido, cliente_nome, total_pedido_venda, id_nota_conf, data_emissao')
       .in('numero_pedido', batch);
     for (const row of (data ?? []) as any[]) {
       erpMap.set(String(row.numero_pedido), row);
@@ -664,7 +658,10 @@ const AnalisePedidos = () => {
   const [detailPedido, setDetailPedido]   = useState<PedidoAnalise | null>(null);
 
   useEffect(() => {
-    if (user && user.role !== 'ADMIN') navigate('/', { replace: true });
+    if (!user) return;
+    const isAdmin = user.role === 'ADMIN';
+    const hasPerm = canFazer(user.funcionalidades ?? null, 'analise_pedidos.view');
+    if (!isAdmin && !hasPerm) navigate('/', { replace: true });
   }, [user, navigate]);
 
   const load = useCallback(async () => {
