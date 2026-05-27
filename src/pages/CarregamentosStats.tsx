@@ -15,13 +15,16 @@
 
 import React, { useMemo, useState, useEffect, useCallback } from 'react';
 import { useApp } from '@/contexts/AppContext';
+import { canFazer } from '@/utils/access';
+import { isFaturadoStatus } from '@/lib/constants';
+import { getValorTotalPedido } from '@/lib/valorPedido';
 import { formatCurrency } from '@/components/shared';
 import { todayBR, fmtDate } from '@/lib/dateUtils';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { fetchProgramacaoMes, type ProgramacaoMesResult } from '@/lib/programacaoValor';
 import {
   Target, TrendingDown, AlertTriangle, CheckCircle2, XCircle,
-  ChevronRight, Info, Edit3, Save, X, Plus, BarChart3,
+  ChevronRight, ChevronDown, Info, Edit3, Save, X, Plus, BarChart3,
   ArrowUpRight, ArrowDownRight, Clock, Flame, Award, AlertCircle, Loader2, Truck,
 } from 'lucide-react';
 import {
@@ -162,14 +165,11 @@ async function fetchOrderValueMapForMonth(orderIds: string[]): Promise<Map<strin
     const chunk = orderIds.slice(i, i + CHUNK);
     const { data } = await supabasePedidos
       .from(table)
-      .select('numero_pedido, total_pedido_venda, total_produtos')
+      .select('numero_pedido, total_pedido_venda, id_nota_conf')
       .in('numero_pedido', chunk);
     if (data) {
       for (const row of data) {
-        const val = row.total_pedido_venda > 0
-          ? Number(row.total_pedido_venda)
-          : Number(row.total_produtos || 0);
-        map.set(String(row.numero_pedido), val);
+        map.set(String(row.numero_pedido), getValorTotalPedido(row));
       }
     }
   }
@@ -179,18 +179,84 @@ async function fetchOrderValueMapForMonth(orderIds: string[]): Promise<Map<strin
 // ─── Sub-components ───────────────────────────────────────────────────────────
 
 function KpiCard({
-  icon: Icon, label, value, sub, color = 'text-primary', highlight = false,
-}: { icon: React.ElementType; label: string; value: string; sub?: string; color?: string; highlight?: boolean }) {
+  icon: Icon,
+  label,
+  value,
+  sub,
+  color = 'text-primary',
+  highlight = false,
+  progress,
+  trend,
+  tooltip,
+}: {
+  icon: React.ElementType;
+  label: string;
+  value: string;
+  sub?: string;
+  color?: string;
+  highlight?: boolean;
+  progress?: { value: number; max: number; color: string };
+  trend?: { value: string; up: boolean };
+  tooltip?: string;
+}) {
+  const [showTip, setShowTip] = useState(false);
+
   return (
-    <div className={`bg-card rounded-xl p-4 border shadow-card flex items-center gap-3 ${highlight ? 'border-primary/40 ring-1 ring-primary/20' : 'border-border'}`}>
-      <div className={`p-2.5 rounded-lg bg-muted shrink-0 ${color}`}>
-        <Icon className="h-5 w-5" />
+    <div
+      className={`bg-card rounded-xl p-4 border shadow-card relative transition-all duration-150 hover:-translate-y-0.5 ${
+        highlight ? 'border-red-300 dark:border-red-800/60' : 'border-border hover:border-border/80'
+      }`}
+      onMouseEnter={() => tooltip && setShowTip(true)}
+      onMouseLeave={() => setShowTip(false)}
+    >
+      {tooltip && showTip && (
+        <div className="absolute bottom-full left-0 mb-2 z-50 w-56 bg-card border border-border rounded-lg shadow-xl px-3 py-2 text-[11px] text-muted-foreground leading-relaxed pointer-events-none">
+          {tooltip}
+        </div>
+      )}
+
+      <div className="flex items-start justify-between gap-2 mb-2">
+        <div className={`p-2 rounded-lg bg-muted shrink-0 ${color}`}>
+          <Icon className="h-4 w-4" />
+        </div>
+        {tooltip && (
+          <Info className="h-3.5 w-3.5 text-muted-foreground/50 shrink-0 mt-0.5" />
+        )}
       </div>
-      <div className="min-w-0">
-        <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate">{label}</p>
-        <p className="text-base font-bold text-foreground truncate leading-tight">{value}</p>
-        {sub && <p className="text-[11px] text-muted-foreground truncate">{sub}</p>}
-      </div>
+
+      <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide truncate mb-0.5">{label}</p>
+      <p className={`text-lg font-bold text-foreground truncate leading-tight ${color}`}>{value}</p>
+
+      {progress && (
+        <div className="mt-2 space-y-1">
+          <div className="flex justify-between text-[10px] text-muted-foreground">
+            <span>Taxa</span>
+            <span className="font-semibold text-foreground">
+              {progress.max > 0 ? Math.round((progress.value / progress.max) * 100) : 0}%
+            </span>
+          </div>
+          <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-500 ${progress.color}`}
+              style={{ width: `${progress.max > 0 ? Math.min(100, (progress.value / progress.max) * 100) : 0}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {trend && !progress && (
+        <div className={`flex items-center gap-1 mt-1 text-[11px] font-semibold ${trend.up ? 'text-emerald-600' : 'text-red-500'}`}>
+          {trend.up
+            ? <ArrowUpRight className="h-3.5 w-3.5" />
+            : <ArrowDownRight className="h-3.5 w-3.5" />
+          }
+          {trend.value}
+        </div>
+      )}
+
+      {sub && !progress && !trend && (
+        <p className="text-[11px] text-muted-foreground truncate mt-0.5">{sub}</p>
+      )}
     </div>
   );
 }
@@ -523,13 +589,15 @@ const CarregamentosStats = () => {
   const [justificationDay, setJustificationDay] = useState<string | null>(null);
   const [recoverDay,       setRecoverDay]       = useState<string | null>(null);
   const [expandedDays,     setExpandedDays]     = useState<Set<string>>(new Set());
+  const [expandedLoadId,   setExpandedLoadId]   = useState<string | null>(null);
   const [activeTab,        setActiveTab]        = useState<'overview' | 'days' | 'trends'>('overview');
   const [orderValueMap,    setOrderValueMap]    = useState<Map<string, number>>(new Map());
   const [loadingOrders,    setLoadingOrders]    = useState(false);
   const [programacao,      setProgramacao]      = useState<ProgramacaoMesResult | null>(null);
   const [loadingProg,      setLoadingProg]      = useState(false);
 
-  const isAdmin = user?.role === 'admin' || user?.role === 'ADMIN';
+  const isAdmin = user?.role === 'ADMIN';
+  const hasDashboardPerm = isAdmin || canFazer(user?.funcionalidades ?? null, 'carregamento.dashboard');
 
   // ── Carrega meta e justificativas do Supabase ao mudar de mês ──
   useEffect(() => {
@@ -594,9 +662,8 @@ const CarregamentosStats = () => {
     for (const l of loads) {
       const d = l.plannedDate?.slice(0, 10);
       if (!d || !d.startsWith(selectedMonth)) continue;
-      if (l.shipmentStatus === 'Cancelado') continue;
-      const orderVal = l.orderIds.reduce((s, id) => s + (orderValueMap.get(id) || 0), 0);
-      const total = orderVal + (l.freightValue || 0);
+      if (!isFaturadoStatus(l.shipmentStatus)) continue;
+      const total = l.orderIds.reduce((s, id) => s + (orderValueMap.get(id) || 0), 0);
       map.set(d, (map.get(d) || 0) + total);
     }
     return map;
@@ -641,11 +708,23 @@ const CarregamentosStats = () => {
     let daysMissed    = 0;
     let daysBelow     = 0;
 
-    for (const date of workDays) {
-      const isPast   = date < today;
-      const isToday  = date === today;
-      const isFuture = date > today;
-      const billed   = billedByDate.get(date) || 0;
+    // Itera todos os dias do mês (não só úteis) para que faturamento de fim de
+    // semana reduza remainingValue e entre em totalBilled, mantendo targets corretos.
+    for (const date of allDays) {
+      const isPast      = date < today;
+      const isToday     = date === today;
+      const isFuture    = date > today;
+      const billed      = billedByDate.get(date) || 0;
+      const isWeekendDay = isWeekend(date);
+
+      if (isWeekendDay) {
+        // Fins de semana: apenas contabiliza faturado e ajusta remainingValue.
+        // Não gera entrada em analyses (sem análise por dia de FDS).
+        if (isPast || isToday) totalBilled += billed;
+        remainingValue -= billed;
+        continue;
+      }
+
       const dayLoads = loadsByDate.get(date) || [];
       const just     = justifications.find(j => j.date === date);
 
@@ -950,15 +1029,80 @@ const CarregamentosStats = () => {
 
       {/* ── KPIs ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        <KpiCard icon={Truck}         label="Carregamentos" value={String(monthStats?.totalLoads ?? 0)}          color="text-primary" />
-        <KpiCard icon={CheckCircle2}  label="Bateram Meta"  value={String(monthStats?.daysMetTarget ?? 0)}       color="text-emerald-600" />
-        <KpiCard icon={AlertTriangle} label="Abaixo"        value={String(monthStats?.daysBelow ?? 0)}           color="text-amber-600" />
-        <KpiCard icon={XCircle}       label="Dias Perdidos" value={String(monthStats?.daysMissed ?? 0)}          color="text-red-600" highlight={(monthStats?.daysMissed ?? 0) > 0} />
-        <KpiCard icon={BarChart3}     label="Faturado"      value={formatCurrency(monthStats?.totalBilled ?? 0)} color="text-blue-600" />
-        <KpiCard icon={Target}        label="Projeção Mês"
+        <KpiCard
+          icon={Truck}
+          label="Carregamentos"
+          value={String(monthStats?.totalLoads ?? 0)}
+          color="text-primary"
+          tooltip="Total de embarques registrados no mês, independente do status."
+        />
+        <KpiCard
+          icon={CheckCircle2}
+          label="Bateram meta"
+          value={String(monthStats?.daysMetTarget ?? 0)}
+          color="text-emerald-600"
+          progress={
+            monthStats
+              ? { value: monthStats.daysMetTarget, max: monthStats.pastWorkDays || 1, color: 'bg-emerald-500' }
+              : undefined
+          }
+          tooltip="Dias úteis em que o faturamento atingiu ou superou a meta diária dinâmica."
+        />
+        <KpiCard
+          icon={AlertTriangle}
+          label="Abaixo"
+          value={String(monthStats?.daysBelow ?? 0)}
+          color="text-amber-600"
+          progress={
+            monthStats
+              ? { value: monthStats.daysBelow, max: monthStats.pastWorkDays || 1, color: 'bg-amber-500' }
+              : undefined
+          }
+          tooltip="Dias úteis com carregamentos realizados, mas com faturamento abaixo da meta dinâmica do dia."
+        />
+        <KpiCard
+          icon={XCircle}
+          label="Dias perdidos"
+          value={String(monthStats?.daysMissed ?? 0)}
+          color="text-red-600"
+          highlight={(monthStats?.daysMissed ?? 0) > 0}
+          trend={
+            monthStats && monthStats.daysMissed > 0 && goal
+              ? {
+                  value: `-${formatCurrency((goal.goalValue / goal.workingDays) * monthStats.daysMissed)} impacto`,
+                  up: false,
+                }
+              : undefined
+          }
+          tooltip="Dias úteis passados sem nenhum carregamento. Cada dia perdido redistribui automaticamente a meta para os dias restantes."
+        />
+        <KpiCard
+          icon={BarChart3}
+          label="Faturado"
+          value={formatCurrency(monthStats?.totalBilled ?? 0)}
+          color="text-blue-600"
+          progress={
+            goal && monthStats
+              ? { value: monthStats.totalBilled, max: goal.goalValue, color: 'bg-blue-500' }
+              : undefined
+          }
+          tooltip="Soma do valor total (total_pedido_venda) dos carregamentos com status Faturado, Em Rota ou Entregue no mês."
+        />
+        <KpiCard
+          icon={Target}
+          label="Projeção mês"
           value={monthStats?.projectedTotal ? formatCurrency(monthStats.projectedTotal) : '—'}
-          sub={monthStats?.projectedTotal ? (monthStats.projectedTotal >= (goal?.goalValue || 0) ? '✓ Bate a meta' : '✗ Abaixo da meta') : undefined}
-          color={(monthStats?.projectedTotal ?? 0) >= (goal?.goalValue ?? 1) ? 'text-emerald-600' : 'text-red-500'} />
+          color={(monthStats?.projectedTotal ?? 0) >= (goal?.goalValue ?? 1) ? 'text-emerald-600' : 'text-red-500'}
+          trend={
+            monthStats?.projectedTotal
+              ? {
+                  value: (monthStats.projectedTotal >= (goal?.goalValue || 0) ? '✓ Bate a meta' : '✗ Abaixo da meta'),
+                  up: monthStats.projectedTotal >= (goal?.goalValue || 0),
+                }
+              : undefined
+          }
+          tooltip="Projeção do total ao fim do mês baseada na média diária dos dias já trabalhados. Indica se a meta será atingida no ritmo atual."
+        />
       </div>
 
       {/* ── Tabs ── */}
@@ -978,51 +1122,121 @@ const CarregamentosStats = () => {
       {/* ── TAB: VISÃO GERAL ── */}
       {activeTab === 'overview' && (
         <div className="space-y-4">
+
+          {/* Gráfico 1 — Evolução do faturamento diário */}
           <div className="bg-card rounded-xl p-4 border border-border shadow-card">
-            <div className="flex items-center justify-between mb-1">
-              <h3 className="text-sm font-semibold text-foreground">Faturamento por Dia Útil</h3>
-              <span className="text-xs text-muted-foreground">Barra contornada = meta dinâmica do dia</span>
+            <div className="flex items-start justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-semibold text-foreground">Evolução do faturamento diário</h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Faturado vs meta dinâmica do dia</p>
+              </div>
+              <div className="flex gap-4 text-[11px] text-muted-foreground shrink-0">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-0.5 rounded bg-emerald-500 inline-block" />Faturado
+                </span>
+                <span className="flex items-center gap-1.5">
+                  <span className="w-3 h-0.5 rounded bg-primary inline-block" />Meta/dia
+                </span>
+              </div>
             </div>
-            <p className="text-[11px] text-muted-foreground mb-3">
-              A meta de cada dia aumenta automaticamente quando dias anteriores são perdidos.
-            </p>
+
             {chartData.length === 0 ? (
-              <div className="h-56 flex items-center justify-center text-sm text-muted-foreground">Sem dados.</div>
+              <div className="h-52 flex items-center justify-center text-sm text-muted-foreground">Sem dados.</div>
             ) : (
-              <ResponsiveContainer width="100%" height={240}>
-                <BarChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={chartData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="gradBilled" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#22c55e" stopOpacity={0.25} />
+                      <stop offset="100%" stopColor="#22c55e" stopOpacity={0.01} />
+                    </linearGradient>
+                    <linearGradient id="gradTarget" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.12} />
+                      <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} />
                   <Tooltip
                     {...tooltipStyle}
-                    formatter={(v: number, name: string) => [formatCurrency(v), name === 'billed' ? 'Faturado' : 'Meta do dia']}
+                    formatter={(v: number, name: string) => [
+                      formatCurrency(v),
+                      name === 'billed' ? 'Faturado' : 'Meta do dia',
+                    ]}
                   />
-                  <Bar dataKey="target" name="target" fill="transparent"
-                    stroke="hsl(var(--primary))" strokeDasharray="4 4" strokeWidth={1.5}
-                    radius={[3, 3, 0, 0]} maxBarSize={32} />
-                  <Bar dataKey="billed" name="billed" radius={[4, 4, 0, 0]} maxBarSize={32}>
-                    {chartData.map(entry => (
-                      <Cell key={entry.date} fill={
-                        entry.status === 'bateu_meta'    ? '#22c55e' :
-                        entry.status === 'abaixo_meta'   ? '#f59e0b' :
-                        entry.status === 'vazio_perdido' ? '#ef4444' :
-                        entry.status === 'hoje'          ? 'hsl(var(--primary))' : 'hsl(var(--muted))'
-                      } opacity={entry.status === 'futuro' ? 0.3 : 1} />
-                    ))}
-                  </Bar>
-                </BarChart>
+                  <Area
+                    type="monotone"
+                    dataKey="target"
+                    stroke="hsl(var(--primary))"
+                    strokeWidth={2}
+                    fill="url(#gradTarget)"
+                    name="target"
+                    dot={false}
+                    activeDot={false}
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="billed"
+                    stroke="#22c55e"
+                    strokeWidth={2.5}
+                    fill="url(#gradBilled)"
+                    name="billed"
+                    dot={(props: any) => {
+                      const { cx, cy, payload } = props;
+                      if (!payload?.billed) return <g key={payload?.date} />;
+                      const color =
+                        payload.status === 'bateu_meta' ? '#22c55e' :
+                        payload.status === 'abaixo_meta' ? '#f59e0b' :
+                        payload.status === 'vazio_perdido' ? '#ef4444' :
+                        payload.status === 'hoje' ? 'hsl(var(--primary))' : 'transparent';
+                      return <circle key={payload?.date} cx={cx} cy={cy} r={3.5} fill={color} stroke="white" strokeWidth={1.5} />;
+                    }}
+                  />
+                </AreaChart>
               </ResponsiveContainer>
             )}
-            <div className="flex flex-wrap gap-3 mt-2">
+
+            {chartData.length > 0 && monthStats && (
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3 pt-3 border-t border-border">
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Média diária</p>
+                  <p className="text-sm font-bold text-foreground">
+                    {monthStats.pastWorkDays > 0 ? formatCurrency(monthStats.totalBilled / monthStats.pastWorkDays) : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Maior valor</p>
+                  <p className="text-sm font-bold text-emerald-600">
+                    {formatCurrency(Math.max(...dayAnalyses.filter(d => d.billed > 0).map(d => d.billed), 0))}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {dayAnalyses.find(d => d.billed === Math.max(...dayAnalyses.filter(x => x.billed > 0).map(x => x.billed), 0))
+                      ? fmtDate(dayAnalyses.find(d => d.billed === Math.max(...dayAnalyses.filter(x => x.billed > 0).map(x => x.billed), 0))!.date)
+                      : '—'}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Menor valor (dias c/ fat.)</p>
+                  <p className="text-sm font-bold text-amber-600">
+                    {formatCurrency(Math.min(...dayAnalyses.filter(d => d.billed > 0).map(d => d.billed), Infinity))}
+                  </p>
+                </div>
+                <div>
+                  <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Total no período</p>
+                  <p className="text-sm font-bold text-foreground">{formatCurrency(monthStats.totalBilled)}</p>
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-wrap gap-3 mt-3 text-[11px] text-muted-foreground">
               {[
                 { color: 'bg-emerald-500', label: 'Bateu a meta' },
                 { color: 'bg-amber-500',   label: 'Abaixo da meta' },
                 { color: 'bg-red-500',     label: 'Dia perdido' },
                 { color: 'bg-primary',     label: 'Hoje' },
-                { color: 'bg-muted border border-border', label: 'Futuro' },
               ].map(({ color, label }) => (
-                <div key={label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <div key={label} className="flex items-center gap-1.5">
                   <span className={`h-2.5 w-2.5 rounded-sm ${color}`} />
                   {label}
                 </div>
@@ -1030,21 +1244,79 @@ const CarregamentosStats = () => {
             </div>
           </div>
 
+          {/* Gráfico 2 — Acumulado vs Meta progressiva */}
           {goal && (
             <div className="bg-card rounded-xl p-4 border border-border shadow-card">
-              <h3 className="text-sm font-semibold text-foreground mb-3">Acumulado Realizado vs. Meta Progressiva</h3>
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <h3 className="text-sm font-semibold text-foreground">Realizado × Meta progressiva</h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Acumulado ao longo do mês — linha vermelha = meta total</p>
+                </div>
+                <div className="flex gap-4 text-[11px] text-muted-foreground shrink-0">
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-0.5 rounded bg-emerald-500 inline-block" />Realizado
+                  </span>
+                  <span className="flex items-center gap-1.5">
+                    <span className="w-3 h-0.5 rounded bg-primary inline-block" />Meta acumulada
+                  </span>
+                </div>
+              </div>
+
               <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={cumulativeData}>
+                <AreaChart data={cumulativeData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="gradReal" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#22c55e" stopOpacity={0.28} />
+                      <stop offset="100%" stopColor="#22c55e" stopOpacity={0.01} />
+                    </linearGradient>
+                    <linearGradient id="gradMetaAcc" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="hsl(var(--primary))" stopOpacity={0.12} />
+                      <stop offset="100%" stopColor="hsl(var(--primary))" stopOpacity={0.01} />
+                    </linearGradient>
+                  </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                   <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                   <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `R$${(v / 1000000).toFixed(1)}M`} />
-                  <Tooltip {...tooltipStyle} formatter={(v: number, name: string) => [formatCurrency(v), name === 'realizado' ? 'Realizado' : 'Meta acumulada']} />
-                  <Area type="monotone" dataKey="meta" stroke="hsl(var(--primary))" strokeDasharray="5 5" fill="hsl(var(--primary) / 0.05)" strokeWidth={1.5} name="meta" />
-                  <Area type="monotone" dataKey="realizado" stroke="#22c55e" fill="#22c55e20" strokeWidth={2} name="realizado" />
-                  <ReferenceLine y={goal.goalValue} stroke="#ef4444" strokeDasharray="4 4" strokeWidth={1}
-                    label={{ value: 'Meta Total', fontSize: 10, fill: '#ef4444' }} />
+                  <Tooltip
+                    {...tooltipStyle}
+                    formatter={(v: number, name: string) => [
+                      formatCurrency(v),
+                      name === 'realizado' ? 'Realizado' : name === 'meta' ? 'Meta acumulada' : 'Meta total',
+                    ]}
+                  />
+                  <Area type="monotone" dataKey="meta" stroke="hsl(var(--primary))" strokeWidth={2}
+                    fill="url(#gradMetaAcc)" name="meta" dot={false} activeDot={false} />
+                  <Area type="monotone" dataKey="realizado" stroke="#22c55e" strokeWidth={2.5}
+                    fill="url(#gradReal)" name="realizado" dot={{ r: 2.5, fill: '#22c55e', strokeWidth: 0 }} />
+                  <ReferenceLine y={goal.goalValue} stroke="#ef4444" strokeWidth={1.5}
+                    label={{ value: 'Meta Total', fontSize: 10, fill: '#ef4444', position: 'insideTopRight' }} />
                 </AreaChart>
               </ResponsiveContainer>
+
+              {monthStats && (
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-3 pt-3 border-t border-border">
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Previsto no período</p>
+                    <p className="text-sm font-bold text-foreground">{formatCurrency(goal.goalValue)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Realizado</p>
+                    <p className="text-sm font-bold text-emerald-600">{formatCurrency(monthStats.totalBilled)}</p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">% da meta</p>
+                    <p className={`text-sm font-bold ${monthStats.progressPct >= 100 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                      {monthStats.progressPct.toFixed(1)}%
+                    </p>
+                  </div>
+                  <div>
+                    <p className="text-[10px] text-muted-foreground uppercase tracking-wide mb-0.5">Gap</p>
+                    <p className={`text-sm font-bold ${monthStats.remaining > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                      {monthStats.remaining > 0 ? `-${formatCurrency(monthStats.remaining)}` : '✓ Meta atingida'}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -1200,18 +1472,80 @@ const CarregamentosStats = () => {
                         </p>
                         <div className="space-y-1.5">
                           {day.loads.map(l => {
-                            const driver = drivers.find(d => d.id === l.driverId);
+                            const driver    = drivers.find(d => d.id === l.driverId);
+                            const isExpanded = expandedLoadId === l.id;
+                            const just      = day.justification;
                             return (
-                              <div key={l.id} className="flex items-center justify-between gap-2 bg-card rounded-lg border border-border px-3 py-2">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <Truck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                  <span className="text-xs font-semibold text-foreground truncate">{l.id}</span>
-                                  {driver && <span className="text-[11px] text-muted-foreground truncate">· {driver.name}</span>}
-                                </div>
-                                <div className="flex items-center gap-2 shrink-0">
-                                  <span className="text-xs text-muted-foreground">{l.shipmentStatus}</span>
-                                  <span className="text-xs font-bold text-foreground">{formatCurrency(l.freightValue || 0)}</span>
-                                </div>
+                              <div key={l.id} className="rounded-lg border border-border overflow-hidden">
+                                {/* Linha principal — clicável */}
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedLoadId(isExpanded ? null : l.id)}
+                                  className="w-full flex items-center justify-between gap-2 bg-card px-3 py-2 hover:bg-muted/40 transition-colors text-left"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <Truck className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                                    <span className="text-xs font-semibold text-foreground truncate">{l.id}</span>
+                                    {driver && <span className="text-[11px] text-muted-foreground truncate">· {driver.name}</span>}
+                                  </div>
+
+                                  {/* Último movimento — espaço do meio */}
+                                  <div className="flex-1 flex justify-center px-2 min-w-0">
+                                    {just && (
+                                      <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border truncate max-w-full ${
+                                        JUSTIFICATION_COLORS[just.type]
+                                      }`}>
+                                        {JUSTIFICATION_LABELS[just.type]}
+                                        {just.relatedDate ? ` → ${fmtDate(just.relatedDate)}` : ''}
+                                      </span>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <span className="text-xs text-muted-foreground">{l.shipmentStatus}</span>
+                                    <span className="text-xs font-bold text-foreground">{formatCurrency(l.freightValue || 0)}</span>
+                                    <ChevronDown className={`h-3.5 w-3.5 text-muted-foreground transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                                  </div>
+                                </button>
+
+                                {/* Dropdown de histórico de movimentação */}
+                                {isExpanded && (
+                                  <div className="border-t border-border bg-muted/30 px-3 py-3">
+                                    {just ? (
+                                      <div className="space-y-2">
+                                        <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-wide">Histórico de movimentação</p>
+                                        <div className="flex items-start gap-2">
+                                          <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${
+                                            just.type === 'adiamento'    ? 'bg-amber-400'   :
+                                            just.type === 'antecipacao'  ? 'bg-blue-400'    :
+                                            just.type === 'recuperado'   ? 'bg-emerald-400' :
+                                            just.type === 'cancelamento' ? 'bg-red-400'     : 'bg-gray-400'
+                                          }`} />
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <span className={`text-xs font-semibold ${
+                                                just.type === 'adiamento'    ? 'text-amber-600'   :
+                                                just.type === 'antecipacao'  ? 'text-blue-600'    :
+                                                just.type === 'recuperado'   ? 'text-emerald-600' :
+                                                just.type === 'cancelamento' ? 'text-red-600'     : 'text-gray-500'
+                                              }`}>
+                                                {JUSTIFICATION_LABELS[just.type]}
+                                              </span>
+                                              <span className="text-[10px] text-muted-foreground">
+                                                {fmtDate(just.date)}{just.relatedDate ? ` → ${fmtDate(just.relatedDate)}` : ''}
+                                              </span>
+                                            </div>
+                                            {just.reason && (
+                                              <p className="text-[11px] text-foreground/80 mt-0.5 leading-relaxed">{just.reason}</p>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <p className="text-[11px] text-muted-foreground/50 text-center">Nenhuma movimentação registrada.</p>
+                                    )}
+                                  </div>
+                                )}
                               </div>
                             );
                           })}
@@ -1276,46 +1610,92 @@ const CarregamentosStats = () => {
       {/* ── TAB: TENDÊNCIAS ── */}
       {activeTab === 'trends' && (
         <div className="space-y-4">
+
+          {/* Cards de resumo */}
+          {goal && monthStats && (
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="bg-muted/50 rounded-xl p-4 border border-border">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Média faturada/dia</p>
+                <p className="text-xl font-bold text-foreground">
+                  {monthStats.pastWorkDays > 0 ? formatCurrency(monthStats.totalBilled / monthStats.pastWorkDays) : '—'}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">{monthStats.pastWorkDays} dias trabalhados</p>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-4 border border-border">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Taxa de sucesso</p>
+                <p className={`text-xl font-bold ${monthStats.daysMetTarget > 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
+                  {monthStats.pastWorkDays > 0 ? `${Math.round((monthStats.daysMetTarget / monthStats.pastWorkDays) * 100)}%` : '—'}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {monthStats.daysMetTarget} de {monthStats.pastWorkDays} dias bateu a meta
+                </p>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-4 border border-border">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Impacto das perdas</p>
+                <p className={`text-xl font-bold ${monthStats.effectiveLostDays > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
+                  {monthStats.effectiveLostDays > 0
+                    ? `-${formatCurrency((goal.goalValue / goal.workingDays) * monthStats.effectiveLostDays)}`
+                    : 'R$ 0'}
+                </p>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {monthStats.effectiveLostDays} dia{monthStats.effectiveLostDays !== 1 ? 's' : ''} perdido{monthStats.effectiveLostDays !== 1 ? 's' : ''} × meta base
+                </p>
+              </div>
+              <div className="bg-muted/50 rounded-xl p-4 border border-border">
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Melhor dia</p>
+                {(() => {
+                  const best = [...dayAnalyses].filter(d => d.billed > 0).sort((a, b) => b.billed - a.billed)[0];
+                  if (!best) return <p className="text-xl font-bold text-muted-foreground">—</p>;
+                  const pct = best.target > 0 ? Math.round((best.billed / best.target) * 100) : 0;
+                  return (
+                    <>
+                      <p className="text-xl font-bold text-foreground">{fmtDate(best.date)}</p>
+                      <p className="text-[11px] text-emerald-600 mt-0.5">{formatCurrency(best.billed)} — {pct}% da meta</p>
+                    </>
+                  );
+                })()}
+              </div>
+            </div>
+          )}
+
           {trendsData.length === 0 ? (
             <div className="bg-card rounded-xl p-8 border border-border text-center text-sm text-muted-foreground">
               Nenhum dado disponível para análise de tendências.
             </div>
           ) : (
             <>
+              {/* Gráfico 1 — Eficiência diária */}
               <div className="bg-card rounded-xl p-4 border border-border shadow-card">
-                <h3 className="text-sm font-semibold text-foreground mb-1">Faturamento Diário vs. Meta Dinâmica</h3>
-                <p className="text-[11px] text-muted-foreground mb-3">
-                  A linha tracejada mostra a meta base (sem redistribuição). A linha sólida mostra a meta dinâmica real de cada dia.
-                </p>
-                <ResponsiveContainer width="100%" height={260}>
-                  <AreaChart data={trendsData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
-                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} />
-                    <Tooltip {...tooltipStyle} formatter={(v: number, name: string) => [
-                      formatCurrency(v),
-                      name === 'faturado' ? 'Faturado' : name === 'meta' ? 'Meta dinâmica' : 'Meta base',
-                    ]} />
-                    <Area type="monotone" dataKey="metaBase" stroke="hsl(var(--muted-foreground))" strokeDasharray="4 4"
-                      fill="transparent" strokeWidth={1} name="metaBase" />
-                    <Area type="monotone" dataKey="meta" stroke="hsl(var(--primary))" strokeDasharray="5 5"
-                      fill="hsl(var(--primary) / 0.05)" strokeWidth={1.5} name="meta" />
-                    <Area type="monotone" dataKey="faturado" stroke="#22c55e" fill="#22c55e15" strokeWidth={2} name="faturado" />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div className="bg-card rounded-xl p-4 border border-border shadow-card">
-                <h3 className="text-sm font-semibold text-foreground mb-3">Eficiência Diária (% da Meta Atingida)</h3>
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Eficiência diária (% da meta atingida)</h3>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">100% = meta dinâmica do dia atingida</p>
+                  </div>
+                  <div className="flex gap-3 text-[11px] text-muted-foreground shrink-0 flex-wrap">
+                    {[
+                      { color: 'bg-emerald-500', label: '≥ 100%' },
+                      { color: 'bg-amber-500',   label: 'Parcial' },
+                      { color: 'bg-red-500',     label: 'Perdido' },
+                    ].map(({ color, label }) => (
+                      <span key={label} className="flex items-center gap-1.5">
+                        <span className={`w-2.5 h-2.5 rounded-sm ${color}`} />
+                        {label}
+                      </span>
+                    ))}
+                  </div>
+                </div>
                 <ResponsiveContainer width="100%" height={200}>
                   <BarChart data={trendsData} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
                     <XAxis dataKey="label" tick={{ fontSize: 10 }} />
                     <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `${v}%`} domain={[0, 200]} />
-                    <Tooltip {...tooltipStyle} formatter={(v: number) => [`${v.toFixed(1)}%`, 'Eficiência']} />
-                    <ReferenceLine y={100} stroke="#22c55e" strokeDasharray="4 4" strokeWidth={1.5}
-                      label={{ value: '100%', fontSize: 10, fill: '#22c55e' }} />
-                    <Bar dataKey="eficiencia" radius={[4, 4, 0, 0]} maxBarSize={32} name="eficiencia">
+                    <Tooltip
+                      {...tooltipStyle}
+                      formatter={(v: number) => [`${v.toFixed(1)}%`, 'Eficiência']}
+                    />
+                    <ReferenceLine y={100} stroke="#22c55e" strokeWidth={1.5}
+                      label={{ value: '100%', fontSize: 10, fill: '#22c55e', position: 'insideTopRight' }} />
+                    <Bar dataKey="eficiencia" radius={[4, 4, 0, 0]} maxBarSize={30} name="eficiencia">
                       {trendsData.map((entry, i) => (
                         <Cell key={i} fill={
                           entry.eficiencia >= 100 ? '#22c55e' :
@@ -1325,51 +1705,56 @@ const CarregamentosStats = () => {
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
-                <div className="flex flex-wrap gap-3 mt-2">
-                  {[
-                    { color: 'bg-emerald-500', label: '≥ 100% (bateu a meta)' },
-                    { color: 'bg-amber-500',   label: 'Parcial (abaixo da meta)' },
-                    { color: 'bg-red-500',     label: '0% (dia perdido)' },
-                  ].map(({ color, label }) => (
-                    <div key={label} className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <span className={`h-2.5 w-2.5 rounded-sm ${color}`} />
-                      {label}
-                    </div>
-                  ))}
-                </div>
               </div>
 
-              {goal && monthStats && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  <div className="bg-card rounded-xl p-4 border border-border shadow-card text-center">
-                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Média Faturada/Dia</p>
-                    <p className="text-xl font-bold text-foreground">
-                      {monthStats.pastWorkDays > 0 ? formatCurrency(monthStats.totalBilled / monthStats.pastWorkDays) : '—'}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">nos {monthStats.pastWorkDays} dias trabalhados</p>
+              {/* Gráfico 2 — Média móvel 3 dias */}
+              <div className="bg-card rounded-xl p-4 border border-border shadow-card">
+                <div className="flex items-start justify-between mb-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-foreground">Velocidade de faturamento — média móvel 3 dias</h3>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">Suaviza variações diárias e mostra a tendência real de aceleração</p>
                   </div>
-                  <div className="bg-card rounded-xl p-4 border border-border shadow-card text-center">
-                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Taxa de Sucesso</p>
-                    <p className={`text-xl font-bold ${monthStats.daysMetTarget > 0 ? 'text-emerald-600' : 'text-muted-foreground'}`}>
-                      {monthStats.pastWorkDays > 0
-                        ? `${Math.round((monthStats.daysMetTarget / monthStats.pastWorkDays) * 100)}%`
-                        : '—'}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">{monthStats.daysMetTarget} de {monthStats.pastWorkDays} dias bateu a meta</p>
-                  </div>
-                  <div className="bg-card rounded-xl p-4 border border-border shadow-card text-center">
-                    <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">Impacto das Perdas</p>
-                    <p className={`text-xl font-bold ${monthStats.effectiveLostDays > 0 ? 'text-red-500' : 'text-emerald-600'}`}>
-                      {monthStats.effectiveLostDays > 0
-                        ? `-${formatCurrency((goal.goalValue / goal.workingDays) * monthStats.effectiveLostDays)}`
-                        : 'R$ 0'}
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {monthStats.effectiveLostDays} dia{monthStats.effectiveLostDays !== 1 ? 's' : ''} perdido{monthStats.effectiveLostDays !== 1 ? 's' : ''} × meta base/dia
-                    </p>
+                  <div className="flex gap-4 text-[11px] text-muted-foreground shrink-0">
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-0.5 rounded bg-emerald-500 inline-block" />Média móvel (3d)
+                    </span>
+                    <span className="flex items-center gap-1.5">
+                      <span className="w-3 h-0.5 rounded bg-primary inline-block" />Meta base/dia
+                    </span>
                   </div>
                 </div>
-              )}
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart
+                    data={trendsData.map((d, i, arr) => ({
+                      ...d,
+                      mm3: i < 2 ? null : Math.round((d.faturado + arr[i-1].faturado + arr[i-2].faturado) / 3),
+                    }))}
+                    margin={{ top: 8, right: 8, bottom: 0, left: 0 }}
+                  >
+                    <defs>
+                      <linearGradient id="gradMM3" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#22c55e" stopOpacity={0.2} />
+                        <stop offset="100%" stopColor="#22c55e" stopOpacity={0.01} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
+                    <XAxis dataKey="label" tick={{ fontSize: 10 }} />
+                    <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `R$${(v / 1000).toFixed(0)}k`} />
+                    <Tooltip
+                      {...tooltipStyle}
+                      formatter={(v: number | null, name: string) =>
+                        v === null ? null : [formatCurrency(v), name === 'mm3' ? 'Média móvel 3d' : 'Meta base/dia']
+                      }
+                    />
+                    <Area type="monotone" dataKey="metaBase" stroke="hsl(var(--primary))" strokeWidth={2}
+                      fill="transparent" name="metaBase" dot={false} activeDot={false} />
+                    <Area type="monotone" dataKey="mm3" stroke="#22c55e" strokeWidth={2.5}
+                      fill="url(#gradMM3)" name="mm3"
+                      dot={{ r: 3, fill: '#22c55e', strokeWidth: 0 }}
+                      connectNulls={false} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
             </>
           )}
         </div>
