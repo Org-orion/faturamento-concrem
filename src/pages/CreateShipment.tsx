@@ -46,7 +46,7 @@ const CreateShipment = () => {
   const navigate = useNavigate();
   const { id } = useParams();
   const location = useLocation();
-  const { drivers, orders, supportOrders, loads, invoices, addLoad, updateLoad, deleteLoad, clients, user } = useApp();
+  const { drivers, orders, supportOrders, loads, invoices, addLoad, updateLoad, deleteLoad, clients, user, pedidoStatusVersion } = useApp();
   const { showToast } = useToast();
 
   const { map: prioMap } = usePrioridades();
@@ -418,7 +418,7 @@ const CreateShipment = () => {
       }
     };
     void load();
-  }, []);
+  }, [pedidoStatusVersion]); // recarrega quando deleteLoad ou outra ação altera o version
 
   // Also keep context orders' status tracked for editing existing carregamentos
   useEffect(() => {

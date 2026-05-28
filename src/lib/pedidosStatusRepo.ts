@@ -861,38 +861,38 @@ export async function batchSetEmEntregaForLoad(
   if (histErr) console.error('[Supabase OPS] batchSetEmEntregaForLoad insert history:', histErr.message);
 }
 
-const POST_PRODUCAO_STATUSES: PedidoStatusValue[] = [
-  'faturado', 'em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado',
+// Statuses de carregamento e pós-produção removidos do histórico ao excluir um carregamento,
+// para que o pedido volte a ficar disponível para novos carregamentos.
+const RESET_EMBARQUE_STATUSES: PedidoStatusValue[] = [
+  'em_carregamento',
+  'despachado',
+  'faturado',
+  'em_entrega',
+  'parcialmente_entregue',
+  'entregue',
+  'aguardando_pagamento',
+  'finalizado',
 ];
 
 /**
- * Resets a pedido's status back to pre-embarque level:
- * - Deletes all historico entries that are post-producao_finalizada
- * - Sets status_atual to the highest remaining status in history (or liberado_producao)
+ * Resets a pedido's status back to liberado_producao when its carregamento is deleted.
+ * Removes all carregamento/post-producao history entries and sets status_atual directly to
+ * liberado_producao — same logic used by syncOrderStatusFromCarregamento on edit removal.
  */
 export async function resetPedidoStatusToPreEmbarque(pedidoId: string, alteradoPor: string): Promise<void> {
   if (!supabaseOps) return;
+  const now = new Date().toISOString();
 
   const { error: delErr } = await supabaseOps
     .from('concrem_pedidos_status_historico')
     .delete()
     .eq('pedido_id', pedidoId)
-    .in('status_novo', POST_PRODUCAO_STATUSES);
+    .in('status_novo', RESET_EMBARQUE_STATUSES);
   if (delErr) console.error('[Supabase OPS] resetPedidoStatus delete historico:', delErr.message);
-
-  const { data } = await supabaseOps
-    .from('concrem_pedidos_status_historico')
-    .select('status_novo')
-    .eq('pedido_id', pedidoId)
-    .order('alterado_em', { ascending: false })
-    .limit(1);
-
-  const highestStatus: PedidoStatusValue =
-    (data?.[0]?.status_novo as PedidoStatusValue) || 'liberado_producao';
 
   const { error: updErr } = await supabaseOps
     .from('concrem_pedidos_status')
-    .update({ status_atual: highestStatus, atualizado_em: new Date().toISOString(), atualizado_por: alteradoPor })
+    .update({ status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: alteradoPor })
     .eq('pedido_id', pedidoId);
   if (updErr) console.error('[Supabase OPS] resetPedidoStatus update status:', updErr.message);
 }
