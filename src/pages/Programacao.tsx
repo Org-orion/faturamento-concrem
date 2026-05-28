@@ -442,13 +442,16 @@ const MiniCal = React.memo<MiniCalProps>(({ selectedIso, displayMonth, onChangeM
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
 
-  const calWidth = 224; // w-56 = 14rem = 224px
-  const fixedStyle: React.CSSProperties | undefined = anchorRect ? {
-    position: 'fixed',
-    top: anchorRect.bottom + 4,
-    left: Math.min(anchorRect.right - calWidth, window.innerWidth - calWidth - 8),
-    zIndex: 9999,
-  } : undefined;
+  const calWidth  = 224; // w-56 = 14rem = 224px
+  const calHeight = 248; // estimativa: header + dias + padding
+  const fixedStyle: React.CSSProperties | undefined = anchorRect ? (() => {
+    const spaceBelow = window.innerHeight - anchorRect.bottom - 4;
+    const top = spaceBelow >= calHeight
+      ? anchorRect.bottom + 4               // abre abaixo
+      : anchorRect.top - calHeight - 4;     // abre acima (flip)
+    const left = Math.min(anchorRect.right - calWidth, window.innerWidth - calWidth - 8);
+    return { position: 'fixed', top, left, zIndex: 9999 };
+  })() : undefined;
 
   const calendar = (
     <div
