@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ReactDOM from 'react-dom';
 import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, FileDown, Pencil, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
 import { MultiSelectFilter } from '@/components/filters/MultiSelectFilter';
 import logoProgramacao from '@/assets/logo-programacao.png';
@@ -422,9 +423,10 @@ type MiniCalProps = {
   onChangeMonth: (m: string) => void;
   onSelect: (iso: string) => void;
   onClose: () => void;
+  anchorRect?: DOMRect;
 };
 
-const MiniCal = React.memo<MiniCalProps>(({ selectedIso, displayMonth, onChangeMonth, onSelect, onClose }) => {
+const MiniCal = React.memo<MiniCalProps>(({ selectedIso, displayMonth, onChangeMonth, onSelect, onClose, anchorRect }) => {
   const ref = useRef<HTMLDivElement>(null);
   const [y, m] = displayMonth.split('-').map(Number);
   const monthLabel = new Date(y, m - 1, 1).toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
@@ -440,8 +442,23 @@ const MiniCal = React.memo<MiniCalProps>(({ selectedIso, displayMonth, onChangeM
     return () => document.removeEventListener('mousedown', handler);
   }, [onClose]);
 
-  return (
-    <div ref={ref} className="absolute z-30 right-0 top-8 bg-card border border-border rounded-xl shadow-2xl p-3 w-56 select-none">
+  const calWidth = 224; // w-56 = 14rem = 224px
+  const fixedStyle: React.CSSProperties | undefined = anchorRect ? {
+    position: 'fixed',
+    top: anchorRect.bottom + 4,
+    left: Math.min(anchorRect.right - calWidth, window.innerWidth - calWidth - 8),
+    zIndex: 9999,
+  } : undefined;
+
+  const calendar = (
+    <div
+      ref={ref}
+      style={fixedStyle}
+      className={cn(
+        'bg-card border border-border rounded-xl shadow-2xl p-3 w-56 select-none',
+        anchorRect ? '' : 'absolute z-30 right-0 top-8',
+      )}
+    >
       <div className="flex items-center justify-between mb-2">
         <button onClick={goPrev} className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">‹</button>
         <span className="text-xs font-semibold capitalize">{monthLabel}</span>
@@ -467,6 +484,8 @@ const MiniCal = React.memo<MiniCalProps>(({ selectedIso, displayMonth, onChangeM
       </div>
     </div>
   );
+
+  return anchorRect ? ReactDOM.createPortal(calendar, document.body) : calendar;
 });
 MiniCal.displayName = 'MiniCal';
 
@@ -641,6 +660,7 @@ const Programacao: React.FC = () => {
   const printScrollRef = useRef<HTMLDivElement>(null);
   const [calendarForId, setCalendarForId] = useState<string | null>(null);
   const [calendarMonth, setCalendarMonth] = useState<string>('');
+  const [calendarAnchorRect, setCalendarAnchorRect] = useState<DOMRect | undefined>(undefined);
 
   // ── ERP quick-search (orders not yet in view) ────────────────────────────────
   const [erpQuickSearch, setErpQuickSearch] = useState<ErpRow[]>([]);
@@ -1951,10 +1971,11 @@ const Programacao: React.FC = () => {
                                 className="w-24 border border-r-0 border-input rounded-l px-2 py-1 text-xs bg-background focus:outline-none focus:ring-1 focus:ring-primary text-center"
                               />
                               <button
-                                onClick={() => {
+                                onClick={(e) => {
                                   const cur = printOverrides.get(p.pedidoId) ?? p.dataEmbarqueProgramacao ?? '';
                                   const month = cur ? cur.slice(0, 7) : new Date().toISOString().slice(0, 7);
                                   setCalendarMonth(month);
+                                  setCalendarAnchorRect(e.currentTarget.getBoundingClientRect());
                                   setCalendarForId(prev => prev === p.pedidoId ? null : p.pedidoId);
                                 }}
                                 className="border border-input rounded-r bg-muted h-[26px] w-7 flex items-center justify-center shrink-0 hover:bg-muted/80 transition-colors"
@@ -1968,6 +1989,7 @@ const Programacao: React.FC = () => {
                                   onChangeMonth={setCalendarMonth}
                                   onSelect={iso => void savePrintDate(p.pedidoId, iso)}
                                   onClose={() => setCalendarForId(null)}
+                                  anchorRect={calendarAnchorRect}
                                 />
                               )}
                             </div>
