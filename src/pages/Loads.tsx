@@ -139,10 +139,6 @@ const LoadsPage = () => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
   };
 
-  const toggleAll = () => {
-    setSelectedIds((prev) => (prev.length === loads.length ? [] : loads.map((l) => l.id)));
-  };
-
   const textGetters: Array<(item: Load) => unknown> = useMemo(
     () => [
       (l: Load) => l.id,
@@ -208,6 +204,16 @@ const LoadsPage = () => {
     }
     return sorted;
   }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs, orderNumFilter, dateFrom, dateTo]);
+
+  const toggleAll = () => {
+    const visibleIds = filteredAndSorted.map((l) => l.id);
+    const allVisibleSelected = visibleIds.every((id) => selectedIds.includes(id));
+    setSelectedIds((prev) =>
+      allVisibleSelected
+        ? prev.filter((id) => !visibleIds.includes(id))
+        : [...new Set([...prev, ...visibleIds])]
+    );
+  };
 
   const allOrdersMap = useMemo(() => {
     const m = new Map<string, Order>();
@@ -471,7 +477,7 @@ const LoadsPage = () => {
                 <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
                   <input
                     type="checkbox"
-                    checked={selectedIds.length === loads.length && loads.length > 0}
+                    checked={filteredAndSorted.length > 0 && filteredAndSorted.every((l) => selectedIds.includes(l.id))}
                     onChange={toggleAll}
                   />
                 </th>
