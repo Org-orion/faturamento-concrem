@@ -107,8 +107,9 @@ const LoadsPage = () => {
     })();
   }, [loads, orders.length, supportOrders.length]);
 
-  // Mapa direto ao ERP para total_pedido_venda — fonte autoritativa de valor
+  // Mapa direto ao ERP — fonte autoritativa de valor, empresa e UF para o PDF
   const [loadsOrderValueMap, setLoadsOrderValueMap] = useState<Map<string, number>>(new Map());
+  const [loadsOrderDetailsMap, setLoadsOrderDetailsMap] = useState<Map<string, { company: string; uf: string }>>(new Map());
   useEffect(() => {
     if (!loads.length || !supabasePedidos) return;
     const allOrderIds = Array.from(new Set(loads.flatMap((l) => l.orderIds)));
@@ -119,13 +120,22 @@ const LoadsPage = () => {
     for (let i = 0; i < allOrderIds.length; i += BATCH) chunks.push(allOrderIds.slice(i, i + BATCH));
     Promise.all(chunks.map((batch) =>
       supabasePedidos!.from(table)
-        .select('numero_pedido, total_pedido_venda, id_nota_conf')
+        .select('numero_pedido, total_pedido_venda, id_nota_conf, cliente_nome, cliente_uf')
         .in('numero_pedido', batch)
         .then(({ data }) => data || [])
     )).then((results) => {
-      const m = new Map<string, number>();
-      for (const row of results.flat()) m.set(String(row.numero_pedido), getValorTotalPedido(row));
-      setLoadsOrderValueMap(m);
+      const vm = new Map<string, number>();
+      const dm = new Map<string, { company: string; uf: string }>();
+      for (const row of results.flat()) {
+        const id = String(row.numero_pedido);
+        vm.set(id, getValorTotalPedido(row));
+        dm.set(id, {
+          company: (row.cliente_nome || '-').toUpperCase(),
+          uf: (row.cliente_uf || '-').toUpperCase(),
+        });
+      }
+      setLoadsOrderValueMap(vm);
+      setLoadsOrderDetailsMap(dm);
     }).catch((err) => console.error('[Loads] loadsOrderValueMap:', err));
   }, [loads]);
 
@@ -236,14 +246,16 @@ const LoadsPage = () => {
       const orderRows: ReportGroup['rows'] = [];
 
       for (const orderId of load.orderIds) {
+        // Usa o ERP como fonte primária para garantir que TODOS os pedidos do
+        // carregamento entrem no PDF — mesmo os que não estão em allOrdersMap
+        // (ex: pedidos antigos não carregados no AppContext).
+        const erpDetails = loadsOrderDetailsMap.get(orderId);
         const src = allOrdersMap.get(orderId);
-        if (!src) continue;
-
         orderRows.push({
-          orderId: src.id,
-          company: (src.clientName || src.clientCode || '-').toUpperCase(),
-          uf: (src.clientUF || '-').toUpperCase(),
-          value: loadsOrderValueMap.get(src.id) || 0,
+          orderId,
+          company: erpDetails?.company ?? (src ? (src.clientName || src.clientCode || '-').toUpperCase() : orderId),
+          uf: erpDetails?.uf ?? (src ? (src.clientUF || '-').toUpperCase() : '-'),
+          value: loadsOrderValueMap.get(orderId) || 0,
         });
       }
 
@@ -255,7 +267,7 @@ const LoadsPage = () => {
     // Ordena por data ISO (YYYY-MM-DD) para garantir ordem cronológica correta
     groups.sort((a, b) => (a.rawDate || '').localeCompare(b.rawDate || '') || a.loadId.localeCompare(b.loadId, undefined, { numeric: true }));
     return groups;
-  }, [selectedIds, loads, drivers, allOrdersMap, loadsOrderValueMap]);
+  }, [selectedIds, loads, drivers, allOrdersMap, loadsOrderValueMap, loadsOrderDetailsMap]);
 
   // Flat rows for Excel export
   const reportRows = useMemo((): ReportRow[] => {
