@@ -307,7 +307,7 @@ const LoadsPage = () => {
     td.driver { font-weight: 700; text-align: center; vertical-align: middle; font-size: 9px; }
     .right { text-align: right !important; }
     .left { text-align: left !important; }
-    tfoot td { font-weight: 900; background: #f0f0f0; }
+    tr.total-row td { font-weight: 900; background: #f0f0f0; break-before: avoid; }
     @media print { body { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
   </style>
 </head>
@@ -334,20 +334,18 @@ const LoadsPage = () => {
     </thead>
     <tbody>
       ${tableRows}
-    </tbody>
-    <tfoot>
-      <tr>
-        <td colspan="5" class="right">R$</td>
+      <tr class="total-row">
+        <td colspan="5" class="right">TOTAL</td>
         <td class="right">${formatCurrency(totalGeral)}</td>
       </tr>
-    </tfoot>
+    </tbody>
   </table>
 
   <script>window.onload = () => { window.focus(); window.print(); };</script>
 </body>
 </html>`;
 
-    const w = window.open('', '_blank');
+    const w = window.open('', 'relatorio_embarques', 'width=1000,height=700,scrollbars=yes,resizable=yes');
     if (!w) return;
     w.document.open();
     w.document.write(html);
