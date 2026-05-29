@@ -1169,7 +1169,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     await deleteCarregamentoRelatedData(id)
       .catch((e) => console.error('[deleteLoad] deleteCarregamentoRelatedData error', e));
 
-    setPedidoStatusVersion((v) => v + 1);
+    // Remover o carregamento de loads ANTES de incrementar pedidoStatusVersion,
+    // para que idsInOtherLoads no CreateShipment já esteja atualizado quando o
+    // useEffect([pedidoStatusVersion]) recarregar o pedidoStatusMap.
+    setLoads(prev => prev.filter(x => x.id !== id));
 
     // Liberar motorista se não tiver outras cargas ativas
     const hasOtherActiveLoads = loads.some(l =>
@@ -1186,7 +1189,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       ));
     }
 
-    setLoads(prev => prev.filter(x => x.id !== id));
+    setPedidoStatusVersion((v) => v + 1);
 
     await deleteProgramacaoCarregamento(id);
   }, [loads]);
