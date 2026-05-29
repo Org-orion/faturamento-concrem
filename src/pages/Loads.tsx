@@ -35,6 +35,7 @@ type ReportGroup = {
   loadId: string;
   driverName: string;
   date: string;
+  rawDate: string;
   rows: { orderId: string; company: string; uf: string; value: number }[];
 };
 
@@ -247,11 +248,12 @@ const LoadsPage = () => {
       }
 
       if (orderRows.length > 0) {
-        groups.push({ loadId: load.id, driverName, date: dateStr, rows: orderRows });
+        groups.push({ loadId: load.id, driverName, date: dateStr, rawDate: load.plannedDate || '', rows: orderRows });
       }
     }
 
-    groups.sort((a, b) => (a.date || '').localeCompare(b.date || '') || a.loadId.localeCompare(b.loadId));
+    // Ordena por data ISO (YYYY-MM-DD) para garantir ordem cronológica correta
+    groups.sort((a, b) => (a.rawDate || '').localeCompare(b.rawDate || '') || a.loadId.localeCompare(b.loadId, undefined, { numeric: true }));
     return groups;
   }, [selectedIds, loads, drivers, allOrdersMap, loadsOrderValueMap]);
 
@@ -267,13 +269,14 @@ const LoadsPage = () => {
   const handleGeneratePdf = async () => {
     const logoDataUrl = await getLogoDataUrl();
 
-    // Group by load — each carregamento gets a merged motorista cell
+    // Group by load — each carregamento gets merged cells for carregamento/motorista/data
     const tableRows = reportGroups
       .map((g) =>
         g.rows
           .map(
             (r, i) => `
         <tr>
+          ${i === 0 ? `<td rowspan="${g.rows.length}" class="load-id">${g.loadId}</td>` : ''}
           ${i === 0 ? `<td rowspan="${g.rows.length}" class="driver">${g.driverName}</td>` : ''}
           ${i === 0 ? `<td rowspan="${g.rows.length}">${g.date}</td>` : ''}
           <td>${r.uf}</td>
@@ -305,6 +308,7 @@ const LoadsPage = () => {
     th { font-weight: 900; background: #e8e8e8; text-align: center; font-size: 9px; }
     td { text-align: center; vertical-align: middle; }
     td.driver { font-weight: 700; text-align: center; vertical-align: middle; font-size: 9px; }
+    td.load-id { font-weight: 900; text-align: center; vertical-align: middle; font-size: 9px; color: #1a56db; }
     .right { text-align: right !important; }
     .left { text-align: left !important; }
     tr.total-row td { font-weight: 900; background: #f0f0f0; break-before: avoid; }
@@ -324,18 +328,19 @@ const LoadsPage = () => {
   <table>
     <thead>
       <tr>
-        <th style="width:14%">MOTORISTA</th>
+        <th style="width:10%">CARREGAMENTO</th>
+        <th style="width:13%">MOTORISTA</th>
         <th style="width:7%">DATA</th>
-        <th style="width:5%">UF</th>
-        <th style="width:9%">Nº PEDIDO</th>
-        <th style="width:42%">EMPRESA</th>
+        <th style="width:4%">UF</th>
+        <th style="width:8%">Nº PEDIDO</th>
+        <th style="width:45%">EMPRESA</th>
         <th style="width:13%">VALOR</th>
       </tr>
     </thead>
     <tbody>
       ${tableRows}
       <tr class="total-row">
-        <td colspan="5" class="right">TOTAL</td>
+        <td colspan="6" class="right">TOTAL</td>
         <td class="right">${formatCurrency(totalGeral)}</td>
       </tr>
     </tbody>
