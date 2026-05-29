@@ -10,8 +10,21 @@ import {
   ChevronLeft, ChevronRight, Truck, Package, DollarSign,
   Search, X, Pencil, Calendar, CalendarCheck, User, FileText,
   Paperclip, Trash2, Upload, Save, ExternalLink,
-  Target, TrendingUp, TrendingDown, AlertTriangle,
+  Target, TrendingUp, TrendingDown, AlertTriangle, FileDown,
 } from 'lucide-react';
+import logoSrc from '@/assets/logo-programacao.png';
+
+const getLogoDataUrl = async (): Promise<string> => {
+  try {
+    const res = await fetch(logoSrc);
+    const blob = await res.blob();
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(reader.result as string);
+      reader.readAsDataURL(blob);
+    });
+  } catch { return ''; }
+};
 import type { Load } from '@/types';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeDot, PrioridadeBadge } from '@/components/pedidos/PrioridadeBadge';
@@ -207,7 +220,7 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, or
 
 function DayColumn({
   dateStr, loads, driverMap, today, canEdit, prioMap, orderValueMap,
-  onLoadClick, onDropLoad, dragOverDate, setDragOverDate,
+  onLoadClick, onDropLoad, dragOverDate, setDragOverDate, onExportPdf,
 }: {
   dateStr: string;
   loads: Load[];
@@ -220,6 +233,7 @@ function DayColumn({
   onDropLoad: (loadId: string, newDate: string) => void;
   dragOverDate: string | null;
   setDragOverDate: (d: string | null) => void;
+  onExportPdf?: (dateStr: string) => void;
 }) {
   const d = parseISO(dateStr);
   const dayName = DAYS_BR[d.getDay()];
@@ -255,8 +269,18 @@ function DayColumn({
         <div className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{dayName}</div>
         <div className={`text-lg font-bold leading-none mt-0.5 ${isToday ? 'text-primary' : 'text-foreground'}`}>{dayNum}</div>
         {loads.length > 0 && (
-          <div className="mt-1">
+          <div className="mt-1 flex items-center justify-center gap-1.5">
             <div className="text-[9px] font-semibold text-emerald-600">{formatCurrency(dayTotal)}</div>
+            {onExportPdf && (
+              <button
+                type="button"
+                title="Exportar PDF do dia"
+                onClick={(e) => { e.stopPropagation(); onExportPdf(dateStr); }}
+                className="p-0.5 rounded hover:bg-muted/60 text-muted-foreground/60 hover:text-foreground transition-colors"
+              >
+                <FileDown className="h-3 w-3" />
+              </button>
+            )}
           </div>
         )}
       </div>
@@ -985,6 +1009,80 @@ const CarregamentoDashboard = () => {
   const listDates = useMemo(() => Array.from(loadsByDate.keys()).sort(), [loadsByDate]);
 
   // ── drag and drop ──
+  const generateDayPdf = async (dateStr: string) => {
+    const dayLoads = loadsByDate.get(dateStr) || [];
+    if (!dayLoads.length) return;
+    const logoDataUrl = await getLogoDataUrl();
+    const [y, m, d] = dateStr.split('-');
+    const dateLabel = `${d}/${m}/${y}`;
+
+    const tableRows = dayLoads.map((l) => {
+      const driverName = (driverMap.get(l.driverId) || 'Sem motorista').toUpperCase();
+      return l.orderIds.map((orderId, i) => {
+        const det = weekOrderDetailsMap.get(orderId);
+        const val = weekOrderValueMap.get(orderId) || 0;
+        return `<tr>
+          ${i === 0 ? `<td rowspan="${l.orderIds.length}" class="load-id">${l.id}</td>` : ''}
+          ${i === 0 ? `<td rowspan="${l.orderIds.length}" class="driver">${driverName}</td>` : ''}
+          <td>${det?.uf ?? '-'}</td>
+          <td>${orderId}</td>
+          <td class="left">${det?.company ?? orderId}</td>
+          <td class="right">${formatCurrency(val)}</td>
+        </tr>`;
+      }).join('');
+    }).join('');
+
+    const totalGeral = dayLoads.reduce((s, l) =>
+      s + l.orderIds.reduce((a, id) => a + (weekOrderValueMap.get(id) || 0), 0), 0);
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"/>
+<title>EMBARQUES ${dateLabel}</title>
+<style>
+  @page{size:A4;margin:10mm 12mm}*{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:Arial,Helvetica,sans-serif;color:#000;font-size:10px}
+  .header{display:flex;align-items:center;border:2px solid #000;margin-bottom:0}
+  .header-logo{padding:8px 14px;border-right:2px solid #000;display:flex;align-items:center}
+  .header-logo img{height:48px}
+  .header-title{flex:1;text-align:center;padding:8px 14px}
+  .header-title h1{font-size:13px;font-weight:900;letter-spacing:.5px;margin:0}
+  table{width:100%;border-collapse:collapse;font-size:10px;text-transform:uppercase}
+  th,td{border:1px solid #000;padding:5px 6px}
+  th{font-weight:900;background:#e8e8e8;text-align:center;font-size:9px}
+  td{text-align:center;vertical-align:middle}
+  td.driver{font-weight:700;text-align:center;vertical-align:middle;font-size:9px}
+  td.load-id{font-weight:900;text-align:center;vertical-align:middle;font-size:9px;color:#1a56db}
+  .right{text-align:right!important}.left{text-align:left!important}
+  tr.total-row td{font-weight:900;background:#f0f0f0;break-before:avoid}
+  @media print{body{-webkit-print-color-adjust:exact;print-color-adjust:exact}}
+</style></head><body>
+<div class="header">
+  <div class="header-logo">${logoDataUrl ? `<img src="${logoDataUrl}" alt="CONCREM"/>` : '<strong style="font-size:18px;">CONCREM</strong>'}</div>
+  <div class="header-title"><h1>RELATÓRIO DE EMBARQUES — ${dateLabel}<br/>CONCREM INDUSTRIAL LTDA</h1></div>
+</div>
+<table>
+  <thead><tr>
+    <th style="width:10%">CARREGAMENTO</th>
+    <th style="width:13%">MOTORISTA</th>
+    <th style="width:4%">UF</th>
+    <th style="width:8%">Nº PEDIDO</th>
+    <th style="width:52%">EMPRESA</th>
+    <th style="width:13%">VALOR</th>
+  </tr></thead>
+  <tbody>
+    ${tableRows}
+    <tr class="total-row"><td colspan="5" class="right">TOTAL</td><td class="right">${formatCurrency(totalGeral)}</td></tr>
+  </tbody>
+</table>
+<script>window.onload=()=>{window.focus();window.print();};</script>
+</body></html>`;
+
+    const w = window.open('', 'embarques_dia', 'width=1000,height=700,scrollbars=yes,resizable=yes');
+    if (!w) return;
+    w.document.open();
+    w.document.write(html);
+    w.document.close();
+  };
+
   const handleDropLoad = async (loadId: string, newDate: string) => {
     const load = loads.find((l) => l.id === loadId);
     if (!load) return;
@@ -1077,6 +1175,7 @@ const CarregamentoDashboard = () => {
 
   // ── week order values ──
   const [weekOrderValueMap, setWeekOrderValueMap] = useState<Map<string, number>>(new Map());
+  const [weekOrderDetailsMap, setWeekOrderDetailsMap] = useState<Map<string, { company: string; uf: string }>>(new Map());
   const lastFetchKey = useRef('');
 
   const weekOrderIds = useMemo(() => {
@@ -1093,13 +1192,17 @@ const CarregamentoDashboard = () => {
     const chunks: string[][] = [];
     for (let i = 0; i < weekOrderIds.length; i += BATCH) chunks.push(weekOrderIds.slice(i, i + BATCH));
     Promise.all(chunks.map((batch) =>
-      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, id_nota_conf').in('numero_pedido', batch).then(({ data }) => data || [])
+      supabasePedidos!.from(table).select('numero_pedido, total_pedido_venda, id_nota_conf, cliente_nome, cliente_uf').in('numero_pedido', batch).then(({ data }) => data || [])
     )).then((results) => {
-      const m = new Map<string, number>();
+      const vm = new Map<string, number>();
+      const dm = new Map<string, { company: string; uf: string }>();
       for (const row of results.flat()) {
-        m.set(String(row.numero_pedido), getValorTotalPedido(row));
+        const id = String(row.numero_pedido);
+        vm.set(id, getValorTotalPedido(row));
+        dm.set(id, { company: (row.cliente_nome || '-').toUpperCase(), uf: (row.cliente_uf || '-').toUpperCase() });
       }
-      setWeekOrderValueMap(m);
+      setWeekOrderValueMap(vm);
+      setWeekOrderDetailsMap(dm);
     }).catch((err) => console.error('[CarregamentoDashboard] weekOrderValues:', err));
   }, [weekOrderIds]);
 
@@ -1547,7 +1650,8 @@ const CarregamentoDashboard = () => {
               <DayColumn key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
                 today={today} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={weekOrderValueMap}
                 onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
-                dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
+                dragOverDate={dragOverDate} setDragOverDate={setDragOverDate}
+                onExportPdf={generateDayPdf} />
             ))}
           </div>
         </div>
