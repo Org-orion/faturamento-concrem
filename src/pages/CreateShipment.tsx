@@ -1174,7 +1174,7 @@ const CreateShipment = () => {
           showToast(`Falha ao enviar para ${repDisplayName} (${phoneRaw}): ${result.error}`, 'error');
         }
 
-        // Avançar para faturado com notificação — apenas no primeiro número para evitar duplicatas de status
+        // Avançar para faturado SEM notificação — a mensagem principal já foi enviada acima
         if (phoneRaw === validPhones[0].raw) {
           for (const order of repOrders) {
             const statusAtual = currentStatusesForSend.find(s => s.pedido_id === order.id)?.status_atual as string | undefined;
@@ -1186,7 +1186,7 @@ const CreateShipment = () => {
                 statusNovo: 'faturado',
                 alteradoPor: user?.username || null,
                 observacao: 'Relatório de entrega enviado ao representante',
-                notifyRepresentante: true,
+                notifyRepresentante: false,
                 representantePhoneRaw: repPhoneRaw || null,
                 representanteNome: repName || null,
                 clienteNome: order.clientName || order.clientCode || 'Cliente',
