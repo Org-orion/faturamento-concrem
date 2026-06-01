@@ -1120,8 +1120,8 @@ const CreateShipment = () => {
       message += `🚚 Carregamento do dia ${dataEmbarque}\n\n`;
       message += `📦\n`;
       for (const order of repOrders) {
-        const nf = invoiceNumbers[order.id] || 'S/N';
-        message += `• ${nf} - ${repDisplayName}\n`;
+        const clientName = (order.clientName || order.clientCode || '-').trim();
+        message += `• ${order.id} - ${clientName}\n`;
       }
       message += `\n📅 Entrega prevista a partir de ${dataPrevisaoEntrega}\n\n`;
       message += `📞 Para mais detalhes, fale direto com o motorista:\n`;
@@ -1139,7 +1139,8 @@ const CreateShipment = () => {
           const suffix = idx === 0 ? '' : `_${idx + 1}`;
           docAttachs.push({ url: b.url, label: `Boleto${suffix}-${order.id}.pdf` });
         });
-        if (attachs.nf?.url) docAttachs.push({ url: attachs.nf.url, label: `NotaFiscal-${order.id}.pdf` });
+        const nfNum = invoiceNumbers[order.id];
+        if (attachs.nf?.url) docAttachs.push({ url: attachs.nf.url, label: `NotaFiscal-${nfNum || order.id}.pdf` });
       }
 
       // Buscar status atual antes do envio para usar em todo o bloco
