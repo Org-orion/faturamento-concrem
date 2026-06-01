@@ -80,7 +80,7 @@ const Financial = () => {
 
   // A load is pending when: shipmentStatus === 'Entregue' OR all its orders have status 'entregue'
   // AND it has no FreightEntry yet
-  const pendingLoads = useMemo(() => {
+  const pendingLoadsAll = useMemo(() => {
     return loads.filter(l => {
       if (entryByLoadId.has(l.id)) return false;
       if (l.orderIds.length === 0) return false;
@@ -88,6 +88,15 @@ const Financial = () => {
       return l.orderIds.every(oid => pedidoStatusMap.get(oid) === 'entregue');
     });
   }, [loads, entryByLoadId, pedidoStatusMap]);
+
+  const pendingLoads = useMemo(() => {
+    const pendingTextGetters = [
+      (l: typeof pendingLoadsAll[0]) => l.id,
+      (l: typeof pendingLoadsAll[0]) => l.orderIds.join(' '),
+      (l: typeof pendingLoadsAll[0]) => drivers.find(d => d.id === l.driverId)?.name ?? '',
+    ];
+    return filterPendingItems(pendingLoadsAll, pendingTextGetters);
+  }, [pendingLoadsAll, filterPendingItems, drivers]);
 
   // For backward compat: keep deliveredOrders/pendingOrders for the form dropdown
   const deliveredOrOrderIds = useMemo(() => {
