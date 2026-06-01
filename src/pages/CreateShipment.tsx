@@ -584,9 +584,14 @@ const CreateShipment = () => {
 
       if (!(isAllowedStatus || isCurrentInEdit) || selectedOrderIds.includes(o.id)) return false;
 
+      // Representante de testes — sempre visível, bypassa filtros de data e situação de entrega
+      const TEST_REP_CODES = new Set(['10008064']);
+      const repCode = String(o.representativeId || '').trim().split(/[\s-]/)[0];
+      const isTestRep = TEST_REP_CODES.has(repCode);
+
       // Pedidos com situacao_entrega = "Totalmente Entregue" não devem aparecer no carregamento,
       // exceto se o OPS explicitamente tem liberado_producao (reversão manual ou do mês corrente).
-      if (o.situacaoEntrega === 'Totalmente Entregue' && pedidoStatus !== 'liberado_producao') return false;
+      if (!isTestRep && o.situacaoEntrega === 'Totalmente Entregue' && pedidoStatus !== 'liberado_producao') return false;
 
       // Filtro de corte por data de emissão — só para pedidos que vieram do AppContext (não do OPS direto).
       // Pedidos do OPS (directPedidos) têm status explícito e devem aparecer independente da data.
@@ -594,7 +599,7 @@ const CreateShipment = () => {
       // que nunca foram movidos para status terminal, inflando a tela de carregamento.
       // TODO: remover após migration de limpeza no OPS (coluna archived_at).
       const fromDirect = directPedidos.some((d) => d.id === o.id);
-      if (!fromDirect) {
+      if (!isTestRep && !fromDirect) {
         const _clientUpper = (o.clientName || '').toUpperCase();
         const _dateCorte = _clientUpper.includes('LEROY MERLIN') ? '2026-01-01' : '2025-01-06';
         if (o.date < _dateCorte) return false;
