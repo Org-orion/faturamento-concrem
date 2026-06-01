@@ -586,7 +586,8 @@ const CreateShipment = () => {
 
       // Representante de testes — sempre visível, bypassa filtros de data e situação de entrega
       const TEST_REP_CODES = new Set(['10008064']);
-      const repCode = String(o.representativeId || '').trim().split(/[\s-]/)[0];
+      const repStr = String(o.representativeName || o.representativeId || '').trim();
+      const repCode = repStr.split(/[\s\-–]+/)[0];
       const isTestRep = TEST_REP_CODES.has(repCode);
 
       // Pedidos com situacao_entrega = "Totalmente Entregue" não devem aparecer no carregamento,
