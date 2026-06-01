@@ -1,4 +1,4 @@
-import React, { Suspense, lazy } from 'react';
+import React, { Suspense, lazy, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AppProvider, useApp } from '@/contexts/AppContext';
 import { ToastProvider } from '@/components/ToastProvider';
@@ -48,9 +48,20 @@ const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   return <MainLayout>{children}</MainLayout>;
 };
 
+const UrlCleaner = () => {
+  const location = useLocation();
+  useEffect(() => {
+    if (location.pathname !== '/login' && location.pathname !== '/painel-tv') {
+      window.history.replaceState(null, '', '/');
+    }
+  }, [location.pathname]);
+  return null;
+};
+
 const AppRoutes = () => {
   return (
     <Suspense fallback={<SkeletonLoader />}>
+      <UrlCleaner />
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/acesso-negado" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
