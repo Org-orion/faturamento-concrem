@@ -196,13 +196,16 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, or
     >
       <div className={`w-1 shrink-0 ${leftClass}`} />
       <div className="flex-1 p-3 min-w-0">
-        <div className="flex items-start justify-between gap-2 mb-1.5">
+        <div className="flex items-start justify-between gap-2 mb-1">
           <div className="flex items-center gap-1.5 min-w-0">
             <Truck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
             <span className="text-xs font-semibold truncate text-foreground group-hover:text-primary">{driverName}</span>
           </div>
           <span className={`hidden sm:inline-flex shrink-0 items-center text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${colorClass}`}>{STATUS_ABBR[status] ?? status}</span>
         </div>
+        {load.obs && (
+          <p className="text-[11px] font-bold text-foreground truncate mb-1 uppercase tracking-wide" title={load.obs}>{load.obs}</p>
+        )}
         <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-muted-foreground">
           {priorityNivel && <span className="flex items-center gap-1"><PrioridadeDot nivel={priorityNivel as any} /></span>}
           <span className="flex items-center gap-1"><Package className="h-3 w-3" />{load.orderIds.length} pedido{load.orderIds.length !== 1 ? 's' : ''}</span>

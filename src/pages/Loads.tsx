@@ -533,7 +533,12 @@ const LoadsPage = () => {
                         onChange={() => toggleSelect(load.id)}
                       />
                     </td>
-                    <td className="py-4 px-6 font-mono-data font-bold text-primary">{load.id}</td>
+                    <td className="py-4 px-6">
+                      <span className="font-mono-data font-bold text-primary">{load.id}</span>
+                      {load.obs && (
+                        <p className="text-[11px] text-muted-foreground mt-0.5 max-w-[180px] truncate" title={load.obs}>{load.obs}</p>
+                      )}
+                    </td>
                     <td className="w-32 py-2 text-center align-middle">
                       <div className="flex items-center justify-center gap-1 flex-wrap">
                         {load.orderIds.filter(id => prioMap.has(id)).map(id => (

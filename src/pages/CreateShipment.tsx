@@ -61,6 +61,7 @@ const CreateShipment = () => {
   const [shipmentDate, setShipmentStatusDate] = useState(todayBR());
   const [realizationDate, setRealizationDate] = useState('');
   const [previsaoEntregaDate, setPrevisaoEntregaDate] = useState(todayBR());
+  const [obs, setObs] = useState('');
   const [selectedOrderIds, setSelectedOrderIds] = useState<string[]>([]);
   const [deliveredOrderIds, setDeliveredOrderIds] = useState<string[]>([]);
 
@@ -210,6 +211,7 @@ const CreateShipment = () => {
         setShipmentStatusDate(loadToEdit.plannedDate || todayBR());
         setRealizationDate(loadToEdit.realizationDate || '');
         setPrevisaoEntregaDate(loadToEdit.previsaoEntrega || todayBR());
+        setObs(loadToEdit.obs || '');
       } else {
         showToast('Carregamento não encontrado.', 'error');
         navigate('/carregamento');
@@ -1746,6 +1748,7 @@ const CreateShipment = () => {
           plannedDate: shipmentDate,
           realizationDate: realizationDate || undefined,
           previsaoEntrega: previsaoEntregaDate,
+          obs,
           shipmentStatus: shipmentStatus,
           estimatedWeight: totals.weight,
           freightValue: finalFreightValue,
@@ -1766,7 +1769,7 @@ const CreateShipment = () => {
           plannedDate: shipmentDate,
           realizationDate: realizationDate || undefined,
           previsaoEntrega: previsaoEntregaDate,
-          obs: '',
+          obs,
           productionStatus: 'Aguardando Produção',
           shipmentStatus: shipmentStatus,
           estimatedWeight: totals.weight,
@@ -1911,9 +1914,9 @@ const CreateShipment = () => {
             </FormField>
 
             <FormField label="Status da Programação">
-              <select 
-                className={inputClass} 
-                value={shipmentStatus} 
+              <select
+                className={inputClass}
+                value={shipmentStatus}
                 onChange={e => setShipmentStatus(e.target.value as ShipmentStatus)}
               >
                 <option value="Aguardando Despacho">Aguardando Despacho</option>
@@ -1922,6 +1925,18 @@ const CreateShipment = () => {
                 <option value="Entregue">Entregue</option>
                 <option value="Cancelado">Cancelado</option>
               </select>
+            </FormField>
+          </div>
+
+          <div className="mt-4">
+            <FormField label="Observações do Carregamento">
+              <textarea
+                className={`${inputClass} resize-none`}
+                rows={2}
+                placeholder="Observações internas sobre este carregamento..."
+                value={obs}
+                onChange={e => setObs(e.target.value)}
+              />
             </FormField>
           </div>
 
