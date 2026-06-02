@@ -536,7 +536,7 @@ const LoadsPage = () => {
                     <td className="py-4 px-6">
                       <span className="font-mono-data font-bold text-primary">{load.id}</span>
                       {load.obs && (
-                        <p className="text-[11px] text-muted-foreground mt-0.5 max-w-[180px] truncate" title={load.obs}>{load.obs}</p>
+                        <p className="text-[11px] font-bold text-foreground mt-0.5 uppercase tracking-wide truncate" title={load.obs}>{load.obs}</p>
                       )}
                     </td>
                     <td className="w-32 py-2 text-center align-middle">
