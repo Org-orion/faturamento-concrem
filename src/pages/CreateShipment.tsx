@@ -1127,7 +1127,9 @@ const CreateShipment = () => {
       message += `📦\n`;
       for (const order of repOrders) {
         const clientName = (order.clientName || order.clientCode || '-').trim();
-        message += `• ${order.id} - ${clientName}\n`;
+        const nf = invoiceNumbers[order.id];
+        const identifier = nf ? `NF ${nf}` : order.id;
+        message += `• ${identifier} - ${clientName}\n`;
       }
       message += `\n📅 Entrega prevista a partir de ${dataPrevisaoEntrega}\n\n`;
       message += `📞 Para mais detalhes, fale direto com o motorista:\n`;
@@ -1235,7 +1237,7 @@ const CreateShipment = () => {
             statusNovo: 'em_entrega',
             alteradoPor: user?.username || null,
             observacao: null,
-            notifyRepresentante: true,
+            notifyRepresentante: false,
             representantePhoneRaw: repPhoneRaw || null,
             representanteNome: repName || null,
             clienteNome: order.clientName || order.clientCode || 'Cliente',
@@ -1253,6 +1255,18 @@ const CreateShipment = () => {
           criado_por: user?.username || null,
         });
         void insertNotificacaoRepresentante(id, repKey);
+      }
+    }
+
+    // Atualizar previsao_entrega no carregamento com a data definida pelo usuário no modal
+    if (id && toSend.length > 0 && supabaseOps) {
+      const previsaoParaSalvar = toSend[0].previsao || null;
+      if (previsaoParaSalvar) {
+        await supabaseOps
+          .from('concrem_programacoes_embarque')
+          .update({ previsao_entrega: previsaoParaSalvar })
+          .eq('id', id);
+        setPrevisaoEntregaDate(previsaoParaSalvar);
       }
     }
 

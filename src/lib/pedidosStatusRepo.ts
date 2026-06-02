@@ -464,6 +464,11 @@ export async function setPedidoStatusWithOptionalNotify(params: {
     return { ok: false, previous: statusAnterior, notified: false, notifyError: null };
   }
 
+  // No-op: mesmo status, não grava histórico duplicado
+  if (statusAnterior === params.statusNovo) {
+    return { ok: true, previous: statusAnterior, notified: false, notifyError: null };
+  }
+
   // Only advance status_atual — never let it go backwards
   const newOrder = getPedidoStatusDef(params.statusNovo).order;
   const currentOrder = statusAnterior ? getPedidoStatusDef(statusAnterior).order : 0;
@@ -609,26 +614,6 @@ export function formatStatusWhatsappMessage(params: {
       '',
       `🔄 De: ${statusAnteriorLabel}`,
       `🏭 Para: ${statusNovoLabel}`,
-      '',
-      `🕒 ${when}`,
-    ];
-  } else if (statusNovo === 'em_entrega') {
-    lines = [
-      'Olá! 👋',
-      '',
-      `Seu pedido ${numeroPedido} — ${clienteNome} já saiu para entrega 🚚`,
-      '',
-      '📍 Ele está em rota para o destino.',
-      '',
-      `🕒 ${when}`,
-    ];
-  } else if (statusNovo === 'faturado') {
-    lines = [
-      'Olá! 👋',
-      '',
-      `O pedido ${numeroPedido} — ${clienteNome} foi faturado ✅`,
-      '',
-      '📎 Nota fiscal e boleto seguem em anexo.',
       '',
       `🕒 ${when}`,
     ];
