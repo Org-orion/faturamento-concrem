@@ -17,6 +17,9 @@ const opsAnonKey = (import.meta.env.VITE_SUPABASE_OPS_KEY || import.meta.env.SUP
 
 export const supabasePedidos = pedidosUrl && pedidosAnonKey ? createClient(pedidosUrl, pedidosAnonKey) : null;
 
-export const supabaseOps = opsUrl && opsAnonKey ? createClient(opsUrl, opsAnonKey) : null;
+// Reutiliza o mesmo cliente quando OPS aponta para a mesma URL que Pedidos
+export const supabaseOps = opsUrl && opsAnonKey
+  ? (opsUrl === pedidosUrl && opsAnonKey === pedidosAnonKey ? supabasePedidos : createClient(opsUrl, opsAnonKey))
+  : null;
 
 export const supabase = supabasePedidos;

@@ -49,6 +49,9 @@ async function fetchPainelStatusRows(): Promise<PedidoStatusRow[]> {
   return all;
 }
 
+// id_nota_conf válidos: 307/309 = venda, 613/665 = suporte
+const VALID_NOTA_CONF = new Set([307, 309, 613, 665]);
+
 async function fetchExtraPedidosInParallel(missingIds: string[]): Promise<UnifiedPedido[]> {
   if (!supabasePedidos || !missingIds.length) return [];
   const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
@@ -61,7 +64,7 @@ async function fetchExtraPedidosInParallel(missingIds: string[]): Promise<Unifie
   const rows = responses.flatMap((res) => {
     if (res.error) { console.error('[PainelPedidos] fetchExtraPedidosInParallel batch error:', res.error.message); return []; }
     return (res.data || []) as any[];
-  });
+  }).filter((row: any) => VALID_NOTA_CONF.has(Number(row.id_nota_conf)));
   return rows.map((row: any) => {
     const o = rowToOrder(row, 'CLI-001');
     return { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', valor: getValorTotalOrder(o), identificacao: o.pedCompraCliente, grupoCliente: o.grupoCliente, previsaoEmbarque: o.previsaoCarregamento, cidade: o.clientCity, uf: o.clientUF };
