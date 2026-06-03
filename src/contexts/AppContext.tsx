@@ -345,10 +345,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     let cancelled = false;
 
     const load = async () => {
-      // Listagem de pedidos SEMPRE usa concrem_pedidos_sistema — único lugar onde
-      // id_nota_conf tem os valores 307/309/613/665 para filtrar corretamente.
-      // VITE_SUPABASE_PEDIDOS_TABLE é reservado para lookups de valor financeiro.
-      const table = 'concrem_pedidos_sistema';
+      const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
 
       const columns = tableColumns;
       const dataCorte = getDataCorte(14); // últimos 14 meses
@@ -374,7 +371,11 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       const suporte: SupportOrder[] = suporteRes.error ? [] : suporteRes.data.map((row: any) => rowToSupportOrder(row));
 
       if (venda.length === 0 && suporte.length === 0) {
+        // Fallback mantém o filtro de id_nota_conf para nunca carregar pedidos fora dos tipos válidos.
+        // O fallback sem filtro era a causa de pedidos com id_nota_conf inválido (ex: 203) entrarem no sistema.
+        const combinedOr = `${vendasOr},${suporteOr}`;
         const { data: fallbackData, error: fallbackErr } = await supabasePedidos.from(table).select(columns)
+          .or(combinedOr)
           .gte('data_emissao', dataCorte)
           .order('data_emissao', { ascending: false })
           .range(0, ORDERS_PAGE_SIZE - 1);
@@ -906,8 +907,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const nextPage = ordersPageRef.current + 1;
     const from = nextPage * ORDERS_PAGE_SIZE;
     const to = from + ORDERS_PAGE_SIZE - 1;
-    // loadMoreOrders também usa concrem_pedidos_sistema para manter o filtro id_nota_conf correto
-    const table = 'concrem_pedidos_sistema';
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
     const defaultClientId = sampleClients[0]?.id || 'CLI-001';
     try {
       const [vendasRes, suporteRes] = await Promise.all([
