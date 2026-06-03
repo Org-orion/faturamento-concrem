@@ -345,7 +345,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     let cancelled = false;
 
     const load = async () => {
-      const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+      // Listagem de pedidos SEMPRE usa concrem_pedidos_sistema — único lugar onde
+      // id_nota_conf tem os valores 307/309/613/665 para filtrar corretamente.
+      // VITE_SUPABASE_PEDIDOS_TABLE é reservado para lookups de valor financeiro.
+      const table = 'concrem_pedidos_sistema';
 
       const columns = tableColumns;
       const dataCorte = getDataCorte(14); // últimos 14 meses
@@ -903,7 +906,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     const nextPage = ordersPageRef.current + 1;
     const from = nextPage * ORDERS_PAGE_SIZE;
     const to = from + ORDERS_PAGE_SIZE - 1;
-    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    // loadMoreOrders também usa concrem_pedidos_sistema para manter o filtro id_nota_conf correto
+    const table = 'concrem_pedidos_sistema';
     const defaultClientId = sampleClients[0]?.id || 'CLI-001';
     try {
       const [vendasRes, suporteRes] = await Promise.all([
