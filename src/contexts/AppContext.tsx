@@ -609,6 +609,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   });
 
+  // On session restore: if grupoId is set but funcionalidades is null, reload from DB
+  useEffect(() => {
+    if (!user || !user.grupoId || user.funcionalidades !== null) return;
+    getGrupoById(user.grupoId).then((grupo) => {
+      if (!grupo?.funcionalidades?.length) return;
+      const updated = { ...user, funcionalidades: grupo.funcionalidades };
+      setUser(updated);
+      sessionStorage.setItem('auth_user', JSON.stringify(updated));
+    }).catch(() => {});
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   const login = useCallback(async (username: string, password: string) => {
     if (supabaseOps) {
       try {
