@@ -180,7 +180,7 @@ export const Sidebar: React.FC = () => {
   }, [location.pathname]);
 
   const isActive = (href: string) => {
-    if (href === '/') return location.pathname === '/';
+    if (href === '/' || href === '/dashboard') return location.pathname === '/' || location.pathname === '/dashboard';
     return location.pathname.startsWith(href);
   };
 

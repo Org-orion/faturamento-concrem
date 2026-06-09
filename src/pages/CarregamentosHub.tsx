@@ -2,7 +2,8 @@ import React, { useMemo } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/contexts/AppContext';
-import { canDo, type UserRole, type AppRouteKey } from '@/utils/access';
+import { canDo, canFazer, type UserRole, type AppRouteKey } from '@/utils/access';
+import { type Funcionalidade } from '@/types/permissions';
 import LoadsPage from '@/pages/Loads';
 import CarregamentoCronograma from '@/pages/CarregamentoDashboard';
 import CarregamentosStats from '@/pages/CarregamentosStats';
@@ -21,6 +22,12 @@ const TAB_ROUTE_KEY: Record<TabKey, AppRouteKey> = {
   dashboard: 'programacao-dashboard',
 };
 
+const TAB_FUNC_KEY: Record<TabKey, Funcionalidade> = {
+  carregamentos: 'carregamento.view',
+  cronograma: 'carregamento.cronograma',
+  dashboard: 'carregamento.dashboard',
+};
+
 const ALL_TABS: TabKey[] = ['carregamentos', 'cronograma', 'dashboard'];
 
 const CarregamentosHub = () => {
@@ -29,9 +36,10 @@ const CarregamentosHub = () => {
 
   const visibleTabs = useMemo(() => {
     if (!user) return ALL_TABS;
-    const role = user.role as UserRole;
     return ALL_TABS.filter((tab) =>
-      canDo(role, user.permissions ?? null, TAB_ROUTE_KEY[tab], 'view'),
+      user.funcionalidades
+        ? canFazer(user.funcionalidades, TAB_FUNC_KEY[tab])
+        : canDo(user.role as UserRole, user.permissions ?? null, TAB_ROUTE_KEY[tab], 'view'),
     );
   }, [user]);
 

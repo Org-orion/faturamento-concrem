@@ -279,7 +279,11 @@ export function canAccessRoute(
       const hubFuncs: Funcionalidade[] = ['comercial.view', 'suporte.view', 'painel_pedidos.view', 'atualizacao_status.view', 'programacao_comercial.view'];
       return hubFuncs.some((f) => funcSet.has(f));
     }
-    if (path.startsWith('/carregamento')) return funcSet.has('carregamento.view');
+    if (path.startsWith('/carregamento')) return (
+      funcSet.has('carregamento.view') ||
+      funcSet.has('carregamento.cronograma') ||
+      funcSet.has('carregamento.dashboard')
+    );
     const routeKey = pathnameToRouteKey(path);
     if (routeKey === null) return true;
     const required = routeToFuncionalidades[routeKey];
@@ -354,7 +358,7 @@ type MenuItemDef = {
 };
 
 const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
-  { routeKey: 'dashboard',                label: 'Dashboard',               href: '/',                          icon: 'dashboard' },
+  { routeKey: 'dashboard',                label: 'Dashboard',               href: '/dashboard',                 icon: 'dashboard' },
   { routeKey: 'pedidos',                  label: 'Pedidos',                  href: '/pedidos',                   icon: 'clipboard-list' },
   { routeKey: 'comercial',               label: 'Pedidos de Venda',         href: '/comercial',                 icon: 'box' },
   { routeKey: 'comercial-liberacao',      label: 'Liberar p/ Produção',      href: '/comercial/liberacao',       icon: 'box' },
@@ -399,7 +403,7 @@ export function getMenuByFuncionalidades(funcionalidades: Funcionalidade[]): Men
     }
   }
 
-  const dashIdx = links.findIndex((l) => 'href' in l && l.href === '/');
+  const dashIdx = links.findIndex((l) => 'href' in l && (l.href === '/' || l.href === '/dashboard'));
   if (hasPedidosHub) {
     links.splice(dashIdx + 1, 0, { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'clipboard-list' });
   }
@@ -421,7 +425,7 @@ export function getMenuByFuncionalidades(funcionalidades: Funcionalidade[]): Men
 function originalMenuForRole(role: UserRole): MenuItem[] {
   if (role === 'ADMIN') {
     return [
-      { type: 'link', label: 'Dashboard', href: '/', icon: 'dashboard' },
+      { type: 'link', label: 'Dashboard', href: '/dashboard', icon: 'dashboard' },
       { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'clipboard-list' },
       { type: 'link', label: 'Prioridades', href: '/prioridades', icon: 'flame' },
       { type: 'link', label: 'Produção', href: '/producao', icon: 'factory' },
@@ -523,7 +527,7 @@ export function getMenuForRole(role: UserRole, permissions?: PagePermission[] | 
   }
 
   // Insert "Pedidos" hub entry right after dashboard (same position as admin menu)
-  const dashIdx = links.findIndex((l) => 'href' in l && l.href === '/');
+  const dashIdx = links.findIndex((l) => 'href' in l && (l.href === '/' || l.href === '/dashboard'));
   if (hasPedidosHub) {
     links.splice(dashIdx + 1, 0, { type: 'link', label: 'Pedidos', href: '/pedidos', icon: 'box' });
   }

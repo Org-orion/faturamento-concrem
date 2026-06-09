@@ -8,6 +8,8 @@ import { canAccessRoute } from '@/utils/access';
 import { PrioridadesProvider } from '@/contexts/PrioridadesContext';
 import { AtencaoProvider } from '@/contexts/AtencaoContext';
 
+const LAST_ROUTE_KEY = 'last_route';
+
 // Lazy loading pages
 const Login = lazy(() => import('@/pages/Login'));
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
@@ -52,10 +54,37 @@ const UrlCleaner = () => {
   const location = useLocation();
   useEffect(() => {
     if (location.pathname !== '/login' && location.pathname !== '/painel-tv') {
+      if (location.pathname !== '/') {
+        sessionStorage.setItem(LAST_ROUTE_KEY, location.pathname);
+      }
       window.history.replaceState(null, '', '/');
     }
   }, [location.pathname]);
   return null;
+};
+
+// On F5 / direct load of '/', redirect to last visited route or first accessible route
+const HomeRedirect = () => {
+  const { isAuthenticated, user } = useApp();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+
+  if (user) {
+    const last = sessionStorage.getItem(LAST_ROUTE_KEY);
+    if (last && last !== '/' && canAccessRoute(user.role, last, user.permissions, user.funcionalidades)) {
+      return <Navigate to={last} replace />;
+    }
+    const candidates = [
+      '/carregamento', '/producao', '/financeiro', '/pedidos',
+      '/comercial', '/prioridades', '/painel-pedidos', '/atualizacao-status', '/painel-tv',
+    ];
+    for (const route of candidates) {
+      if (canAccessRoute(user.role, route, user.permissions, user.funcionalidades)) {
+        return <Navigate to={route} replace />;
+      }
+    }
+  }
+
+  return <Navigate to="/acesso-negado" replace />;
 };
 
 const AppRoutes = () => {
@@ -65,8 +94,8 @@ const AppRoutes = () => {
       <Routes>
         <Route path="/login" element={<Login />} />
         <Route path="/acesso-negado" element={<ProtectedRoute><AccessDenied /></ProtectedRoute>} />
-        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/dashboard" element={<Navigate to="/" replace />} />
+        <Route path="/" element={<HomeRedirect />} />
+        <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/representantes" element={<ProtectedRoute><ClientsPage /></ProtectedRoute>} />
         <Route path="/motoristas" element={<ProtectedRoute><DriversPage /></ProtectedRoute>} />
         <Route path="/comercial/liberacao" element={<ProtectedRoute><ComercialLiberacaoPage /></ProtectedRoute>} />
