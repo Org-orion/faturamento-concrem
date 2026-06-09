@@ -609,15 +609,31 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     }
   });
 
-  // On session restore: if grupoId is set but funcionalidades is null, reload from DB
+  // On session restore: always re-fetch funcionalidades from DB so permission changes take effect immediately
   useEffect(() => {
-    if (!user || !user.grupoId || user.funcionalidades !== null) return;
-    getGrupoById(user.grupoId).then((grupo) => {
-      if (!grupo?.funcionalidades?.length) return;
-      const updated = { ...user, funcionalidades: grupo.funcionalidades };
+    if (!user || !isAuthenticated || !supabaseOps) return;
+    const refresh = async () => {
+      const { data } = await supabaseOps!
+        .from('concrem_usuarios')
+        .select('funcionalidades,grupo_id')
+        .eq('email', user.username)
+        .single();
+      if (!data) return;
+      let newFuncs: Funcionalidade[] | null = null;
+      if (isSuperAdmin(user.username)) {
+        newFuncs = ALL_FUNCIONALIDADES;
+      } else if (Array.isArray(data.funcionalidades) && data.funcionalidades.length > 0) {
+        newFuncs = data.funcionalidades as Funcionalidade[];
+      } else if (data.grupo_id) {
+        const grupo = await getGrupoById(data.grupo_id);
+        newFuncs = grupo?.funcionalidades ?? null;
+      }
+      const grupoId: string | null = data.grupo_id ?? user.grupoId;
+      const updated = { ...user, funcionalidades: newFuncs, grupoId };
       setUser(updated);
       sessionStorage.setItem('auth_user', JSON.stringify(updated));
-    }).catch(() => {});
+    };
+    refresh().catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const login = useCallback(async (username: string, password: string) => {
