@@ -1,5 +1,5 @@
 import { supabaseOps } from '@/lib/supabase';
-import { Funcionalidade } from '@/types/permissions';
+import { Funcionalidade, FuncionalidadesOverride } from '@/types/permissions';
 
 export type RepresentanteRow = {
   id: string;
@@ -53,7 +53,7 @@ export type UsuarioRow = {
   ativo: boolean;
   paginas_acesso: Array<{ route: string; actions: string[] }> | null;
   grupo_id: string | null;
-  funcionalidades: Funcionalidade[] | null;
+  funcionalidades: Funcionalidade[] | FuncionalidadesOverride | null;
   criado_em: string;
   atualizado_em: string;
 };

@@ -335,3 +335,55 @@ export const SUPER_ADMIN_USERNAME = 'kmz';
 export function isSuperAdmin(username: string): boolean {
   return username.toLowerCase() === SUPER_ADMIN_USERNAME;
 }
+
+// ─── Permissões personalizadas por usuário (diff em relação ao grupo) ────────
+
+// Formato salvo em concrem_usuarios.funcionalidades para usuários "personalizado":
+// - null: usa exatamente as permissões do grupo
+// - { add, remove }: diff aplicado sobre as permissões atuais do grupo
+// - Funcionalidade[] (formato legado): snapshot congelado, não acompanha mudanças do grupo
+export type FuncionalidadesOverride = { add: Funcionalidade[]; remove: Funcionalidade[] };
+
+export function isFuncionalidadesOverride(value: unknown): value is FuncionalidadesOverride {
+  return (
+    !!value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    Array.isArray((value as any).add) &&
+    Array.isArray((value as any).remove)
+  );
+}
+
+// Calcula o diff entre o conjunto alvo e a base do grupo. Retorna null se forem idênticos.
+export function diffFuncionalidades(
+  groupBase: Set<Funcionalidade>,
+  target: Set<Funcionalidade>,
+): FuncionalidadesOverride | null {
+  const add = [...target].filter((f) => !groupBase.has(f));
+  const remove = [...groupBase].filter((f) => !target.has(f));
+  if (add.length === 0 && remove.length === 0) return null;
+  return { add, remove };
+}
+
+// Aplica o diff sobre as permissões atuais do grupo.
+export function applyFuncionalidadesOverride(
+  groupFuncs: Funcionalidade[],
+  override: FuncionalidadesOverride,
+): Funcionalidade[] {
+  const result = new Set(groupFuncs);
+  for (const f of override.remove) result.delete(f);
+  for (const f of override.add) result.add(f);
+  return [...result];
+}
+
+// Resolve as permissões efetivas de um usuário a partir das permissões atuais do
+// grupo e do valor armazenado em concrem_usuarios.funcionalidades.
+export function computeEffectiveFuncionalidades(
+  groupFuncs: Funcionalidade[] | null,
+  stored: unknown,
+): Funcionalidade[] | null {
+  if (stored == null) return groupFuncs;
+  if (isFuncionalidadesOverride(stored)) return applyFuncionalidadesOverride(groupFuncs ?? [], stored);
+  if (Array.isArray(stored) && stored.length > 0) return stored as Funcionalidade[];
+  return groupFuncs;
+}

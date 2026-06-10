@@ -4,7 +4,7 @@ import { useToast } from '@/components/ToastProvider';
 import Modal from '@/components/Modal';
 import { FormField, inputClass, btnPrimary, btnDanger, btnSecondary } from '@/components/shared';
 import { UserRole, can } from '@/utils/access';
-import { isSuperAdmin, Funcionalidade, funcionalidadeLabels, funcionalidadeSections } from '@/types/permissions';
+import { isSuperAdmin, Funcionalidade, funcionalidadeLabels, funcionalidadeSections, FuncionalidadesOverride, computeEffectiveFuncionalidades, diffFuncionalidades } from '@/types/permissions';
 import { deleteUsuario, insertUsuario, listUsuarios, updateUsuario, UsuarioPerfilAcesso } from '@/lib/cadastrosOps';
 import { listGrupos, GrupoRow } from '@/lib/gruposRepo';
 import { hashPassword } from '@/lib/password';
@@ -32,7 +32,7 @@ type UserItem = {
   role: UserRole;
   ativo: boolean;
   grupoId: string | null;
-  funcionalidades: Funcionalidade[] | null;
+  funcionalidades: Funcionalidade[] | FuncionalidadesOverride | null;
 };
 
 const roleToPerfil = (r: UserRole): UsuarioPerfilAcesso => {
@@ -156,7 +156,7 @@ const UsersPage = () => {
           role: perfilToRole(r.perfil_acesso),
           ativo: Boolean(r.ativo),
           grupoId: r.grupo_id ?? null,
-          funcionalidades: Array.isArray(r.funcionalidades) ? r.funcionalidades as Funcionalidade[] : null,
+          funcionalidades: r.funcionalidades ?? null,
         })));
       } catch (e: any) {
         showToast(e?.message || 'Falha ao carregar usuários.', 'error');
@@ -185,25 +185,30 @@ const UsersPage = () => {
 
   const resolveGrupoLabel = (u: UserItem): string => {
     if (isSuperAdmin(u.username)) return 'Administrador';
-    if (u.funcionalidades && u.funcionalidades.length > 0) return `Personalizado (${u.funcionalidades.length} funções)`;
+    if (u.funcionalidades != null) {
+      const grupoNome = u.grupoId ? grupos.find((g) => g.id === u.grupoId)?.nome ?? null : null;
+      return grupoNome ? `${grupoNome} (personalizado)` : 'Personalizado';
+    }
     if (u.grupoId) return grupos.find((g) => g.id === u.grupoId)?.nome ?? '—';
     return '—';
   };
 
   const resolveGrupoIsCustom = (u: UserItem) =>
-    !isSuperAdmin(u.username) && u.funcionalidades && u.funcionalidades.length > 0;
+    !isSuperAdmin(u.username) && u.funcionalidades != null;
 
   const openNew = () => { setEditingId(null); setForm(emptyForm); setErrors({}); setModalOpen(true); };
   const openEdit = (id: string) => {
     const u = items.find((x) => x.id === id);
     if (!u) return;
     setEditingId(id);
+    const groupFuncs = u.grupoId ? (grupos.find((g) => g.id === u.grupoId)?.funcionalidades ?? []) : [];
+    const effectiveFuncs = computeEffectiveFuncionalidades(groupFuncs, u.funcionalidades);
     setForm({
       name: u.name,
       username: u.username,
       role: u.role,
       grupoId: u.grupoId,
-      customFuncs: u.funcionalidades ? new Set(u.funcionalidades) : null,
+      customFuncs: u.funcionalidades != null ? new Set(effectiveFuncs ?? []) : null,
     });
     setErrors({});
     setModalOpen(true);
@@ -230,7 +235,8 @@ const UsersPage = () => {
 
   const save = () => {
     if (!validate()) return;
-    const funcionalidades = form.customFuncs ? [...form.customFuncs] : null;
+    const groupFuncs = form.grupoId ? (grupos.find((g) => g.id === form.grupoId)?.funcionalidades ?? []) : [];
+    const funcionalidades = form.customFuncs ? diffFuncionalidades(new Set(groupFuncs), form.customFuncs) : null;
     if (editingId) {
       void (async () => {
         try {
@@ -242,7 +248,7 @@ const UsersPage = () => {
             funcionalidades: funcionalidades as any,
           });
           setItems((prev) => prev.map((u) => u.id === editingId
-            ? { ...u, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo), grupoId: row.grupo_id ?? null, funcionalidades: Array.isArray(row.funcionalidades) ? row.funcionalidades as Funcionalidade[] : null }
+            ? { ...u, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo), grupoId: row.grupo_id ?? null, funcionalidades: row.funcionalidades ?? null }
             : u));
           showToast('Usuário atualizado com sucesso!');
           setModalOpen(false);
@@ -261,7 +267,7 @@ const UsersPage = () => {
             grupo_id: form.grupoId,
             funcionalidades: funcionalidades as any,
           });
-          setItems((prev) => [...prev, { id: row.id, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo), grupoId: row.grupo_id ?? null, funcionalidades: Array.isArray(row.funcionalidades) ? row.funcionalidades as Funcionalidade[] : null }]);
+          setItems((prev) => [...prev, { id: row.id, name: row.nome || '', username: row.email || '', role: perfilToRole(row.perfil_acesso), ativo: Boolean(row.ativo), grupoId: row.grupo_id ?? null, funcionalidades: row.funcionalidades ?? null }]);
           showToast('Usuário cadastrado com sucesso!');
           setModalOpen(false);
         } catch (e: any) { showToast(e?.message || 'Falha ao salvar.', 'error'); }

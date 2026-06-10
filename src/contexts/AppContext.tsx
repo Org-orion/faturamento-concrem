@@ -15,7 +15,7 @@ import {
   FreightEntryStatus,
 } from '@/types';
 import { UserRole, PagePermission } from '@/utils/access';
-import { Funcionalidade, ALL_FUNCIONALIDADES, isSuperAdmin } from '@/types/permissions';
+import { Funcionalidade, ALL_FUNCIONALIDADES, isSuperAdmin, computeEffectiveFuncionalidades } from '@/types/permissions';
 import { getGrupoById, initDefaultGrupos } from '@/lib/gruposRepo';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder, rowToSupportOrder } from '@/lib/pedidoMapper';
@@ -622,11 +622,13 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       let newFuncs: Funcionalidade[] | null = null;
       if (isSuperAdmin(user.username)) {
         newFuncs = ALL_FUNCIONALIDADES;
-      } else if (Array.isArray(data.funcionalidades) && data.funcionalidades.length > 0) {
-        newFuncs = data.funcionalidades as Funcionalidade[];
-      } else if (data.grupo_id) {
-        const grupo = await getGrupoById(data.grupo_id);
-        newFuncs = grupo?.funcionalidades ?? null;
+      } else {
+        let groupFuncs: Funcionalidade[] | null = null;
+        if (data.grupo_id) {
+          const grupo = await getGrupoById(data.grupo_id);
+          groupFuncs = grupo?.funcionalidades ?? null;
+        }
+        newFuncs = computeEffectiveFuncionalidades(groupFuncs, data.funcionalidades);
       }
       const grupoId: string | null = data.grupo_id ?? user.grupoId;
       const updated = { ...user, funcionalidades: newFuncs, grupoId };
@@ -666,13 +668,15 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
             let funcionalidades: Funcionalidade[] | null = null;
             if (isSuperAdmin(data.email || '')) {
               funcionalidades = ALL_FUNCIONALIDADES;
-            } else if (Array.isArray(data.funcionalidades) && data.funcionalidades.length > 0) {
-              funcionalidades = data.funcionalidades as Funcionalidade[];
-            } else if (grupoId) {
-              try {
-                const grupo = await getGrupoById(grupoId);
-                funcionalidades = grupo?.funcionalidades ?? null;
-              } catch { /* leave null */ }
+            } else {
+              let groupFuncs: Funcionalidade[] | null = null;
+              if (grupoId) {
+                try {
+                  const grupo = await getGrupoById(grupoId);
+                  groupFuncs = grupo?.funcionalidades ?? null;
+                } catch { /* leave null */ }
+              }
+              funcionalidades = computeEffectiveFuncionalidades(groupFuncs, data.funcionalidades);
             }
             const newUser = { name: data.nome, username: data.email, role, permissions, funcionalidades, grupoId };
             setUser(newUser);

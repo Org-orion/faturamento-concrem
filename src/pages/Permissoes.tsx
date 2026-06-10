@@ -4,7 +4,7 @@ import { btnPrimary, btnSecondary, btnDanger, FormField, inputClass } from '@/co
 import Modal from '@/components/Modal';
 import { GrupoRow, listGrupos, createGrupo, updateGrupo, deleteGrupo } from '@/lib/gruposRepo';
 import { listUsuarios, updateUsuario, UsuarioRow } from '@/lib/cadastrosOps';
-import { Funcionalidade, funcionalidadeLabels, funcionalidadeSections, ALL_FUNCIONALIDADES, isSuperAdmin } from '@/types/permissions';
+import { Funcionalidade, funcionalidadeLabels, funcionalidadeSections, ALL_FUNCIONALIDADES, isSuperAdmin, FuncionalidadesOverride, computeEffectiveFuncionalidades, diffFuncionalidades } from '@/types/permissions';
 
 // ─── Shared permission matrix ─────────────────────────────────────────────────
 
@@ -232,7 +232,7 @@ type UsuarioItem = {
   nome: string;
   username: string;
   grupoId: string | null;
-  funcionalidades: Funcionalidade[] | null;
+  funcionalidades: Funcionalidade[] | FuncionalidadesOverride | null;
 };
 
 const UsuariosTab = ({ grupos }: { grupos: GrupoRow[] }) => {
@@ -257,7 +257,7 @@ const UsuariosTab = ({ grupos }: { grupos: GrupoRow[] }) => {
             nome: r.nome || '',
             username: r.email || '',
             grupoId: r.grupo_id ?? null,
-            funcionalidades: Array.isArray(r.funcionalidades) ? r.funcionalidades as Funcionalidade[] : null,
+            funcionalidades: r.funcionalidades ?? null,
           }));
         setUsers(mapped);
         if (mapped.length > 0) setSelectedId(mapped[0].id);
@@ -283,18 +283,18 @@ const UsuariosTab = ({ grupos }: { grupos: GrupoRow[] }) => {
 
   const groupName = selected?.grupoId ? (grupos.find((g) => g.id === selected.grupoId)?.nome ?? null) : null;
 
+  const effectiveFuncs = selected
+    ? computeEffectiveFuncionalidades([...groupBase], selected.funcionalidades)
+    : null;
+
   useEffect(() => {
     if (!selected) { setEditFuncs(new Set()); return; }
-    if (selected.funcionalidades) {
-      setEditFuncs(new Set(selected.funcionalidades));
-    } else {
-      setEditFuncs(new Set(groupBase));
-    }
+    setEditFuncs(new Set(effectiveFuncs ?? groupBase));
   }, [selectedId, users]);
 
   const isDirty = (() => {
     if (!selected) return false;
-    const current = selected.funcionalidades ? new Set(selected.funcionalidades) : new Set(groupBase);
+    const current = new Set(effectiveFuncs ?? groupBase);
     if (editFuncs.size !== current.size) return true;
     for (const f of editFuncs) if (!current.has(f)) return true;
     return false;
@@ -306,14 +306,12 @@ const UsuariosTab = ({ grupos }: { grupos: GrupoRow[] }) => {
     if (!selected) return;
     setSaving(true);
     try {
-      const groupArr = [...groupBase].sort().join(',');
-      const editArr = [...editFuncs].sort().join(',');
-      const isIdenticalToGroup = groupArr === editArr;
-      const toSave = isIdenticalToGroup ? null : [...editFuncs];
+      const override = diffFuncionalidades(groupBase, editFuncs);
+      const toSave = override as any;
 
-      await updateUsuario(selected.id, { funcionalidades: toSave as any });
+      await updateUsuario(selected.id, { funcionalidades: toSave });
       setUsers((prev) => prev.map((u) => u.id === selected.id ? { ...u, funcionalidades: toSave } : u));
-      showToast(isIdenticalToGroup ? 'Personalização removida — usando permissões do grupo.' : 'Permissões salvas!');
+      showToast(override === null ? 'Personalização removida — usando permissões do grupo.' : 'Permissões salvas!');
     } catch (e: any) {
       showToast(e?.message || 'Falha ao salvar.', 'error');
     } finally {
