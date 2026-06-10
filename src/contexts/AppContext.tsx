@@ -626,7 +626,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
         let groupFuncs: Funcionalidade[] | null = null;
         if (data.grupo_id) {
           const grupo = await getGrupoById(data.grupo_id);
-          groupFuncs = grupo?.funcionalidades ?? null;
+          groupFuncs = grupo?.nome === 'Administrador' ? ALL_FUNCIONALIDADES : (grupo?.funcionalidades ?? null);
         }
         newFuncs = computeEffectiveFuncionalidades(groupFuncs, data.funcionalidades);
       }
@@ -673,7 +673,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
               if (grupoId) {
                 try {
                   const grupo = await getGrupoById(grupoId);
-                  groupFuncs = grupo?.funcionalidades ?? null;
+                  groupFuncs = grupo?.nome === 'Administrador' ? ALL_FUNCIONALIDADES : (grupo?.funcionalidades ?? null);
                 } catch { /* leave null */ }
               }
               funcionalidades = computeEffectiveFuncionalidades(groupFuncs, data.funcionalidades);
