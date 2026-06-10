@@ -373,6 +373,7 @@ const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
   { routeKey: 'atualizacao-status',       label: 'Atualização de Status',    href: '/atualizacao-status',        icon: 'box' },
   { routeKey: 'prioridades',              label: 'Prioridades',              href: '/prioridades',               icon: 'flame' },
   { routeKey: 'painel-tv',               label: 'Painel TV',                href: '/painel-tv',                 icon: 'monitor' },
+  { routeKey: 'analise-pedidos',         label: 'Análise de Pedidos',       href: '/analise-pedidos',           icon: 'bar-chart-2' },
   { routeKey: 'representantes',          label: 'Representantes',           href: '/representantes',            icon: 'users', group: 'Cadastro' },
   { routeKey: 'motoristas',              label: 'Motoristas',               href: '/motoristas',                icon: 'users', group: 'Cadastro' },
   { routeKey: 'usuarios',               label: 'Usuários',                 href: '/usuarios',                  icon: 'users', group: 'Cadastro' },
