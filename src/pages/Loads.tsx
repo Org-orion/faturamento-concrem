@@ -145,6 +145,8 @@ const LoadsPage = () => {
   const [orderNumFilter, setOrderNumFilter] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
+  const PAGE_SIZE = 10;
+  const [currentPage, setCurrentPage] = useState(1);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]));
@@ -191,6 +193,11 @@ const LoadsPage = () => {
     { type: 'none' },
   ];
 
+  const colFilterKey = JSON.stringify(colFilter.values);
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [query, activeStatus, orderNumFilter, dateFrom, dateTo, colFilterKey]);
+
   const filteredAndSorted = useMemo(() => {
     const colFiltered = colFilter.filterItems(loads, colDefs);
     const filtered = filterItems(
@@ -216,8 +223,12 @@ const LoadsPage = () => {
     return sorted;
   }, [loads, filterItems, textGetters, sortItems, sortGetters, sortState.key, colFilter.filterItems, colDefs, orderNumFilter, dateFrom, dateTo]);
 
+  const totalPages = Math.max(1, Math.ceil(filteredAndSorted.length / PAGE_SIZE));
+  const safePage = Math.min(currentPage, totalPages);
+  const paginatedLoads = filteredAndSorted.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE);
+
   const toggleAll = () => {
-    const visibleIds = filteredAndSorted.map((l) => l.id);
+    const visibleIds = paginatedLoads.map((l) => l.id);
     const allVisibleSelected = visibleIds.every((id) => selectedIds.includes(id));
     setSelectedIds((prev) =>
       allVisibleSelected
@@ -492,7 +503,7 @@ const LoadsPage = () => {
                 <th className="py-4 px-6 font-display font-bold text-muted-foreground uppercase tracking-wider text-[11px] text-center w-[56px]">
                   <input
                     type="checkbox"
-                    checked={filteredAndSorted.length > 0 && filteredAndSorted.every((l) => selectedIds.includes(l.id))}
+                    checked={paginatedLoads.length > 0 && paginatedLoads.every((l) => selectedIds.includes(l.id))}
                     onChange={toggleAll}
                   />
                 </th>
@@ -519,7 +530,7 @@ const LoadsPage = () => {
               </tr>
             </thead>
             <tbody className="divide-y divide-border/50">
-              {filteredAndSorted.map((load, index) => {
+              {paginatedLoads.map((load, index) => {
                 const driver = drivers.find((d) => d.id === load.driverId);
                 const totalOrderValue = load.orderIds.reduce((acc, id) => acc + (loadsOrderValueMap.get(id) || 0), 0);
 
@@ -593,6 +604,51 @@ const LoadsPage = () => {
             </tbody>
           </table>
         </div>
+        {filteredAndSorted.length > 0 && (
+          <div className="flex items-center justify-between px-6 py-4 border-t border-border">
+            <span className="text-sm text-muted-foreground">
+              Mostrando {(safePage - 1) * PAGE_SIZE + 1}–{Math.min(safePage * PAGE_SIZE, filteredAndSorted.length)} de {filteredAndSorted.length} carregamentos
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
+                disabled={safePage === 1}
+                className="px-3 py-1.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              >
+                Anterior
+              </button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1)
+                .filter((p) => p === 1 || p === totalPages || Math.abs(p - safePage) <= 1)
+                .map((p, idx, arr) => {
+                  const prev = arr[idx - 1];
+                  return (
+                    <React.Fragment key={p}>
+                      {prev && p - prev > 1 && (
+                        <span className="px-1 text-muted-foreground text-sm">…</span>
+                      )}
+                      <button
+                        onClick={() => setCurrentPage(p)}
+                        className={`min-w-[36px] px-2.5 py-1.5 rounded-lg border text-sm font-medium transition-colors ${
+                          p === safePage
+                            ? 'border-primary bg-primary text-primary-foreground'
+                            : 'border-border text-muted-foreground hover:text-foreground hover:bg-muted'
+                        }`}
+                      >
+                        {p}
+                      </button>
+                    </React.Fragment>
+                  );
+                })}
+              <button
+                onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))}
+                disabled={safePage === totalPages}
+                className="px-3 py-1.5 rounded-lg border border-border text-sm font-medium text-muted-foreground hover:text-foreground hover:bg-muted disabled:opacity-40 disabled:pointer-events-none transition-colors"
+              >
+                Próxima
+              </button>
+            </div>
+          </div>
+        )}
         {filteredAndSorted.length === 0 && (
           <div className="flex flex-col items-center justify-center py-20 text-muted-foreground">
             <Package className="h-12 w-12 mb-4 opacity-10" />

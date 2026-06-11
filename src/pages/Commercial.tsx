@@ -49,8 +49,11 @@ const Commercial = () => {
   const [filterCliente, setFilterCliente] = useState<string>('');
   const [filterConf, setFilterConf] = useState<string>('');
   const [filterRep, setFilterRep] = useState<string>('');
+  const [filterCidade, setFilterCidade] = useState<string>('');
+  const [filterUF, setFilterUF] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>('');
   const [validDate, setValidDate] = useState<string>('');
+  const ALL_UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [conditions, setConditions] = useState<FilterCondition[]>([]);
@@ -147,6 +150,8 @@ const Commercial = () => {
   const debouncedFilterPedido = useDebounce(filterPedido, 400);
   const debouncedFilterConf = useDebounce(filterConf, 400);
   const debouncedFilterRep = useDebounce(filterRep, 400);
+  const debouncedFilterCidade = useDebounce(filterCidade, 400);
+  const debouncedFilterUF = useDebounce(filterUF, 400);
 
   // Busca direta por número de pedido — sem filtro de id_nota_conf nem categoria
   useEffect(() => {
@@ -283,6 +288,12 @@ const Commercial = () => {
     if (debouncedFilterRep) {
       result = result.filter((o) => (o.representativeName || '').toLowerCase().includes(debouncedFilterRep.toLowerCase()));
     }
+    if (debouncedFilterCidade) {
+      result = result.filter((o) => (o.clientCity || '').toLowerCase().includes(debouncedFilterCidade.toLowerCase()));
+    }
+    if (debouncedFilterUF) {
+      result = result.filter((o) => (o.clientUF || '').toUpperCase() === debouncedFilterUF.toUpperCase());
+    }
     if (issueDate) result = result.filter((o) => (o.date || '').startsWith(issueDate));
     if (validDate) result = result.filter((o) => (o.expiryDate || '').startsWith(validDate));
 
@@ -312,7 +323,7 @@ const Commercial = () => {
     }
 
     return result;
-  }, [allOrdersMerged, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, issueDate, validDate, sortState]);
+  }, [allOrdersMerged, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, issueDate, validDate, sortState]);
 
   // Client-side pagination slice
   const displayedOrders = useMemo(() => {
@@ -321,7 +332,7 @@ const Commercial = () => {
   }, [filteredOrders, page]);
 
   // Reset page when filters/sort change
-  useEffect(() => { setPage(1); }, [debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, issueDate, validDate, sortState]);
+  useEffect(() => { setPage(1); }, [debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, issueDate, validDate, sortState]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(allOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
@@ -601,6 +612,21 @@ const Commercial = () => {
           <datalist id="comm-reps-list">
             {uniqueRepresentantes.map((r) => <option key={r} value={r} />)}
           </datalist>
+          <input
+            type="text"
+            value={filterCidade}
+            onChange={(e) => { setFilterCidade(e.target.value); setPage(1); }}
+            placeholder="Cidade..."
+            className="w-36 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+          <select
+            value={filterUF}
+            onChange={(e) => { setFilterUF(e.target.value); setPage(1); }}
+            className="w-20 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          >
+            <option value="">UF</option>
+            {ALL_UFS.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+          </select>
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
         </div>
         <ActiveFiltersChips

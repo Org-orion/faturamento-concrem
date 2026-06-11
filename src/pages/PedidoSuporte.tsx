@@ -127,10 +127,7 @@ const PedidoSuporte = () => {
     return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [serverOrders]);
 
-  const uniqueUFs = useMemo(() => {
-    const set = new Set(serverOrders.map((o) => o.clientUF).filter((u): u is string => Boolean(u)));
-    return Array.from(set).sort((a, b) => a.localeCompare(b));
-  }, [serverOrders]);
+  const ALL_UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 
   // Reset page when sort or city/UF filters change
   useEffect(() => { setPage(1); }, [sortState, debouncedFilterCidade, debouncedFilterUF]);
@@ -517,7 +514,7 @@ const PedidoSuporte = () => {
             className="w-20 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
           >
             <option value="">UF</option>
-            {uniqueUFs.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
+            {ALL_UFS.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
           </select>
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
         </div>
