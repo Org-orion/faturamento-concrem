@@ -1,0 +1,1 @@
+security-scanner-verify:a34553dc:faturamentoapp.vercel.app
