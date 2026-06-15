@@ -14,7 +14,7 @@ import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { tableColumns, suporteOr } from '@/contexts/AppContext';
-import { comparePedidoStatus } from '@/lib/pedidoStatusFlow';
+import { comparePedidoStatus, pedidoStatusFlow } from '@/lib/pedidoStatusFlow';
 import { rowToOrder } from '@/lib/pedidoMapper';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
@@ -45,6 +45,8 @@ const PedidoSuporte = () => {
   const [filterRep, setFilterRep] = useState<string>('');
   const [filterCidade, setFilterCidade] = useState<string>('');
   const [filterUF, setFilterUF] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<PedidoStatusValue | ''>('');
+  const [filterStatusInput, setFilterStatusInput] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>('');
   const [validDate, setValidDate] = useState<string>('');
 
@@ -247,42 +249,114 @@ const PedidoSuporte = () => {
         finalOr += `,numero_pedido.in.(${movedToSupport.map(x => `"${x}"`).join(',')})`;
       }
 
+      // Aplica os filtros de texto/data/UF comuns a qualquer query de pedidos suporte
+      const applyCommonFilters = (q: any): any => {
+        let query = q;
+        if (movedToVenda.length > 0) {
+          query = query.not('numero_pedido', 'in', `(${movedToVenda.map((x) => `"${x}"`).join(',')})`);
+        }
+        if (debouncedFilterPedido) {
+          const nums = debouncedFilterPedido.split(/[,;]+/).map((v) => v.trim()).filter(Boolean);
+          if (nums.length > 1) {
+            query = query.or(nums.map((n) => `numero_pedido.ilike.%${n}%`).join(','));
+          } else {
+            query = query.ilike('numero_pedido', `%${debouncedFilterPedido}%`);
+          }
+        }
+        if (debouncedFilterCliente) query = query.ilike('cliente_nome', `%${debouncedFilterCliente}%`);
+        if (debouncedFilterConf) query = query.eq('id_nota_conf', debouncedFilterConf);
+        if (debouncedFilterRep) query = query.ilike('representante', `%${debouncedFilterRep}%`);
+        if (issueDate) query = query.gte('data_emissao', `${issueDate}T00:00:00`).lte('data_emissao', `${issueDate}T23:59:59`);
+        if (validDate) query = query.gte('data_validade', `${validDate}T00:00:00`).lte('data_validade', `${validDate}T23:59:59`);
+        if (debouncedFilterCidade) query = query.ilike('cliente_cidade', `%${debouncedFilterCidade}%`);
+        if (debouncedFilterUF) query = query.ilike('cliente_uf', `%${debouncedFilterUF}%`);
+        return query;
+      };
+
+      // Filtrar/ordenar por STATUS exige cruzar com a base de OPS (tabela separada).
+      // Buscamos todo o universo de pedidos suporte (apenas as colunas necessárias),
+      // cruzamos com o status de cada um e paginamos em memória — assim a operação
+      // abrange TODOS os pedidos da aplicação, não apenas a página atual.
+      const needStatusJoin = Boolean(filterStatus) || sortState.key === 'status';
+      if (needStatusJoin) {
+        const CAND_PAGE = 1000;
+        const CAND_MAX_PAGES = 12; // teto de segurança (~12k pedidos)
+        const candidates: Array<{ numero_pedido: any; data_emissao: string | null; data_validade: string | null; cliente_nome: string | null; total_pedido_venda: number | null }> = [];
+        for (let p = 0; p < CAND_MAX_PAGES; p++) {
+          let cq = supabasePedidos
+            .from(table)
+            .select('numero_pedido, data_emissao, data_validade, cliente_nome, total_pedido_venda')
+            .or(finalOr)
+            .gte('data_emissao', '2025-01-06');
+          cq = applyCommonFilters(cq);
+          cq = cq.range(p * CAND_PAGE, p * CAND_PAGE + CAND_PAGE - 1).order('numero_pedido', { ascending: true });
+          const { data: cData, error: cErr } = await cq;
+          if (cancelled) return;
+          if (cErr) { console.error('[Supabase] candidatos status:', cErr.message); break; }
+          if (!cData?.length) break;
+          candidates.push(...(cData as any));
+          if (cData.length < CAND_PAGE) break;
+          if (p === CAND_MAX_PAGES - 1) console.warn('[Suporte] universo de pedidos excedeu o teto; resultados podem estar truncados.');
+        }
+
+        // Corte LEROY (mesmo critério do fluxo normal)
+        const filteredByCut = candidates.filter((r) => {
+          const clientUpper = (r.cliente_nome || '').toUpperCase();
+          const dateCorte = clientUpper.includes('LEROY MERLIN') ? '2026-01-01' : '2025-01-06';
+          return (r.data_emissao || '') >= dateCorte;
+        });
+
+        const candIds = filteredByCut.map((c) => String(c.numero_pedido));
+        const statusList = await listPedidosStatusByPedidoIds(candIds);
+        if (cancelled) return;
+        const stMap = new Map(statusList.map((r) => [String(r.pedido_id), r.status_atual as PedidoStatusValue]));
+        const statusOf = (id: string): PedidoStatusValue => stMap.get(id) || 'aguardando_avaliacao';
+
+        let result = filteredByCut;
+        if (filterStatus) result = result.filter((c) => statusOf(String(c.numero_pedido)) === filterStatus);
+
+        const dir = sortState.direction === 'asc' ? 1 : -1;
+        const byDateDesc = (a: any, b: any) => (b.data_emissao || '').localeCompare(a.data_emissao || '');
+        if (sortState.key === 'status') {
+          result = [...result].sort((a, b) => comparePedidoStatus(statusOf(String(a.numero_pedido)), statusOf(String(b.numero_pedido))) * dir || byDateDesc(a, b));
+        } else if (sortState.key === 'cliente') {
+          result = [...result].sort((a, b) => (a.cliente_nome || '').localeCompare(b.cliente_nome || '') * dir || byDateDesc(a, b));
+        } else if (sortState.key === 'date') {
+          result = [...result].sort((a, b) => (a.data_emissao || '').localeCompare(b.data_emissao || '') * dir);
+        } else if (sortState.key === 'expiryDate') {
+          result = [...result].sort((a, b) => (a.data_validade || '').localeCompare(b.data_validade || '') * dir || byDateDesc(a, b));
+        } else if (sortState.key === 'value') {
+          result = [...result].sort((a, b) => ((a.total_pedido_venda || 0) - (b.total_pedido_venda || 0)) * dir || byDateDesc(a, b));
+        } else if (sortState.key === 'id') {
+          result = [...result].sort((a, b) => String(a.numero_pedido).localeCompare(String(b.numero_pedido)) * dir);
+        } else {
+          result = [...result].sort(byDateDesc);
+        }
+
+        const total = result.length;
+        const fromIdx = (page - 1) * 20;
+        const pageIds = result.slice(fromIdx, fromIdx + 20).map((c) => String(c.numero_pedido));
+
+        setTotalCount(total);
+        if (!pageIds.length) { setServerOrders([]); setLoadingList(false); return; }
+
+        const { data: fullData, error: fullErr } = await supabasePedidos
+          .from(table)
+          .select(tableColumns)
+          .in('numero_pedido', pageIds);
+        if (cancelled) return;
+        setLoadingList(false);
+        if (fullErr) { console.error('[Supabase] página status:', fullErr.message); return; }
+        const mapped = (fullData || []).map((row: any) => rowToOrder(row, 'CLI-001') as unknown as SupportOrder);
+        const byId = new Map(mapped.map((o) => [o.id, o] as const));
+        const ordered = pageIds.map((id) => byId.get(id)).filter(Boolean) as SupportOrder[];
+        setServerOrders(ordered);
+        return;
+      }
+
       let query = supabasePedidos.from(table).select(tableColumns, { count: 'exact' }).or(finalOr)
         .gte('data_emissao', '2025-01-06');
-
-      if (movedToVenda.length > 0) {
-        query = query.not('numero_pedido', 'in', `(${movedToVenda.map(x => `"${x}"`).join(',')})`);
-      }
-
-      if (debouncedFilterPedido) {
-        const nums = debouncedFilterPedido.split(/[,;]+/).map((v) => v.trim()).filter(Boolean);
-        if (nums.length > 1) {
-          query = query.or(nums.map((n) => `numero_pedido.ilike.%${n}%`).join(','));
-        } else {
-          query = query.ilike('numero_pedido', `%${debouncedFilterPedido}%`);
-        }
-      }
-      if (debouncedFilterCliente) {
-        query = query.ilike('cliente_nome', `%${debouncedFilterCliente}%`);
-      }
-      if (debouncedFilterConf) {
-        query = query.eq('id_nota_conf', debouncedFilterConf);
-      }
-      if (debouncedFilterRep) {
-        query = query.ilike('representante', `%${debouncedFilterRep}%`);
-      }
-      if (issueDate) {
-        query = query.gte('data_emissao', `${issueDate}T00:00:00`).lte('data_emissao', `${issueDate}T23:59:59`);
-      }
-      if (validDate) {
-        query = query.gte('data_validade', `${validDate}T00:00:00`).lte('data_validade', `${validDate}T23:59:59`);
-      }
-      if (debouncedFilterCidade) {
-        query = query.ilike('cliente_cidade', `%${debouncedFilterCidade}%`);
-      }
-      if (debouncedFilterUF) {
-        query = query.ilike('cliente_uf', `%${debouncedFilterUF}%`);
-      }
+      query = applyCommonFilters(query);
 
       const from = (page - 1) * 20;
       const to = from + 19;
@@ -313,7 +387,7 @@ const PedidoSuporte = () => {
 
     fetchPage();
     return () => { cancelled = true; };
-  }, [debouncedFilterCidade, debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, debouncedFilterUF, issueDate, moveOverride, page, sortState, validDate]);
+  }, [debouncedFilterCidade, debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, debouncedFilterUF, filterStatus, issueDate, moveOverride, page, sortState, validDate]);
 
   const totals = useMemo(() => {
     const list: (Order | SupportOrder)[] = [];
@@ -516,6 +590,23 @@ const PedidoSuporte = () => {
             <option value="">UF</option>
             {ALL_UFS.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
           </select>
+          <input
+            type="text"
+            value={filterStatusInput}
+            onChange={(e) => {
+              const txt = e.target.value;
+              setFilterStatusInput(txt);
+              const match = pedidoStatusFlow.find((s) => s.label.toLowerCase() === txt.trim().toLowerCase());
+              setFilterStatus(match ? match.value : '');
+              setPage(1);
+            }}
+            placeholder="Status..."
+            list="ps-status-list"
+            className="w-44 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+          <datalist id="ps-status-list">
+            {pedidoStatusFlow.map((s) => <option key={s.value} value={s.label} />)}
+          </datalist>
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
         </div>
         <ActiveFiltersChips
