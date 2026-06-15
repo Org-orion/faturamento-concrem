@@ -11,13 +11,13 @@ import { useDebounce } from '@/hooks/useDebounce';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { tableColumns, vendasOr, getDataCorte } from '@/contexts/AppContext';
 import { rowToOrder } from '@/lib/pedidoMapper';
-import { Order, SupportOrder, PedidoStatusRow } from '@/types';
+import { Order, SupportOrder, PedidoStatusRow, PedidoStatusValue } from '@/types';
 import type { FilterCondition, FilterField } from '@/lib/filters';
 import { FilterConfiguratorDialog } from '@/components/filters/FilterConfiguratorDialog';
 import { FilterTriggerButton } from '@/components/filters/FilterTriggerButton';
 import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus, isLeroy, listPedidosStatusHistorico } from '@/lib/pedidosStatusRepo';
-import { getPedidoStatusDef, comparePedidoStatus } from '@/lib/pedidoStatusFlow';
+import { getPedidoStatusDef, comparePedidoStatus, pedidoStatusFlow } from '@/lib/pedidoStatusFlow';
 
 import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
@@ -51,6 +51,8 @@ const Commercial = () => {
   const [filterRep, setFilterRep] = useState<string>('');
   const [filterCidade, setFilterCidade] = useState<string>('');
   const [filterUF, setFilterUF] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<PedidoStatusValue | ''>('');
+  const [filterStatusInput, setFilterStatusInput] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>('');
   const [validDate, setValidDate] = useState<string>('');
   const ALL_UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
@@ -294,6 +296,9 @@ const Commercial = () => {
     if (debouncedFilterUF) {
       result = result.filter((o) => (o.clientUF || '').toUpperCase() === debouncedFilterUF.toUpperCase());
     }
+    if (filterStatus) {
+      result = result.filter((o) => (statusByPedidoId.get(o.id)?.status_atual || 'aguardando_avaliacao') === filterStatus);
+    }
     if (issueDate) result = result.filter((o) => (o.date || '').startsWith(issueDate));
     if (validDate) result = result.filter((o) => (o.expiryDate || '').startsWith(validDate));
 
@@ -323,7 +328,7 @@ const Commercial = () => {
     }
 
     return result;
-  }, [allOrdersMerged, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, issueDate, validDate, sortState]);
+  }, [allOrdersMerged, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, filterStatus, issueDate, validDate, sortState]);
 
   // Client-side pagination slice
   const displayedOrders = useMemo(() => {
@@ -332,7 +337,7 @@ const Commercial = () => {
   }, [filteredOrders, page]);
 
   // Reset page when filters/sort change
-  useEffect(() => { setPage(1); }, [debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, issueDate, validDate, sortState]);
+  useEffect(() => { setPage(1); }, [debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, filterStatus, issueDate, validDate, sortState]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(allOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
@@ -627,6 +632,23 @@ const Commercial = () => {
             <option value="">UF</option>
             {ALL_UFS.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
           </select>
+          <input
+            type="text"
+            value={filterStatusInput}
+            onChange={(e) => {
+              const txt = e.target.value;
+              setFilterStatusInput(txt);
+              const match = pedidoStatusFlow.find((s) => s.label.toLowerCase() === txt.trim().toLowerCase());
+              setFilterStatus(match ? match.value : '');
+              setPage(1);
+            }}
+            placeholder="Status..."
+            list="comm-status-list"
+            className="w-44 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          />
+          <datalist id="comm-status-list">
+            {pedidoStatusFlow.map((s) => <option key={s.value} value={s.label} />)}
+          </datalist>
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
         </div>
         <ActiveFiltersChips
