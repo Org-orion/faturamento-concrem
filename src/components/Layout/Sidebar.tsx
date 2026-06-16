@@ -13,6 +13,7 @@ import {
   Factory,
   Monitor,
   BarChart2,
+  DollarSign,
   Sun,
   Moon,
   Menu,
@@ -55,6 +56,7 @@ const iconMap = {
   factory: Factory,
   monitor: Monitor,
   'bar-chart-2': BarChart2,
+  'dollar-sign': DollarSign,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -78,6 +80,7 @@ const HREF_TO_SECTION: Record<string, string> = {
   '/producao': 'GESTÃO',
   '/carregamento': 'GESTÃO',
   '/financeiro': 'GESTÃO',
+  '/protocolo-financeiro': 'FINANCEIRO',
   '/painel-pedidos': 'ANÁLISES',
   '/painel-tv': 'ANÁLISES',
   '/analise-pedidos': 'ANÁLISES',
@@ -87,7 +90,7 @@ const GROUP_TITLE_TO_SECTION: Record<string, string> = {
   Cadastro: 'SISTEMA',
 };
 
-const SECTION_ORDER = ['OPERAÇÃO', 'GESTÃO', 'ANÁLISES', 'SISTEMA'];
+const SECTION_ORDER = ['OPERAÇÃO', 'GESTÃO', 'FINANCEIRO', 'ANÁLISES', 'SISTEMA'];
 
 function groupIntoSections(items: SidebarNavItem[]): NavSection[] {
   const map = new Map<string, SidebarNavItem[]>(

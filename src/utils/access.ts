@@ -19,6 +19,7 @@ export type AppRouteKey =
   | 'programacao-dashboard'
   | 'programacao-comercial'
   | 'financeiro'
+  | 'protocolo-financeiro'
   | 'painel-pedidos'
   | 'atualizacao-status'
   | 'pedidos'
@@ -36,7 +37,7 @@ export type PagePermission = {
 };
 
 export type MenuItem =
-  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' }
+  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign' }
   | { type: 'group'; label: string; icon: 'users' | 'box'; items: { label: string; href: string }[] };
 
 // ---------------------------------------------------------------------------
@@ -75,6 +76,7 @@ export const routeLabels: Record<AppRouteKey, string> = {
   'programacao-dashboard': 'Dashboard Carregamento',
   'programacao-comercial': 'Programação',
   financeiro: 'Financeiro',
+  'protocolo-financeiro': 'Protocolo Financeiro',
   'painel-pedidos': 'Painel de Pedidos',
   'atualizacao-status': 'Atualização de Status',
   pedidos: 'Pedidos',
@@ -106,6 +108,7 @@ export const availableActionsForRoute: Partial<Record<AppRouteKey, Array<'edit' 
   'programacao-dashboard':     ['edit'],
   'programacao-comercial':     ['edit'],
   financeiro:                  ['edit'],
+  'protocolo-financeiro':      ['execute'],
   'atualizacao-status':        ['execute'],
   prioridades:                 ['edit'],
 };
@@ -212,6 +215,7 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   if (path.startsWith('/carregamento')) return 'programacao';
   if (path === '/programacao') return 'programacao-comercial';
   if (path === '/financeiro') return 'financeiro';
+  if (path === '/protocolo-financeiro') return 'protocolo-financeiro';
   if (path.startsWith('/painel-pedidos')) return 'painel-pedidos';
   if (path.startsWith('/atualizacao-status')) return 'atualizacao-status';
   if (path === '/prioridades') return 'prioridades';
@@ -237,6 +241,7 @@ export const routeToFuncionalidades: Partial<Record<AppRouteKey, Funcionalidade[
   'programacao-dashboard':    ['carregamento.dashboard'],
   'programacao-comercial':    ['programacao_comercial.view'],
   financeiro:                 ['financeiro.view'],
+  'protocolo-financeiro':     ['protocolo_financeiro.view'],
   'painel-pedidos':           ['painel_pedidos.view'],
   'atualizacao-status':       ['atualizacao_status.view'],
   'analise-pedidos':          ['analise_pedidos.view'],
@@ -353,7 +358,7 @@ type MenuItemDef = {
   routeKey: AppRouteKey;
   label: string;
   href: string;
-  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2';
+  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign';
   group?: string;
 };
 
@@ -369,6 +374,7 @@ const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
   { routeKey: 'programacao-cronograma', label: 'Cronograma Carregamento',  href: '/carregamento?tab=cronograma', icon: 'truck' },
   { routeKey: 'programacao-dashboard',  label: 'Dashboard Carregamento',   href: '/carregamento?tab=dashboard',  icon: 'truck' },
   { routeKey: 'financeiro',              label: 'Financeiro',               href: '/financeiro',                icon: 'credit-card' },
+  { routeKey: 'protocolo-financeiro',    label: 'Protocolo Financeiro',     href: '/protocolo-financeiro',      icon: 'dollar-sign' },
   { routeKey: 'painel-pedidos',           label: 'Painel de Pedidos',        href: '/painel-pedidos',            icon: 'box' },
   { routeKey: 'atualizacao-status',       label: 'Atualização de Status',    href: '/atualizacao-status',        icon: 'box' },
   { routeKey: 'prioridades',              label: 'Prioridades',              href: '/prioridades',               icon: 'flame' },
@@ -432,6 +438,7 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
       { type: 'link', label: 'Produção', href: '/producao', icon: 'factory' },
       { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
       { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
+      { type: 'link', label: 'Protocolo Financeiro', href: '/protocolo-financeiro', icon: 'dollar-sign' },
       { type: 'link', label: 'Painel TV', href: '/painel-tv', icon: 'monitor' },
       { type: 'link', label: 'Análise de Pedidos', href: '/analise-pedidos', icon: 'bar-chart-2' },
       { type: 'group', label: 'Cadastro', icon: 'users', items: [

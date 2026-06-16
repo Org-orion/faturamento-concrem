@@ -18,6 +18,7 @@ const DriversPage = lazy(() => import('@/pages/Drivers'));
 const CarregamentosHub = lazy(() => import('@/pages/CarregamentosHub'));
 const CreateCarregamento = lazy(() => import('@/pages/CreateShipment'));
 const FinancialPage = lazy(() => import('@/pages/Financial'));
+const ProtocoloFinanceiroPage = lazy(() => import('@/pages/financeiro/ProtocoloFinanceiro'));
 const CommercialPage = lazy(() => import('@/pages/Commercial'));
 const ComercialLiberacaoPage = lazy(() => import('@/pages/ComercialLiberacao'));
 const ComercialConfirmacaoPage = lazy(() => import('@/pages/ComercialConfirmacao'));
@@ -111,6 +112,7 @@ const AppRoutes = () => {
         <Route path="/carregamento/novo" element={<ProtectedRoute><CreateCarregamento /></ProtectedRoute>} />
         <Route path="/carregamento/editar/:id" element={<ProtectedRoute><CreateCarregamento /></ProtectedRoute>} />
         <Route path="/financeiro" element={<ProtectedRoute><FinancialPage /></ProtectedRoute>} />
+        <Route path="/protocolo-financeiro" element={<ProtectedRoute><ProtocoloFinanceiroPage /></ProtectedRoute>} />
         <Route path="/prioridades" element={<ProtectedRoute><PrioridadesPage /></ProtectedRoute>} />
         <Route path="/usuarios" element={<ProtectedRoute><UsersPage /></ProtectedRoute>} />
         <Route path="/permissoes" element={<ProtectedRoute><PermissoesPage /></ProtectedRoute>} />

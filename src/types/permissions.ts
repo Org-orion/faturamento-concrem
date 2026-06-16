@@ -46,6 +46,11 @@ export type Funcionalidade =
   | 'financeiro.imprimir'
   | 'financeiro.gerenciar_tipos'
 
+  // Protocolo Financeiro
+  | 'protocolo_financeiro.view'
+  | 'protocolo_financeiro.gerar'
+  | 'protocolo_financeiro.cancelar'
+
   // Atualização de Status
   | 'atualizacao_status.view'
   | 'atualizacao_status.atualizar'
@@ -127,6 +132,10 @@ export const funcionalidadeLabels: Record<Funcionalidade, string> = {
   'financeiro.marcar_lancado_conferido':'Marcar como Lançado / Conferido',
   'financeiro.imprimir':               'Imprimir lançamento',
   'financeiro.gerenciar_tipos':        'Gerenciar tipos de despesa',
+
+  'protocolo_financeiro.view':   'Visualizar protocolos financeiros',
+  'protocolo_financeiro.gerar':  'Gerar protocolo',
+  'protocolo_financeiro.cancelar':'Cancelar protocolo',
 
   'atualizacao_status.view':     'Visualizar pedidos e histórico',
   'atualizacao_status.atualizar':'Atualizar status',
@@ -228,6 +237,10 @@ export const funcionalidadeSections: FuncionalidadeSection[] = [
     ],
   },
   {
+    label: 'Protocolo Financeiro',
+    keys: ['protocolo_financeiro.view', 'protocolo_financeiro.gerar', 'protocolo_financeiro.cancelar'],
+  },
+  {
     label: 'Atualização de Status',
     keys: ['atualizacao_status.view', 'atualizacao_status.atualizar'],
   },
@@ -279,6 +292,7 @@ export const GRUPOS_PADRAO: GrupoPadrao[] = [
       'carregamento.view', 'carregamento.criar_editar', 'carregamento.excluir', 'carregamento.cronograma', 'carregamento.dashboard',
       'financeiro.view', 'financeiro.criar_editar', 'financeiro.excluir',
       'financeiro.marcar_lancado_conferido', 'financeiro.imprimir', 'financeiro.gerenciar_tipos',
+      'protocolo_financeiro.view', 'protocolo_financeiro.gerar',
       'programacao_comercial.view', 'programacao_comercial.editar_mes', 'programacao_comercial.sincronizar',
       'painel_pedidos.view', 'painel_tv.view',
       'representantes.view', 'representantes.criar_editar',
