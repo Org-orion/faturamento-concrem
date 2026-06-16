@@ -15,9 +15,12 @@ import {
   type PedidoElegivel,
   type ProtocoloComPedidos,
 } from '@/lib/protocoloFinanceiro';
-import { PedidoSelectorTable } from '@/components/financeiro/PedidoSelectorTable';
+import { PedidoSelectorTable, type ColunaFiltros } from '@/components/financeiro/PedidoSelectorTable';
 import { ProtocoloPreview } from '@/components/financeiro/ProtocoloPreview';
 import { HistoricoProtocolos } from '@/components/financeiro/HistoricoProtocolos';
+import { fmtDate } from '@/lib/dateUtils';
+
+const PAGE_SIZE = 15;
 
 type Tab = 'novo' | 'historico';
 
@@ -35,8 +38,8 @@ const ProtocoloFinanceiro: React.FC = () => {
   const [elegiveis, setElegiveis] = useState<PedidoElegivel[]>([]);
   const [loadingElegiveis, setLoadingElegiveis] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [filterCliente, setFilterCliente] = useState('');
-  const [filterPedido, setFilterPedido] = useState('');
+  const [filters, setFilters] = useState<ColunaFiltros>({ cliente: '', pedido: '', nf: '', data: '' });
+  const [page, setPage] = useState(1);
 
   const [previewOpen, setPreviewOpen] = useState(false);
   const [numeroPreview, setNumeroPreview] = useState('');
@@ -82,15 +85,40 @@ const ProtocoloFinanceiro: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [canView]);
 
+  const dataStrOf = (o: PedidoElegivel) => (o.entregueEm ? fmtDate(o.entregueEm) : '');
+
+  const options = useMemo(() => {
+    const uniq = (arr: string[]) => Array.from(new Set(arr.filter(Boolean))).sort((a, b) => a.localeCompare(b));
+    return {
+      clientes: uniq(elegiveis.map((e) => e.nomeCliente)),
+      pedidos: uniq(elegiveis.map((e) => e.pedidoId)),
+      nfs: uniq(elegiveis.map((e) => e.numeroNota)),
+      datas: uniq(elegiveis.map((e) => dataStrOf(e))),
+    };
+  }, [elegiveis]);
+
   const filtered = useMemo(() => {
-    const c = filterCliente.trim().toLowerCase();
-    const p = filterPedido.trim().toLowerCase();
+    const c = filters.cliente.trim().toLowerCase();
+    const p = filters.pedido.trim().toLowerCase();
+    const n = filters.nf.trim().toLowerCase();
+    const d = filters.data.trim().toLowerCase();
     return elegiveis.filter((o) => {
       if (c && !(o.nomeCliente || '').toLowerCase().includes(c)) return false;
       if (p && !o.pedidoId.toLowerCase().includes(p)) return false;
+      if (n && !(o.numeroNota || '').toLowerCase().includes(n)) return false;
+      if (d && !dataStrOf(o).toLowerCase().includes(d)) return false;
       return true;
     });
-  }, [elegiveis, filterCliente, filterPedido]);
+  }, [elegiveis, filters]);
+
+  const pageCount = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = useMemo(() => filtered.slice((page - 1) * PAGE_SIZE, (page - 1) * PAGE_SIZE + PAGE_SIZE), [filtered, page]);
+
+  const allSelected = filtered.length > 0 && filtered.every((p) => selected.has(p.pedidoId));
+  const someSelected = filtered.some((p) => selected.has(p.pedidoId));
+
+  // Volta para a primeira página quando os filtros mudam ou a lista recarrega
+  useEffect(() => { setPage(1); }, [filters, elegiveis]);
 
   const selectedPedidos = useMemo(() => elegiveis.filter((p) => selected.has(p.pedidoId)), [elegiveis, selected]);
 
@@ -114,10 +142,7 @@ const ProtocoloFinanceiro: React.FC = () => {
     });
   };
 
-  const limparFiltros = () => {
-    setFilterCliente('');
-    setFilterPedido('');
-  };
+  const limparFiltros = () => setFilters({ cliente: '', pedido: '', nf: '', data: '' });
 
   const abrirPreview = async () => {
     if (!selected.size) return;
@@ -216,21 +241,8 @@ const ProtocoloFinanceiro: React.FC = () => {
 
       {tab === 'novo' ? (
         <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-3">
-            <input
-              type="text"
-              value={filterCliente}
-              onChange={(e) => setFilterCliente(e.target.value)}
-              placeholder="Buscar por cliente..."
-              className="flex-1 min-w-[220px] px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-            />
-            <input
-              type="text"
-              value={filterPedido}
-              onChange={(e) => setFilterPedido(e.target.value)}
-              placeholder="Buscar por nº de pedido..."
-              className="w-56 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
-            />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm text-muted-foreground">{filtered.length} pedido(s) elegível(is)</p>
             <button
               onClick={limparFiltros}
               className="px-4 py-2 rounded-lg border border-border bg-card text-foreground hover:bg-muted transition-colors font-display text-sm font-medium"
@@ -240,26 +252,58 @@ const ProtocoloFinanceiro: React.FC = () => {
           </div>
 
           <PedidoSelectorTable
-            pedidos={filtered}
+            pedidos={pageItems}
             selected={selected}
+            allSelected={allSelected}
+            someSelected={someSelected}
             onToggle={toggle}
             onToggleAll={toggleAll}
             loading={loadingElegiveis}
+            filters={filters}
+            onFilterChange={(key, value) => setFilters((prev) => ({ ...prev, [key]: value }))}
+            options={options}
           />
 
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-muted-foreground">{selected.size} pedido(s) selecionado(s)</p>
-            <button
-              className={btnPrimary}
-              disabled={selected.size === 0 || !canGerar}
-              onClick={() => void abrirPreview()}
-            >
-              Gerar Protocolo
-            </button>
-          </div>
-          {!canGerar && (
-            <p className="text-xs text-muted-foreground">Você não tem permissão para gerar protocolos.</p>
+          {!loadingElegiveis && filtered.length > 0 && (
+            <div className="flex items-center justify-between">
+              <p className="text-xs text-muted-foreground">
+                Mostrando {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} de {filtered.length}
+              </p>
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={page === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="px-3 py-1.5 rounded border border-border bg-card text-xs font-semibold disabled:opacity-50"
+                >
+                  Anterior
+                </button>
+                <span className="text-xs text-muted-foreground">Página {page} de {pageCount}</span>
+                <button
+                  disabled={page >= pageCount}
+                  onClick={() => setPage((p) => Math.min(pageCount, p + 1))}
+                  className="px-3 py-1.5 rounded border border-border bg-card text-xs font-semibold disabled:opacity-50"
+                >
+                  Próxima
+                </button>
+              </div>
+            </div>
           )}
+
+          <div className="flex items-center justify-between border-t border-border pt-4">
+            <p className="text-sm text-muted-foreground">{selected.size} pedido(s) selecionado(s)</p>
+            <div className="flex flex-col items-end gap-1">
+              <button
+                className={btnPrimary}
+                disabled={selected.size === 0 || !canGerar}
+                onClick={() => void abrirPreview()}
+              >
+                Gerar Protocolo
+              </button>
+              {!canGerar && (
+                <p className="text-xs text-muted-foreground">Você não tem permissão para gerar protocolos.</p>
+              )}
+            </div>
+          </div>
         </div>
       ) : (
         <HistoricoProtocolos
