@@ -59,3 +59,21 @@ export function fmtDateTimeMsg(iso?: string | null): string {
   const time = d.toLocaleTimeString('pt-BR', { timeZone: TZ, hour: '2-digit', minute: '2-digit' });
   return `${date} às ${time}`;
 }
+
+const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+/** Extrai o ano-mês (YYYY-MM) de uma string de data ISO. Retorna '' se inválida. */
+export function yearMonthOf(iso?: string | null): string {
+  if (!iso) return '';
+  const m = /^(\d{4})-(\d{2})/.exec(iso.trim());
+  return m ? `${m[1]}-${m[2]}` : '';
+}
+
+/** Formata um ano-mês (YYYY-MM) como mês por extenso em pt-BR. Ex: 2026-06 → "Junho/2026" */
+export function fmtMesAno(yyyymm?: string | null): string {
+  if (!yyyymm) return '';
+  const m = /^(\d{4})-(\d{2})$/.exec(yyyymm.trim());
+  if (!m) return yyyymm;
+  const mes = MESES_PT[Number(m[2]) - 1];
+  return mes ? `${mes}/${m[1]}` : yyyymm;
+}

@@ -19,7 +19,7 @@ import { ActiveFiltersChips } from '@/components/filters/ActiveFiltersChips';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus, isLeroy, listPedidosStatusHistorico } from '@/lib/pedidosStatusRepo';
 import { getPedidoStatusDef, comparePedidoStatus, pedidoStatusFlow } from '@/lib/pedidoStatusFlow';
 
-import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
+import { todayBR, fmtDate, fmtDateTime, fmtMesAno, yearMonthOf } from '@/lib/dateUtils';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
 import { useTableSort } from '@/hooks/useTableSort';
 import { SortableHeader } from '@/components/table/SortableHeader';
@@ -55,6 +55,7 @@ const Commercial = () => {
   const [filterStatusInput, setFilterStatusInput] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>('');
   const [validDate, setValidDate] = useState<string>('');
+  const [filterMesAno, setFilterMesAno] = useState<string>('');
   const ALL_UFS = ['AC','AL','AP','AM','BA','CE','DF','ES','GO','MA','MT','MS','MG','PA','PB','PR','PE','PI','RJ','RN','RS','RO','RR','SC','SP','SE','TO'];
 
   const [filtersOpen, setFiltersOpen] = useState(false);
@@ -301,6 +302,7 @@ const Commercial = () => {
     }
     if (issueDate) result = result.filter((o) => (o.date || '').startsWith(issueDate));
     if (validDate) result = result.filter((o) => (o.expiryDate || '').startsWith(validDate));
+    if (filterMesAno) result = result.filter((o) => yearMonthOf(o.date) === filterMesAno);
 
     if (sortState.key) {
       const dir = sortState.direction === 'asc' ? 1 : -1;
@@ -328,7 +330,7 @@ const Commercial = () => {
     }
 
     return result;
-  }, [allOrdersMerged, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, filterStatus, issueDate, validDate, sortState]);
+  }, [allOrdersMerged, statusByPedidoId, moveOverride, debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, filterStatus, issueDate, validDate, filterMesAno, sortState]);
 
   // Client-side pagination slice
   const displayedOrders = useMemo(() => {
@@ -337,7 +339,7 @@ const Commercial = () => {
   }, [filteredOrders, page]);
 
   // Reset page when filters/sort change
-  useEffect(() => { setPage(1); }, [debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, filterStatus, issueDate, validDate, sortState]);
+  useEffect(() => { setPage(1); }, [debouncedFilterPedido, debouncedFilterCliente, debouncedFilterConf, debouncedFilterRep, debouncedFilterCidade, debouncedFilterUF, filterStatus, issueDate, validDate, filterMesAno, sortState]);
 
   const uniqueClientes = useMemo(() => {
     const set = new Set(allOrders.map((o) => o.clientName).filter((c): c is string => Boolean(c)));
@@ -347,6 +349,12 @@ const Commercial = () => {
   const uniqueRepresentantes = useMemo(() => {
     const set = new Set(allOrders.map((o) => o.representativeName).filter((r): r is string => Boolean(r)));
     return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [allOrders]);
+
+  // Meses/anos presentes nos pedidos carregados, do mais recente para o mais antigo
+  const mesAnoOptions = useMemo(() => {
+    const set = new Set(allOrders.map((o) => yearMonthOf(o.date)).filter(Boolean));
+    return Array.from(set).sort((a, b) => b.localeCompare(a));
   }, [allOrders]);
 
   const filterFields = useMemo(() => {
@@ -649,6 +657,14 @@ const Commercial = () => {
           <datalist id="comm-status-list">
             {pedidoStatusFlow.map((s) => <option key={s.value} value={s.label} />)}
           </datalist>
+          <select
+            value={filterMesAno}
+            onChange={(e) => { setFilterMesAno(e.target.value); setPage(1); }}
+            className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          >
+            <option value="">Todos os meses</option>
+            {mesAnoOptions.map((ym) => <option key={ym} value={ym}>{fmtMesAno(ym)}</option>)}
+          </select>
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
         </div>
         <ActiveFiltersChips

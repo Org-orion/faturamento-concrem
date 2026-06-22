@@ -11,7 +11,7 @@ import { supabase, supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { Order, PedidoStatusRow, PedidoStatusValue, SupportOrder } from '@/types';
 import { listPedidosStatusByPedidoIds, updatePedidoStatus } from '@/lib/pedidosStatusRepo';
 import { PedidoStatusBadge } from '@/components/pedidos/PedidoStatusBadge';
-import { todayBR, fmtDate, fmtDateTime } from '@/lib/dateUtils';
+import { todayBR, fmtDate, fmtDateTime, fmtMesAno, yearMonthOf } from '@/lib/dateUtils';
 import { useDebounce } from '@/hooks/useDebounce';
 import { tableColumns, suporteOr } from '@/contexts/AppContext';
 import { comparePedidoStatus, pedidoStatusFlow } from '@/lib/pedidoStatusFlow';
@@ -49,6 +49,8 @@ const PedidoSuporte = () => {
   const [filterStatusInput, setFilterStatusInput] = useState<string>('');
   const [issueDate, setIssueDate] = useState<string>('');
   const [validDate, setValidDate] = useState<string>('');
+  const [filterMesAno, setFilterMesAno] = useState<string>('');
+  const [mesAnoOptions, setMesAnoOptions] = useState<string[]>([]);
 
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [conditions, setConditions] = useState<FilterCondition[]>([]);
@@ -133,6 +135,34 @@ const PedidoSuporte = () => {
 
   // Reset page when sort or city/UF filters change
   useEffect(() => { setPage(1); }, [sortState, debouncedFilterCidade, debouncedFilterUF]);
+
+  // Carrega os meses/anos disponíveis (mais recente → mais antigo) a partir da data dos pedidos suporte no banco
+  useEffect(() => {
+    if (!supabasePedidos) return;
+    let cancelled = false;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_sistema';
+    const loadMeses = async () => {
+      const base = () => supabasePedidos!.from(table).select('data_emissao').or(suporteOr).gte('data_emissao', '2025-01-06');
+      const [maxRes, minRes] = await Promise.all([
+        base().order('data_emissao', { ascending: false }).limit(1),
+        base().order('data_emissao', { ascending: true }).limit(1),
+      ]);
+      if (cancelled) return;
+      const maxYM = yearMonthOf(maxRes.data?.[0]?.data_emissao);
+      const minYM = yearMonthOf(minRes.data?.[0]?.data_emissao);
+      if (!maxYM || !minYM) { setMesAnoOptions([]); return; }
+      const out: string[] = [];
+      let [y, m] = maxYM.split('-').map(Number);
+      const [minY, minM] = minYM.split('-').map(Number);
+      while (y > minY || (y === minY && m >= minM)) {
+        out.push(`${y}-${String(m).padStart(2, '0')}`);
+        m--; if (m === 0) { m = 12; y--; }
+      }
+      setMesAnoOptions(out);
+    };
+    void loadMeses();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     if (!supabaseOps) return;
@@ -268,6 +298,11 @@ const PedidoSuporte = () => {
         if (debouncedFilterRep) query = query.ilike('representante', `%${debouncedFilterRep}%`);
         if (issueDate) query = query.gte('data_emissao', `${issueDate}T00:00:00`).lte('data_emissao', `${issueDate}T23:59:59`);
         if (validDate) query = query.gte('data_validade', `${validDate}T00:00:00`).lte('data_validade', `${validDate}T23:59:59`);
+        if (filterMesAno) {
+          const [y, m] = filterMesAno.split('-').map(Number);
+          const next = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`;
+          query = query.gte('data_emissao', `${filterMesAno}-01`).lt('data_emissao', `${next}-01`);
+        }
         if (debouncedFilterCidade) query = query.ilike('cliente_cidade', `%${debouncedFilterCidade}%`);
         if (debouncedFilterUF) query = query.ilike('cliente_uf', `%${debouncedFilterUF}%`);
         return query;
@@ -387,7 +422,7 @@ const PedidoSuporte = () => {
 
     fetchPage();
     return () => { cancelled = true; };
-  }, [debouncedFilterCidade, debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, debouncedFilterUF, filterStatus, issueDate, moveOverride, page, sortState, validDate]);
+  }, [debouncedFilterCidade, debouncedFilterCliente, debouncedFilterConf, debouncedFilterPedido, debouncedFilterRep, debouncedFilterUF, filterStatus, issueDate, filterMesAno, moveOverride, page, sortState, validDate]);
 
   const totals = useMemo(() => {
     const list: (Order | SupportOrder)[] = [];
@@ -607,6 +642,14 @@ const PedidoSuporte = () => {
           <datalist id="ps-status-list">
             {pedidoStatusFlow.map((s) => <option key={s.value} value={s.label} />)}
           </datalist>
+          <select
+            value={filterMesAno}
+            onChange={(e) => { setFilterMesAno(e.target.value); setPage(1); }}
+            className="w-40 px-3 py-2 rounded-lg border border-input bg-card text-foreground font-display text-sm focus:outline-none focus:ring-2 focus:ring-ring/20 focus:border-primary transition-colors"
+          >
+            <option value="">Todos os meses</option>
+            {mesAnoOptions.map((ym) => <option key={ym} value={ym}>{fmtMesAno(ym)}</option>)}
+          </select>
           <FilterTriggerButton count={conditions.length} onClick={() => setFiltersOpen(true)} />
         </div>
         <ActiveFiltersChips
