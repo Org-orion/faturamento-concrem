@@ -1608,7 +1608,6 @@ const CreateShipment = () => {
 
   // Status dos pedidos não-finais que podem avançar com o carregamento
   const STATUS_JA_ENTREGUES = new Set(['em_entrega', 'parcialmente_entregue', 'entregue', 'aguardando_pagamento', 'finalizado']);
-  const STATUS_REVERTIVEIS   = new Set(['em_carregamento', 'despachado']);
 
   const CARREGAMENTO_TO_PEDIDO: Record<string, string> = {
     'Aguardando Despacho': 'em_carregamento',
@@ -1659,30 +1658,9 @@ const CreateShipment = () => {
       }
     }
 
-    // Pedidos cancelados ou removidos → reverte para liberado_producao
-    const isCancelado = shipStatus === 'Cancelado';
-    const toRevert = (isCancelado ? currentIds : removedIds).filter(id => {
-      const cur = statusMap.get(id) ?? '';
-      return STATUS_REVERTIVEIS.has(cur);
-    });
-    for (let i = 0; i < toRevert.length; i += 200) {
-      const batch = toRevert.slice(i, i + 200);
-      await supabaseOps.from('concrem_pedidos_status')
-        .update({ status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: username })
-        .in('pedido_id', batch);
-    }
-    if (toRevert.length) {
-      await supabaseOps.from('concrem_pedidos_status_historico').insert(
-        toRevert.map(id => ({
-          pedido_id: id, numero_pedido: id,
-          status_anterior: statusMap.get(id) ?? null,
-          status_novo: 'liberado_producao',
-          alterado_em: now, alterado_por: username,
-          observacao: isCancelado ? 'Carregamento cancelado' : 'Removido do carregamento',
-          notificado_representante: false,
-        })),
-      );
-    }
+    // A reversão de pedidos removidos/cancelados para liberado_producao é feita de forma
+    // centralizada no updateLoad (AppContext) → revertRemovedFromCarregamento, cobrindo todos
+    // os caminhos de remoção. Aqui só avançamos os pedidos mantidos para o status do embarque.
   };
 
   // Sincroniza mes_programacao de pedidos Leroy com base na data planejada do carregamento.

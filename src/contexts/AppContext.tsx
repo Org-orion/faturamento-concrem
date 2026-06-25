@@ -34,7 +34,7 @@ import {
 } from '@/lib/opsRepo';
 import { listMotoristas } from '@/lib/cadastrosOps';
 import { verifyPassword } from '@/lib/password';
-import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque, batchSetEmEntregaForLoad, batchSyncSituacaoEntrega, archiveEntreguesPrioAtencao } from '@/lib/pedidosStatusRepo';
+import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque, revertRemovedFromCarregamento, batchSetEmEntregaForLoad, batchSyncSituacaoEntrega, archiveEntreguesPrioAtencao } from '@/lib/pedidosStatusRepo';
 import { fetchAllPages } from '@/lib/supabaseUtils';
 import { recordEmbarqueCriado, recordEmbarqueAlterado } from '@/lib/embarqueHistoricoRepo';
 
@@ -1129,6 +1129,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(l.id, l.orderIds, l.shipmentStatus === 'Entregue' ? 'entregue' : 'pendente');
     if (oldLoad) await recordEmbarqueAlterado(oldLoad, l, user?.username || null);
+
+    // Reverte para liberado_producao os pedidos removidos da carga (ou todos, se cancelada),
+    // persistindo no OPS e limpando entregas órfãs. Fonte única — cobre todos os caminhos de
+    // remoção (edição, salvar relatório, dashboard), não só o CreateShipment.
+    const removedFromLoad = oldLoad ? oldLoad.orderIds.filter((oid) => !l.orderIds.includes(oid)) : [];
+    const toRevert = l.shipmentStatus === 'Cancelado'
+      ? Array.from(new Set([...removedFromLoad, ...l.orderIds]))
+      : removedFromLoad;
+    if (toRevert.length) {
+      await revertRemovedFromCarregamento(l.id, toRevert, user?.username || null);
+    }
 
     if (l.shipmentStatus === 'Em Rota') {
       const currentStatuses = await listPedidosStatusByPedidoIds(l.orderIds);

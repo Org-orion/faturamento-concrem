@@ -882,6 +882,73 @@ export async function resetPedidoStatusToPreEmbarque(pedidoId: string, alteradoP
   if (updErr) console.error('[Supabase OPS] resetPedidoStatus update status:', updErr.message);
 }
 
+// Statuses pós-embarque que, ao remover o pedido de um carregamento, devem reverter
+// para liberado_producao (deixando-o disponível para uma nova carga).
+const REMOVIVEL_DO_CARREGAMENTO: PedidoStatusValue[] = [
+  'em_carregamento', 'despachado', 'faturado', 'em_entrega', 'parcialmente_entregue', 'entregue',
+];
+
+/**
+ * Reverte para liberado_producao os pedidos removidos de um carregamento e apaga suas
+ * entregas órfãs dessa carga. Fonte única de verdade chamada pelo updateLoad — cobre
+ * todos os caminhos de remoção (edição, relatório, dashboard), não só o CreateShipment.
+ * Só reverte pedidos cujo status atual esteja em REMOVIVEL_DO_CARREGAMENTO.
+ */
+export async function revertRemovedFromCarregamento(
+  loadId: string,
+  removedIds: string[],
+  alteradoPor: string | null,
+): Promise<void> {
+  if (!supabaseOps || !removedIds.length) return;
+  const now = new Date().toISOString();
+
+  // Status atuais dos pedidos removidos
+  const current: { pedido_id: string; status_atual: string }[] = [];
+  for (let i = 0; i < removedIds.length; i += 200) {
+    const { data } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select('pedido_id, status_atual')
+      .in('pedido_id', removedIds.slice(i, i + 200));
+    if (data) current.push(...(data as { pedido_id: string; status_atual: string }[]));
+  }
+  const statusMap = new Map(current.map((r) => [String(r.pedido_id), r.status_atual]));
+  const toRevert = current
+    .filter((r) => REMOVIVEL_DO_CARREGAMENTO.includes(r.status_atual as PedidoStatusValue))
+    .map((r) => String(r.pedido_id));
+
+  if (toRevert.length) {
+    for (let i = 0; i < toRevert.length; i += 200) {
+      const batch = toRevert.slice(i, i + 200);
+      const { error } = await supabaseOps
+        .from('concrem_pedidos_status')
+        .update({ status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: alteradoPor })
+        .in('pedido_id', batch);
+      if (error) console.error('[revertRemovedFromCarregamento] update:', error.message);
+    }
+    const { error: hErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert(
+      toRevert.map((id) => ({
+        pedido_id: id,
+        numero_pedido: id,
+        status_anterior: statusMap.get(id) ?? null,
+        status_novo: 'liberado_producao',
+        alterado_em: now,
+        alterado_por: alteradoPor,
+        observacao: 'Removido do carregamento',
+        notificado_representante: false,
+      })) as any,
+    );
+    if (hErr) console.error('[revertRemovedFromCarregamento] historico:', hErr.message);
+  }
+
+  // Limpa entregas órfãs desses pedidos nesta carga
+  const { error: delErr } = await supabaseOps
+    .from('concrem_entregas')
+    .delete()
+    .eq('programacao_id', loadId)
+    .in('pedido_id', removedIds);
+  if (delErr) console.error('[revertRemovedFromCarregamento] delete entregas:', delErr.message);
+}
+
 // Statuses that are already at or beyond entregue — never downgrade
 const STATUS_FINAIS = new Set<PedidoStatusValue>([
   'entregue', 'aguardando_pagamento', 'finalizado',
