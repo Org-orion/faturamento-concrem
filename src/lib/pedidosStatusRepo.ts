@@ -949,6 +949,64 @@ export async function revertRemovedFromCarregamento(
   if (delErr) console.error('[revertRemovedFromCarregamento] delete entregas:', delErr.message);
 }
 
+/**
+ * Rede de segurança (acionada manualmente por admin): encontra pedidos presos em
+ * 'em_carregamento' que NÃO estão em nenhuma carga ativa e os reverte para
+ * liberado_producao. Limitado a 'em_carregamento' — status que só faz sentido enquanto
+ * o pedido está numa carga; não mexe em em_entrega/entregue (podem ser entregas reais).
+ * Recebe os IDs que ainda estão em cargas ativas (calculados na tela, sem risco de timing).
+ */
+export async function healOrphanEmCarregamento(
+  activeOrderIds: Set<string>,
+  alteradoPor: string | null,
+): Promise<{ fixed: number; ids: string[] }> {
+  if (!supabaseOps) return { fixed: 0, ids: [] };
+
+  const orphans: string[] = [];
+  const PAGE = 1000;
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .select('pedido_id')
+      .eq('status_atual', 'em_carregamento')
+      .range(from, from + PAGE - 1);
+    if (error) { console.error('[healOrphanEmCarregamento] select:', error.message); break; }
+    const page = (data ?? []) as { pedido_id: string }[];
+    for (const r of page) {
+      const id = String(r.pedido_id);
+      if (!activeOrderIds.has(id)) orphans.push(id);
+    }
+    if (page.length < PAGE) break;
+  }
+
+  if (!orphans.length) return { fixed: 0, ids: [] };
+
+  const now = new Date().toISOString();
+  for (let i = 0; i < orphans.length; i += 200) {
+    const batch = orphans.slice(i, i + 200);
+    const { error } = await supabaseOps
+      .from('concrem_pedidos_status')
+      .update({ status_atual: 'liberado_producao', atualizado_em: now, atualizado_por: alteradoPor })
+      .in('pedido_id', batch);
+    if (error) console.error('[healOrphanEmCarregamento] update:', error.message);
+  }
+  const { error: hErr } = await supabaseOps.from('concrem_pedidos_status_historico').insert(
+    orphans.map((id) => ({
+      pedido_id: id,
+      numero_pedido: id,
+      status_anterior: 'em_carregamento',
+      status_novo: 'liberado_producao',
+      alterado_em: now,
+      alterado_por: alteradoPor,
+      observacao: 'Liberado automaticamente: preso em em_carregamento sem carga ativa (destravar pedidos)',
+      notificado_representante: false,
+    })) as any,
+  );
+  if (hErr) console.error('[healOrphanEmCarregamento] historico:', hErr.message);
+
+  return { fixed: orphans.length, ids: orphans };
+}
+
 // Statuses that are already at or beyond entregue — never downgrade
 const STATUS_FINAIS = new Set<PedidoStatusValue>([
   'entregue', 'aguardando_pagamento', 'finalizado',

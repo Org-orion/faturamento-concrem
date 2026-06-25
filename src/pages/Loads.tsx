@@ -6,8 +6,10 @@ import { formatCurrency, loadStatusColors, StatusBadge, btnSecondary } from '@/c
 import { getValorTotalOrder, getValorTotalPedido } from '@/lib/valorPedido';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
+import { healOrphanEmCarregamento } from '@/lib/pedidosStatusRepo';
+import { useToast } from '@/components/ToastProvider';
 import type { Order, PedidoStatusRow } from '@/types';
-import { Edit2, Plus, Package, FileText, Download, Eye, X, Truck, Calendar, DollarSign } from 'lucide-react';
+import { Edit2, Plus, Package, FileText, Download, Eye, X, Truck, Calendar, DollarSign, Unlock } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import logoSrc from '@/assets/logo-programacao.png';
 import { useTableSort } from '@/hooks/useTableSort';
@@ -74,7 +76,36 @@ const LoadsPage = () => {
   const canExcluirCarg = can(user, 'carregamento.excluir',      'programacao', 'execute');
   const { map: prioMap } = usePrioridades();
   const { map: atencaoMap } = useAtencao();
+  const { showToast } = useToast();
+  const [destravando, setDestravando] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+
+  // Rede de segurança manual: reverte pedidos presos em 'em_carregamento' que não estão
+  // em nenhuma carga ativa. Usa as cargas já carregadas na tela (sem risco de timing).
+  const handleDestravarPresos = async () => {
+    if (destravando) return;
+    if (!loads.length) {
+      showToast('Aguarde os carregamentos carregarem antes de destravar.', 'error');
+      return;
+    }
+    if (!window.confirm('Destravar pedidos presos em "Em Carregamento" que não estão em nenhuma carga ativa? Eles voltarão para "Liberado p/ Produção" e ficarão disponíveis para uma nova carga.')) return;
+    setDestravando(true);
+    try {
+      const activeOrderIds = new Set(
+        loads.filter((l) => l.shipmentStatus !== 'Cancelado').flatMap((l) => l.orderIds),
+      );
+      const { fixed } = await healOrphanEmCarregamento(activeOrderIds, user?.username || null);
+      showToast(
+        fixed > 0
+          ? `${fixed} pedido(s) destravado(s) e disponíveis para nova carga.`
+          : 'Nenhum pedido preso encontrado.',
+      );
+    } catch (e: any) {
+      showToast(e?.message || 'Erro ao destravar pedidos.', 'error');
+    } finally {
+      setDestravando(false);
+    }
+  };
   const [extraOrders, setExtraOrders] = useState<Order[]>([]);
   const [pedidoStatusMap, setPedidoStatusMap] = useState<Map<string, PedidoStatusRow>>(new Map());
   const [quickViewLoad, setQuickViewLoad] = useState<Load | null>(null);
@@ -439,6 +470,18 @@ const LoadsPage = () => {
                 Gerar Excel
               </button>
             </>
+          )}
+          {canCriarEditar && (
+            <button
+              type="button"
+              onClick={handleDestravarPresos}
+              disabled={destravando}
+              title="Reverte pedidos presos em 'Em Carregamento' que não estão em nenhuma carga ativa"
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-lg border border-border bg-card text-foreground font-display text-sm font-medium hover:bg-muted transition-colors disabled:opacity-50"
+            >
+              <Unlock className="h-4 w-4" />
+              {destravando ? 'Destravando...' : 'Destravar pedidos presos'}
+            </button>
           )}
           {canCriarEditar && (
             <Link to="/carregamento/novo">
