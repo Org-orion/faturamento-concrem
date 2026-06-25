@@ -6,6 +6,7 @@ import { useToast } from '@/components/ToastProvider';
 import { Order } from '@/types';
 import { supabasePedidos, supabaseOps } from '@/lib/supabase';
 import { rowToOrder } from '@/lib/pedidoMapper';
+import { canFazer } from '@/utils/access';
 import {
   FormField,
   inputClass,
@@ -52,6 +53,13 @@ const CreateShipment = () => {
   const { map: prioMap } = usePrioridades();
   const { map: atencaoMap } = useAtencao();
   const isEditing = Boolean(id);
+
+  // Permissão para remover de um carregamento pedidos com situação "Totalmente Entregue".
+  // Admin sempre pode; demais usuários só com a funcionalidade explícita.
+  const canRemoverEntregue =
+    (user?.role as string) === 'ADMIN' ||
+    canFazer(user?.funcionalidades ?? null, 'carregamento.remover_entregue');
+
   const [driverId, setDriverId] = useState('');
   type ShipmentStatus = 'Aguardando Despacho' | 'Despachado' | 'Em Rota' | 'Entregue' | 'Cancelado';
   const [shipmentStatus, setShipmentStatus] = useState<ShipmentStatus>('Aguardando Despacho');
@@ -655,7 +663,23 @@ const CreateShipment = () => {
   );
   const totalOrderPages = Math.max(1, Math.ceil(displayedOrders.length / ORDER_PAGE_SIZE));
 
+  // Bloqueia a remoção de pedidos "Totalmente Entregue" para quem não tem permissão.
+  // Retorna true se a remoção é permitida; caso contrário avisa e retorna false.
+  const guardRemoveEntregue = (orderId: string): boolean => {
+    const o = allCandidatesById.get(orderId);
+    if (o?.situacaoEntrega === 'Totalmente Entregue' && !canRemoverEntregue) {
+      showToast(
+        'Pedido com situação "Totalmente Entregue". Somente o Administrador do Sistema (ou usuário com permissão) pode removê-lo do carregamento. Contate o Administrador para fazer o procedimento.',
+        'error',
+      );
+      return false;
+    }
+    return true;
+  };
+
   const toggleOrder = (orderId: string) => {
+    const isSelected = selectedOrderIds.includes(orderId);
+    if (isSelected && !guardRemoveEntregue(orderId)) return;
     setSelectedOrderIds(prev =>
       prev.includes(orderId) ? prev.filter(oid => oid !== orderId) : [...prev, orderId]
     );
@@ -687,6 +711,7 @@ const CreateShipment = () => {
   };
 
   const removeOrder = (orderId: string) => {
+    if (!guardRemoveEntregue(orderId)) return;
     setSelectedOrderIds(prev => prev.filter(id => id !== orderId));
     setDeliveredOrderIds(prev => prev.filter(id => id !== orderId));
     setOrderAttachments((prev) => {

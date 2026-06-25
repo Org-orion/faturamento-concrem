@@ -37,6 +37,7 @@ export type Funcionalidade =
   | 'carregamento.excluir'
   | 'carregamento.cronograma'
   | 'carregamento.dashboard'
+  | 'carregamento.remover_entregue'
 
   // Financeiro
   | 'financeiro.view'
@@ -125,6 +126,7 @@ export const funcionalidadeLabels: Record<Funcionalidade, string> = {
   'carregamento.excluir':      'Excluir carregamento',
   'carregamento.cronograma':   'Visualizar cronograma',
   'carregamento.dashboard':    'Visualizar dashboard',
+  'carregamento.remover_entregue': 'Remover pedido "Totalmente Entregue" do carregamento',
 
   'financeiro.view':                   'Visualizar lançamentos',
   'financeiro.criar_editar':           'Criar / editar lançamento',
@@ -223,7 +225,7 @@ export const funcionalidadeSections: FuncionalidadeSection[] = [
   },
   {
     label: 'Carregamento',
-    keys: ['carregamento.view', 'carregamento.criar_editar', 'carregamento.excluir', 'carregamento.cronograma', 'carregamento.dashboard'],
+    keys: ['carregamento.view', 'carregamento.criar_editar', 'carregamento.excluir', 'carregamento.cronograma', 'carregamento.dashboard', 'carregamento.remover_entregue'],
   },
   {
     label: 'Financeiro',
