@@ -1,43 +1,33 @@
 /**
- * Evolution API — cliente para envio de mensagens WhatsApp.
+ * Evolution API — cliente de envio de WhatsApp.
  *
- * Variáveis de ambiente necessárias:
- *   VITE_EVOLUTION_API_URL      ex: https://evo.seudominio.com.br
- *   VITE_EVOLUTION_API_KEY      chave de autenticação (apikey)
- *   VITE_EVOLUTION_INSTANCE     nome da instância criada no painel Evolution
+ * A chamada NÃO vai mais direto para a Evolution: ela passa por uma Edge Function
+ * do Supabase (`evolution-proxy`), que guarda a apikey como secret no servidor.
+ * Assim a chave da Evolution nunca entra no bundle público.
+ *
+ * O navegador só precisa da anon key do Supabase (já pública por design) para
+ * passar na verificação de JWT da função.
+ *
+ * Variáveis usadas (todas já existentes e públicas por natureza):
+ *   VITE_SUPABASE_URL        ex: https://xxxx.supabase.co
+ *   VITE_SUPABASE_ANON_KEY   anon key do projeto
  */
 
-const BASE_URL = (import.meta.env.VITE_EVOLUTION_API_URL as string | undefined)?.replace(/\/$/, '') ?? '';
-const API_KEY = (import.meta.env.VITE_EVOLUTION_API_KEY as string | undefined) ?? '';
-const INSTANCE = encodeURIComponent((import.meta.env.VITE_EVOLUTION_INSTANCE as string | undefined) ?? '');
+const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string | undefined)?.replace(/\/$/, '') ?? '';
+const ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string | undefined) ?? '';
+const PROXY_URL = SUPABASE_URL ? `${SUPABASE_URL}/functions/v1/evolution-proxy` : '';
 
 function isConfigured(): boolean {
-  return Boolean(BASE_URL && API_KEY && INSTANCE);
-}
-
-function missingVars(): string {
-  const missing: string[] = [];
-  if (!BASE_URL) missing.push('VITE_EVOLUTION_API_URL');
-  if (!API_KEY) missing.push('VITE_EVOLUTION_API_KEY');
-  if (!INSTANCE) missing.push('VITE_EVOLUTION_INSTANCE');
-  return missing.join(', ');
+  return Boolean(SUPABASE_URL && ANON_KEY);
 }
 
 /** Expõe o estado de configuração para debug no console */
 export function logEvolutionConfig(): void {
-  console.group('[EvolutionAPI] Configuração atual');
-  console.log('VITE_EVOLUTION_API_URL :', BASE_URL || '⚠️  vazio');
-  console.log('VITE_EVOLUTION_API_KEY :', API_KEY ? '✅ definido' : '⚠️  vazio');
-  console.log('VITE_EVOLUTION_INSTANCE:', INSTANCE || '⚠️  vazio');
-  console.log('isConfigured()         :', isConfigured());
+  console.group('[EvolutionAPI] Configuração (via proxy)');
+  console.log('Proxy URL :', PROXY_URL || '⚠️  vazio');
+  console.log('Anon key  :', ANON_KEY ? '✅ definido' : '⚠️  vazio');
+  console.log('isConfigured():', isConfigured());
   console.groupEnd();
-}
-
-function headers(): Record<string, string> {
-  return {
-    'Content-Type': 'application/json',
-    apikey: API_KEY,
-  };
 }
 
 export type EvolutionResult = {
@@ -46,42 +36,47 @@ export type EvolutionResult = {
   error: string | null;
 };
 
-/**
- * Envia uma mensagem de texto para um número no WhatsApp.
- * @param phone Número em formato E.164 sem o "+" — ex: "5511999998888"
- * @param text  Texto da mensagem (suporta markdown do WhatsApp: *negrito*, _itálico_)
- */
-export async function sendEvolutionText(phone: string, text: string): Promise<EvolutionResult> {
+/** Chamada interna ao proxy. Uma ação por operação da Evolution (lista branca no servidor). */
+async function callProxy(action: 'sendText' | 'sendMedia', payload: Record<string, unknown>): Promise<EvolutionResult> {
   if (!isConfigured()) {
-    const missing = missingVars();
-    console.warn(`[EvolutionAPI] Variável(is) faltando: ${missing}`);
-    return { ok: false, messageId: null, error: `Evolution API não configurada. Faltando: ${missing}` };
+    console.warn('[EvolutionAPI] Supabase não configurado (VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY).');
+    return { ok: false, messageId: null, error: 'Envio de WhatsApp não configurado.' };
   }
 
   try {
-    const res = await fetch(`${BASE_URL}/message/sendText/${INSTANCE}`, {
+    const res = await fetch(PROXY_URL, {
       method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({
-        number: phone,
-        text,
-      }),
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${ANON_KEY}`,
+        apikey: ANON_KEY,
+      },
+      body: JSON.stringify({ action, payload }),
     });
 
     const json = await res.json().catch(() => ({}));
 
     if (!res.ok) {
-      const msg = (json as any)?.message || `HTTP ${res.status}`;
-      console.error('[EvolutionAPI] sendText error:', JSON.stringify(json, null, 2));
+      const msg = (json as any)?.message || (json as any)?.error || `HTTP ${res.status}`;
+      console.error(`[EvolutionAPI] ${action} error:`, JSON.stringify(json, null, 2));
       return { ok: false, messageId: null, error: msg };
     }
 
     const messageId = (json as any)?.key?.id ?? (json as any)?.messageId ?? null;
     return { ok: true, messageId: messageId ? String(messageId) : null, error: null };
   } catch (e: any) {
-    console.error('[EvolutionAPI] sendText fetch error:', e);
+    console.error(`[EvolutionAPI] ${action} fetch error:`, e);
     return { ok: false, messageId: null, error: e?.message || String(e) };
   }
+}
+
+/**
+ * Envia uma mensagem de texto para um número no WhatsApp.
+ * @param phone Número em formato E.164 sem o "+" — ex: "5511999998888"
+ * @param text  Texto da mensagem (suporta markdown do WhatsApp: *negrito*, _itálico_)
+ */
+export async function sendEvolutionText(phone: string, text: string): Promise<EvolutionResult> {
+  return callProxy('sendText', { number: phone, text });
 }
 
 export type EvolutionMediaType = 'image' | 'document' | 'audio' | 'video';
@@ -103,39 +98,14 @@ export async function sendEvolutionMedia(
   caption?: string,
   mediatype: EvolutionMediaType = 'document',
 ): Promise<EvolutionResult> {
-  if (!isConfigured()) {
-    console.warn('[EvolutionAPI] Variáveis de ambiente não configuradas.');
-    return { ok: false, messageId: null, error: 'Evolution API não configurada.' };
-  }
-
-  try {
-    const res = await fetch(`${BASE_URL}/message/sendMedia/${INSTANCE}`, {
-      method: 'POST',
-      headers: headers(),
-      body: JSON.stringify({
-        number: phone,
-        mediatype,
-        mimetype,
-        media: base64,
-        fileName,
-        caption: caption ?? '',
-      }),
-    });
-
-    const json = await res.json().catch(() => ({}));
-
-    if (!res.ok) {
-      const msg = (json as any)?.message || `HTTP ${res.status}`;
-      console.error('[EvolutionAPI] sendMedia error:', JSON.stringify(json, null, 2));
-      return { ok: false, messageId: null, error: msg };
-    }
-
-    const messageId = (json as any)?.key?.id ?? (json as any)?.messageId ?? null;
-    return { ok: true, messageId: messageId ? String(messageId) : null, error: null };
-  } catch (e: any) {
-    console.error('[EvolutionAPI] sendMedia fetch error:', e);
-    return { ok: false, messageId: null, error: e?.message || String(e) };
-  }
+  return callProxy('sendMedia', {
+    number: phone,
+    mediatype,
+    mimetype,
+    media: base64,
+    fileName,
+    caption: caption ?? '',
+  });
 }
 
 /**
