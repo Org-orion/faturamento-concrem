@@ -5,6 +5,7 @@ import { canDo, canFazer, type UserRole } from '@/utils/access';
 import { isFaturadoStatus, isProgramadoStatus } from '@/lib/constants';
 import { getValorTotalPedido } from '@/lib/valorPedido';
 import { formatCurrency } from '@/components/shared';
+import { Tooltip, TooltipTrigger, TooltipContent, TooltipProvider } from '@/components/ui/tooltip';
 import { todayBR, fmtDate } from '@/lib/dateUtils';
 import {
   ChevronLeft, ChevronRight, Truck, Package, DollarSign,
@@ -158,12 +159,13 @@ interface LoadCardProps {
   canEdit?: boolean;
   priorityNivel?: string;
   orderValueMap?: Map<string, number>;
+  orderClientMap?: Map<string, string>;
   onClick?: () => void;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
 }
 
-function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, orderValueMap, onClick, draggable, onDragStart }: LoadCardProps) {
+function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, orderValueMap, orderClientMap, onClick, draggable, onDragStart }: LoadCardProps) {
   const status = load.shipmentStatus || 'Aguardando Despacho';
   const colorClass = STATUS_COLORS[status] || 'bg-gray-100 text-gray-800 border-gray-200';
   const leftClass = STATUS_LEFT[status] || 'bg-gray-400';
@@ -187,7 +189,7 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, or
     );
   }
 
-  return (
+  const card = (
     <div
       className="flex rounded-lg border border-border bg-card overflow-hidden hover:shadow-md transition-shadow group cursor-pointer select-none"
       onClick={onClick}
@@ -217,12 +219,36 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, or
       </div>
     </div>
   );
+
+  // Sem mapa de clientes ou sem pedidos: card puro, sem tooltip.
+  if (!orderClientMap || load.orderIds.length === 0) return card;
+
+  return (
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>{card}</TooltipTrigger>
+        <TooltipContent side="right" align="start" className="max-w-xs p-0">
+          <div className="max-h-72 overflow-auto py-1.5">
+            <p className="px-3 pb-1 text-[10px] font-bold uppercase tracking-wide text-muted-foreground">
+              {load.orderIds.length} pedido{load.orderIds.length !== 1 ? 's' : ''}
+            </p>
+            {load.orderIds.map((id) => (
+              <div key={id} className="px-3 py-0.5 text-xs whitespace-nowrap">
+                <span className="font-mono-data font-semibold text-primary">{id}</span>
+                <span className="text-muted-foreground"> — {orderClientMap.get(id) || '—'}</span>
+              </div>
+            ))}
+          </div>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 }
 
 // ── DayColumn ─────────────────────────────────────────────────────────────────
 
 function DayColumn({
-  dateStr, loads, driverMap, today, canEdit, prioMap, orderValueMap,
+  dateStr, loads, driverMap, today, canEdit, prioMap, orderValueMap, orderClientMap,
   onLoadClick, onDropLoad, dragOverDate, setDragOverDate, onExportPdf,
 }: {
   dateStr: string;
@@ -232,6 +258,7 @@ function DayColumn({
   canEdit: boolean;
   prioMap: Map<string, { nivel: string }>;
   orderValueMap?: Map<string, number>;
+  orderClientMap?: Map<string, string>;
   onLoadClick: (load: Load) => void;
   onDropLoad: (loadId: string, newDate: string) => void;
   dragOverDate: string | null;
@@ -301,6 +328,7 @@ function DayColumn({
               canEdit={canEdit}
               priorityNivel={getLoadPriorityNivel(l, prioMap)}
               orderValueMap={orderValueMap}
+              orderClientMap={orderClientMap}
               onClick={() => onLoadClick(l)}
               draggable={canEdit}
               onDragStart={(e) => { e.dataTransfer.setData('loadId', l.id); }}
@@ -1285,6 +1313,30 @@ const CarregamentoDashboard = () => {
     }).catch((err) => console.error('[CarregamentoDashboard] listOrderValues:', err));
   }, [listOrderIds, view]);
 
+  // ── order → cliente (para o tooltip dos cards de carregamento) ──
+  const [orderClientMap, setOrderClientMap] = useState<Map<string, string>>(new Map());
+  const lastClientFetchKey = useRef('');
+  const allLoadOrderIds = useMemo(
+    () => [...new Set(loads.flatMap((l) => l.orderIds))],
+    [loads],
+  );
+  useEffect(() => {
+    const fetchKey = allLoadOrderIds.join(',');
+    if (!fetchKey || fetchKey === lastClientFetchKey.current || !supabasePedidos) return;
+    lastClientFetchKey.current = fetchKey;
+    const table = import.meta.env.VITE_SUPABASE_PEDIDOS_TABLE || 'concrem_pedidos_venda';
+    const BATCH = 200;
+    const chunks: string[][] = [];
+    for (let i = 0; i < allLoadOrderIds.length; i += BATCH) chunks.push(allLoadOrderIds.slice(i, i + BATCH));
+    Promise.all(chunks.map((batch) =>
+      supabasePedidos!.from(table).select('numero_pedido, cliente_nome').in('numero_pedido', batch).then(({ data }) => data || [])
+    )).then((results) => {
+      const m = new Map<string, string>();
+      for (const row of results.flat()) m.set(String(row.numero_pedido), row.cliente_nome || '—');
+      setOrderClientMap(m);
+    }).catch((err) => console.error('[CarregamentoDashboard] orderClientMap:', err));
+  }, [allLoadOrderIds]);
+
   // ── Estado da meta ──
   const [monthGoal, setMonthGoal] = useState<MonthGoal | null>(null);
   const [justDates, setJustDates] = useState<{ date: string; type: string }[]>([]);
@@ -1652,6 +1704,7 @@ const CarregamentoDashboard = () => {
             {visibleWeekDays.map((d) => (
               <DayColumn key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
                 today={today} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={weekOrderValueMap}
+                orderClientMap={orderClientMap}
                 onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
                 dragOverDate={dragOverDate} setDragOverDate={setDragOverDate}
                 onExportPdf={generateDayPdf} />
@@ -1706,6 +1759,7 @@ const CarregamentoDashboard = () => {
                       <LoadCard key={l.id} load={l} driverName={driverMap.get(l.driverId) || 'Sem motorista'}
                         canEdit={canEditLoad} priorityNivel={getLoadPriorityNivel(l, prioMap)}
                         orderValueMap={listOrderValueMap}
+                        orderClientMap={orderClientMap}
                         onClick={() => setSelectedLoad(l)} />
                     ))}
                   </div>
