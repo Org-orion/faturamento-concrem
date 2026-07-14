@@ -1251,8 +1251,8 @@ const Programacao: React.FC = () => {
       return `<tr>
         <td style="font-weight:700">${p.numeroPedido}</td>
         <td>${p.clienteNome}</td>
-        <td style="font-size:10px;color:#555">${p.representante ?? '—'}</td>
-        <td style="text-align:center;font-size:10px">${p.statusLabel}</td>
+        <td style="font-size:8px;color:#555">${p.representante ?? '—'}</td>
+        <td style="text-align:center;font-size:8px">${p.statusLabel}</td>
         <td style="text-align:center">${p.totalQtd != null ? p.totalQtd : '—'}</td>
         <td style="text-align:right">${fmtCurrency(p.valor)}</td>
         <td style="text-align:center">${p.dataEmissaoFormatada}</td>
@@ -1262,21 +1262,21 @@ const Programacao: React.FC = () => {
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
 <title></title>
 <style>
-  @page { size: A4 landscape; margin: 10mm 12mm; }
+  @page { size: A4 landscape; margin: 7mm 8mm; }
   @page { @top-left { content: ""; } @top-center { content: ""; } @top-right { content: ""; } @bottom-left { content: ""; } @bottom-center { content: ""; } @bottom-right { content: ""; } }
   * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:11px; }
-  .page-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:10px; border-bottom:3px solid #0a2315; margin-bottom:8px; }
-  .page-header img { height:44px; }
+  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:9px; }
+  .page-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:4px; border-bottom:2px solid #0a2315; margin-bottom:4px; }
+  .page-header img { height:28px; }
   .ph-title { text-align:right; }
-  .ph-title h1 { font-size:15px; color:#0a2315; font-weight:800; text-transform:uppercase; letter-spacing:1px; }
-  .ph-title p { font-size:9px; color:#888; margin-top:2px; }
+  .ph-title h1 { font-size:12px; color:#0a2315; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; }
+  .ph-title p { font-size:8px; color:#888; margin-top:1px; }
   table { width:100%; border-collapse:collapse; }
-  thead th { background:#0a2315; color:#fff; padding:6px 10px; font-size:10px; text-transform:uppercase; letter-spacing:0.5px; font-weight:700; white-space:nowrap; }
-  thead { display:table-row-group; }
-  tbody td { padding:5px 10px; border-bottom:1px solid #e0e0e0; font-size:11px; }
+  thead th { background:#0a2315; color:#fff; padding:3px 6px; font-size:8px; text-transform:uppercase; letter-spacing:0.3px; font-weight:700; white-space:nowrap; }
+  thead { display:table-header-group; }
+  tbody td { padding:1.5px 6px; border-bottom:1px solid #e8e8e8; font-size:9px; line-height:1.1; }
   tbody tr:nth-child(even) { background:#f5f7f5; }
-  .total-row td { padding:7px 10px; font-weight:800; font-size:11px; border-top:2px solid #0a2315; background:#f0f2f0; }
+  .total-row td { padding:4px 6px; font-weight:800; font-size:9px; border-top:2px solid #0a2315; background:#f0f2f0; }
   @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
 </style>
 <script>window.onload = () => { window.focus(); window.print(); };</script>
