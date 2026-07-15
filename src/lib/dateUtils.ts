@@ -60,6 +60,30 @@ export function fmtDateTimeMsg(iso?: string | null): string {
   return `${date} às ${time}`;
 }
 
+/** Converte uma string ISO para a data-calendário (YYYY-MM-DD) no fuso de Brasília. */
+export function toBRDateStr(iso?: string | null): string {
+  if (!iso) return '';
+  const d = /^\d{4}-\d{2}-\d{2}$/.test(iso.trim()) ? new Date(`${iso.trim()}T12:00:00`) : new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ }).format(d);
+}
+
+/**
+ * Dias inteiros decorridos entre a data de `iso` e hoje, ambos no calendário de Brasília.
+ * Ancorado em UTC-meia-noite das datas puras → não sofre drift de fuso.
+ * Ex.: liberado em 01/06 e hoje 13/06 → 12.
+ */
+export function diasDecorridosBR(iso?: string | null): number {
+  const fromYMD = toBRDateStr(iso);
+  if (!fromYMD) return 0;
+  const toYMD = todayBR();
+  const [fy, fm, fd] = fromYMD.split('-').map(Number);
+  const [ty, tm, td] = toYMD.split('-').map(Number);
+  const a = Date.UTC(fy, fm - 1, fd);
+  const b = Date.UTC(ty, tm - 1, td);
+  return Math.max(0, Math.floor((b - a) / 86400000));
+}
+
 const MESES_PT = ['Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
 
 /** Extrai o ano-mês (YYYY-MM) de uma string de data ISO. Retorna '' se inválida. */

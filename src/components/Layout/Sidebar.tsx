@@ -14,6 +14,7 @@ import {
   Monitor,
   BarChart2,
   DollarSign,
+  Clock,
   Sun,
   Moon,
   Menu,
@@ -57,6 +58,7 @@ const iconMap = {
   monitor: Monitor,
   'bar-chart-2': BarChart2,
   'dollar-sign': DollarSign,
+  clock: Clock,
 } as const;
 
 // ---------------------------------------------------------------------------

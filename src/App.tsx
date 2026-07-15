@@ -16,6 +16,7 @@ const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const ClientsPage = lazy(() => import('@/pages/Clients'));
 const DriversPage = lazy(() => import('@/pages/Drivers'));
 const CarregamentosHub = lazy(() => import('@/pages/CarregamentosHub'));
+const ControlePrazos = lazy(() => import('@/pages/ControlePrazos'));
 const CreateCarregamento = lazy(() => import('@/pages/CreateShipment'));
 const FinancialPage = lazy(() => import('@/pages/Financial'));
 const ProtocoloFinanceiroPage = lazy(() => import('@/pages/financeiro/ProtocoloFinanceiro'));
@@ -118,6 +119,7 @@ const AppRoutes = () => {
         <Route path="/permissoes" element={<ProtectedRoute><PermissoesPage /></ProtectedRoute>} />
         <Route path="/painel-tv" element={<PainelTVPage />} />
         <Route path="/analise-pedidos" element={<ProtectedRoute><AnalisePedidosPage /></ProtectedRoute>} />
+        <Route path="/controle-prazos" element={<ProtectedRoute><ControlePrazos /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

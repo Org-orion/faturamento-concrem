@@ -25,7 +25,8 @@ export type AppRouteKey =
   | 'pedidos'
   | 'prioridades'
   | 'painel-tv'
-  | 'analise-pedidos';
+  | 'analise-pedidos'
+  | 'controle-prazos';
 
 /** Actions a user can perform on a page */
 export type PageAction = 'view' | 'edit' | 'execute';
@@ -37,7 +38,7 @@ export type PagePermission = {
 };
 
 export type MenuItem =
-  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign' }
+  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign' | 'clock' }
   | { type: 'group'; label: string; icon: 'users' | 'box'; items: { label: string; href: string }[] };
 
 // ---------------------------------------------------------------------------
@@ -82,6 +83,8 @@ export const routeLabels: Record<AppRouteKey, string> = {
   pedidos: 'Pedidos',
   prioridades: 'Prioridades',
   'painel-tv': 'Painel TV',
+  'analise-pedidos': 'Análise de Pedidos',
+  'controle-prazos': 'Controle de Prazos',
 };
 
 export const actionLabels: Record<PageAction, string> = {
@@ -221,6 +224,7 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   if (path === '/prioridades') return 'prioridades';
   if (path === '/painel-tv') return 'painel-tv';
   if (path === '/analise-pedidos') return 'analise-pedidos';
+  if (path === '/controle-prazos') return 'controle-prazos';
   return null;
 }
 
@@ -248,6 +252,7 @@ export const routeToFuncionalidades: Partial<Record<AppRouteKey, Funcionalidade[
   pedidos:                    ['comercial.view', 'suporte.view', 'painel_pedidos.view', 'atualizacao_status.view', 'programacao_comercial.view'],
   prioridades:                ['prioridades.view'],
   'painel-tv':                ['painel_tv.view'],
+  'controle-prazos':          ['controle_prazos.view'],
 };
 
 /** Check if a user can perform a specific named action (new group-based system) */
@@ -358,7 +363,7 @@ type MenuItemDef = {
   routeKey: AppRouteKey;
   label: string;
   href: string;
-  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign';
+  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign' | 'clock';
   group?: string;
 };
 
@@ -380,6 +385,7 @@ const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
   { routeKey: 'prioridades',              label: 'Prioridades',              href: '/prioridades',               icon: 'flame' },
   { routeKey: 'painel-tv',               label: 'Painel TV',                href: '/painel-tv',                 icon: 'monitor' },
   { routeKey: 'analise-pedidos',         label: 'Análise de Pedidos',       href: '/analise-pedidos',           icon: 'bar-chart-2' },
+  { routeKey: 'controle-prazos',         label: 'Controle de Prazos',       href: '/controle-prazos',           icon: 'clock' },
   { routeKey: 'representantes',          label: 'Representantes',           href: '/representantes',            icon: 'users', group: 'Cadastro' },
   { routeKey: 'motoristas',              label: 'Motoristas',               href: '/motoristas',                icon: 'users', group: 'Cadastro' },
   { routeKey: 'usuarios',               label: 'Usuários',                 href: '/usuarios',                  icon: 'users', group: 'Cadastro' },
@@ -441,6 +447,7 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
       { type: 'link', label: 'Protocolo Financeiro', href: '/protocolo-financeiro', icon: 'dollar-sign' },
       { type: 'link', label: 'Painel TV', href: '/painel-tv', icon: 'monitor' },
       { type: 'link', label: 'Análise de Pedidos', href: '/analise-pedidos', icon: 'bar-chart-2' },
+      { type: 'link', label: 'Controle de Prazos', href: '/controle-prazos', icon: 'clock' },
       { type: 'group', label: 'Cadastro', icon: 'users', items: [
         { label: 'Representantes', href: '/representantes' },
         { label: 'Motoristas', href: '/motoristas' },
@@ -576,4 +583,7 @@ export const routeAccess: Record<AppRouteKey, UserRole[]> = {
   pedidos: ['ADMIN', 'FATURAMENTO', 'COMERCIAL', 'PRODUCAO', 'LOGISTICA'],
   prioridades: ['ADMIN', 'COMERCIAL', 'LOGISTICA'],
   'painel-tv': ['ADMIN', 'FATURAMENTO', 'COMERCIAL', 'PRODUCAO', 'LOGISTICA'],
+  'protocolo-financeiro': ['ADMIN', 'FATURAMENTO'],
+  'analise-pedidos': ['ADMIN'],
+  'controle-prazos': ['ADMIN', 'FATURAMENTO', 'COMERCIAL'],
 };

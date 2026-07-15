@@ -74,6 +74,9 @@ export type Funcionalidade =
   // Análise de Pedidos
   | 'analise_pedidos.view'
 
+  // Controle de Prazos
+  | 'controle_prazos.view'
+
   // Representantes
   | 'representantes.view'
   | 'representantes.criar_editar'
@@ -155,6 +158,8 @@ export const funcionalidadeLabels: Record<Funcionalidade, string> = {
 
   'analise_pedidos.view': 'Acessar análise de pedidos',
 
+  'controle_prazos.view': 'Acessar controle de prazos de produção',
+
   'representantes.view':        'Visualizar representantes',
   'representantes.criar_editar':'Criar / editar representante',
   'representantes.excluir':     'Excluir representante',
@@ -186,6 +191,10 @@ export const funcionalidadeSections: FuncionalidadeSection[] = [
   {
     label: 'Análises',
     keys: ['analise_pedidos.view'] as Funcionalidade[],
+  },
+  {
+    label: 'Controle de Prazos',
+    keys: ['controle_prazos.view'] as Funcionalidade[],
   },
   {
     label: 'Pedidos de Venda',
