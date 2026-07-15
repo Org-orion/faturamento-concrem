@@ -31,6 +31,18 @@ const PRODUCAO_STATUSES = [
   'parcialmente_entregue','entregue','aguardando_pagamento','finalizado',
 ];
 
+// Status anteriores ao embarque (ainda aguardando entrar numa carga).
+const PRE_EMBARQUE_STATUSES = new Set(['liberado_producao', 'em_producao', 'producao_finalizada']);
+
+// Um pedido "pós-embarque" já passou do ponto de carregamento (em_carregamento em diante).
+// Se estiver nesse estágio SEM registro de carga, é uma anomalia de dados — não "aguardando embarque".
+function isPosEmbarque(status: string): boolean {
+  return PRODUCAO_STATUSES.includes(status) && !PRE_EMBARQUE_STATUSES.has(status);
+}
+
+// Grupos de exibição da análise.
+type GrupoAnalise = 'com' | 'aguardando' | 'embarcado';
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 type PedidoAnalise = {
@@ -282,17 +294,42 @@ function SortableTh({
   );
 }
 
+// ─── Config visual por grupo ──────────────────────────────────────────────────
+
+const HEADER: Record<GrupoAnalise, { wrap: string; text: string; title: string; icon: React.ReactNode }> = {
+  com: {
+    wrap: 'bg-emerald-50 dark:bg-emerald-950/20',
+    text: 'text-emerald-700 dark:text-emerald-400',
+    title: 'Com carregamento programado',
+    icon: <CheckCircle2 className="h-4 w-4 text-emerald-600" />,
+  },
+  aguardando: {
+    wrap: 'bg-red-50 dark:bg-red-950/20',
+    text: 'text-red-700 dark:text-red-400',
+    title: 'Sem carregamento — aguardando embarque',
+    icon: <XCircle className="h-4 w-4 text-red-600" />,
+  },
+  embarcado: {
+    wrap: 'bg-amber-50 dark:bg-amber-950/20',
+    text: 'text-amber-700 dark:text-amber-400',
+    title: 'Embarcado sem registro de carga',
+    icon: <AlertTriangle className="h-4 w-4 text-amber-600" />,
+  },
+};
+
 // ─── GroupTable interativo ────────────────────────────────────────────────────
 
 type GroupTableProps = {
   pedidos:      PedidoAnalise[];
-  hasLoadGroup: boolean;
+  variant:      GrupoAnalise;
   search:       string;
   onDetail:     (p: PedidoAnalise) => void;
   onChangeMes:  (numeroPedido: string) => void;
 };
 
-function GroupTable({ pedidos, hasLoadGroup, search, onDetail, onChangeMes }: GroupTableProps) {
+function GroupTable({ pedidos, variant, search, onDetail, onChangeMes }: GroupTableProps) {
+  // Coluna de carregamento / lógica de mês divergente só fazem sentido no grupo "com carga".
+  const hasLoadGroup = variant === 'com';
   // ── Ordenação ──
   const [sortKey, setSortKey] = useState<SortKey>('numeroPedido');
   const [sortDir, setSortDir] = useState<SortDir>('asc');
@@ -360,24 +397,22 @@ function GroupTable({ pedidos, hasLoadGroup, search, onDetail, onChangeMes }: Gr
     <div className="bg-card rounded-xl border border-border shadow-card overflow-hidden mb-4">
 
       {/* ── Cabeçalho do grupo ── */}
-      <div className={`px-4 py-3 border-b border-border flex flex-wrap items-center gap-3 ${
-        hasLoadGroup ? 'bg-emerald-50 dark:bg-emerald-950/20' : 'bg-red-50 dark:bg-red-950/20'
-      }`}>
+      <div className={`px-4 py-3 border-b border-border flex flex-wrap items-center gap-3 ${HEADER[variant].wrap}`}>
         <div className="flex items-center gap-2">
-          {hasLoadGroup
-            ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-            : <XCircle className="h-4 w-4 text-red-600" />
-          }
-          <span className={`text-sm font-bold ${hasLoadGroup ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-700 dark:text-red-400'}`}>
-            {hasLoadGroup ? 'Com carregamento programado' : 'Sem carregamento programado'}
-          </span>
+          {HEADER[variant].icon}
+          <span className={`text-sm font-bold ${HEADER[variant].text}`}>{HEADER[variant].title}</span>
         </div>
-        <span className={`text-xs ${hasLoadGroup ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>
+        <span className={`text-xs ${HEADER[variant].text}`}>
           {pedidos.length} pedidos · {formatCurrency(totalValor)}
           {filtered.length !== pedidos.length && (
             <span className="ml-1 opacity-70">({filtered.length} exibidos)</span>
           )}
         </span>
+        {variant === 'embarcado' && (
+          <span className="w-full text-[11px] text-amber-700/80 dark:text-amber-400/80">
+            Pedidos com status de embarque/entrega mas sem registro de carga (entrega dada fora do módulo de carregamento). Revisar higiene de dados.
+          </span>
+        )}
         {hasLoadGroup && divergentCount > 0 && (
           <div className="flex items-center gap-1.5 ml-auto bg-amber-100 dark:bg-amber-900/30 border border-amber-300 dark:border-amber-700 rounded-lg px-2.5 py-1">
             <AlertTriangle className="h-3.5 w-3.5 text-amber-600 shrink-0" />
@@ -677,14 +712,19 @@ const AnalisePedidos = () => {
 
   useEffect(() => { void load(); }, [load]);
 
-  const { comCarregamento, semCarregamento } = useMemo(() => ({
-    comCarregamento: pedidos.filter(p => p.hasLoad),
-    semCarregamento: pedidos.filter(p => !p.hasLoad),
-  }), [pedidos]);
+  const { comCarregamento, aguardando, embarcadoSemCarga } = useMemo(() => {
+    const semCarga = pedidos.filter(p => !p.hasLoad);
+    return {
+      comCarregamento:  pedidos.filter(p => p.hasLoad),
+      aguardando:       semCarga.filter(p => !isPosEmbarque(p.statusAtual)),
+      embarcadoSemCarga: semCarga.filter(p => isPosEmbarque(p.statusAtual)),
+    };
+  }, [pedidos]);
 
   const totalValor       = pedidos.reduce((s, p) => s + p.valor, 0);
   const valorComCar      = comCarregamento.reduce((s, p) => s + p.valor, 0);
-  const valorSemCar      = semCarregamento.reduce((s, p) => s + p.valor, 0);
+  const valorAguardando  = aguardando.reduce((s, p) => s + p.valor, 0);
+  const valorEmbarcado   = embarcadoSemCarga.reduce((s, p) => s + p.valor, 0);
   const divergentesTotal = pedidos.filter(p => p.monthDivergent).length;
 
   const changeMonth = (delta: number) => {
@@ -743,12 +783,13 @@ const AnalisePedidos = () => {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {[
-          { label: 'Total programado', value: `${pedidos.length} pedidos`,           sub: formatCurrency(totalValor),  color: 'text-primary' },
-          { label: 'Com carregamento', value: `${comCarregamento.length} pedidos`,    sub: formatCurrency(valorComCar), color: 'text-emerald-600' },
-          { label: 'Sem carregamento', value: `${semCarregamento.length} pedidos`,    sub: formatCurrency(valorSemCar), color: 'text-red-600' },
-          { label: 'Mês divergente',   value: `${divergentesTotal} pedido${divergentesTotal !== 1 ? 's' : ''}`, sub: 'Embarque em outro mês', color: 'text-amber-600' },
+          { label: 'Total programado',   value: `${pedidos.length} pedidos`,            sub: formatCurrency(totalValor),     color: 'text-primary' },
+          { label: 'Com carregamento',   value: `${comCarregamento.length} pedidos`,     sub: formatCurrency(valorComCar),    color: 'text-emerald-600' },
+          { label: 'Aguardando embarque', value: `${aguardando.length} pedidos`,         sub: formatCurrency(valorAguardando), color: 'text-red-600' },
+          { label: 'Embarcado s/ carga', value: `${embarcadoSemCarga.length} pedido${embarcadoSemCarga.length !== 1 ? 's' : ''}`, sub: formatCurrency(valorEmbarcado), color: 'text-amber-600' },
+          { label: 'Mês divergente',     value: `${divergentesTotal} pedido${divergentesTotal !== 1 ? 's' : ''}`, sub: 'Embarque em outro mês', color: 'text-amber-600' },
         ].map(({ label: l, value, sub, color }) => (
           <div key={l} className="bg-card rounded-xl p-4 border border-border shadow-card">
             <p className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">{l}</p>
@@ -783,18 +824,27 @@ const AnalisePedidos = () => {
         <>
           <GroupTable
             pedidos={comCarregamento}
-            hasLoadGroup={true}
+            variant="com"
             search={search}
             onDetail={setDetailPedido}
             onChangeMes={handleChangeMes}
           />
           <GroupTable
-            pedidos={semCarregamento}
-            hasLoadGroup={false}
+            pedidos={aguardando}
+            variant="aguardando"
             search={search}
             onDetail={setDetailPedido}
             onChangeMes={handleChangeMes}
           />
+          {embarcadoSemCarga.length > 0 && (
+            <GroupTable
+              pedidos={embarcadoSemCarga}
+              variant="embarcado"
+              search={search}
+              onDetail={setDetailPedido}
+              onChangeMes={handleChangeMes}
+            />
+          )}
         </>
       )}
 
