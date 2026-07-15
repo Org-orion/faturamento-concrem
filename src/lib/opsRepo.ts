@@ -21,9 +21,8 @@ const toOpsStatus = (load: Load): OpsStatus => {
   return 'aguardando_producao';
 };
 
-export async function upsertProgramacaoCarregamento(load: Load): Promise<{ error: { message: string } | null }> {
-  if (!supabaseOps) return { error: { message: 'Supabase OPS não configurado.' } };
-  const payload = {
+function buildProgramacaoPayload(load: Load) {
+  return {
     id: load.id,
     pedidos: load.orderIds,
     status: toOpsStatus(load),
@@ -40,13 +39,72 @@ export async function upsertProgramacaoCarregamento(load: Load): Promise<{ error
     shipment_status: load.shipmentStatus,
     updated_at: new Date().toISOString(),
   };
+}
 
-  const { error } = await supabaseOps.from('concrem_programacoes_embarque').upsert(payload);
+/** Atualização de carga existente (upsert por id). NÃO usar para criação — ver insert abaixo. */
+export async function upsertProgramacaoCarregamento(load: Load): Promise<{ error: { message: string } | null }> {
+  if (!supabaseOps) return { error: { message: 'Supabase OPS não configurado.' } };
+  const { error } = await supabaseOps.from('concrem_programacoes_embarque').upsert(buildProgramacaoPayload(load));
   if (error) {
     console.error('[Supabase OPS] upsert programacoes_embarque:', error.message);
     return { error };
   }
   return { error: null };
+}
+
+/**
+ * Criação de carga por INSERT (não upsert). Se o id colidir com um já existente
+ * (PK duplicada → código 23505), retorna o erro para o chamador gerar um novo id
+ * e tentar de novo. Isso impede a SOBRESCRITA silenciosa de uma carga criada por
+ * outra sessão concorrente (causa do incidente EMB-382).
+ */
+export async function insertProgramacaoCarregamento(load: Load): Promise<{ error: { code?: string; message: string } | null }> {
+  if (!supabaseOps) return { error: { message: 'Supabase OPS não configurado.' } };
+  const { error } = await supabaseOps.from('concrem_programacoes_embarque').insert(buildProgramacaoPayload(load));
+  if (error) {
+    if ((error as { code?: string }).code !== '23505') {
+      console.error('[Supabase OPS] insert programacoes_embarque:', error.message);
+    }
+    return { error: error as { code?: string; message: string } };
+  }
+  return { error: null };
+}
+
+/**
+ * Atualização de carga com TRAVA DE CONCORRÊNCIA OTIMISTA.
+ * Só grava se o `updated_at` no banco ainda for o que o cliente carregou
+ * (`expectedUpdatedAt`). Se outra sessão alterou a carga nesse meio-tempo, 0 linhas
+ * são afetadas → retorna `conflict: true` (o chamador aborta sem sobrescrever).
+ * Se `expectedUpdatedAt` não for informado, faz update simples (retrocompatível).
+ */
+export async function updateProgramacaoCarregamentoGuarded(
+  load: Load,
+  expectedUpdatedAt?: string,
+): Promise<{ error: { message: string } | null; conflict?: boolean; updatedAt?: string }> {
+  if (!supabaseOps) return { error: { message: 'Supabase OPS não configurado.' } };
+  const payload = buildProgramacaoPayload(load);
+  let q = supabaseOps.from('concrem_programacoes_embarque').update(payload).eq('id', load.id);
+  if (expectedUpdatedAt) q = q.eq('updated_at', expectedUpdatedAt);
+  const { data, error } = await q.select('id');
+  if (error) {
+    console.error('[Supabase OPS] update guarded programacoes_embarque:', error.message);
+    return { error };
+  }
+  if (expectedUpdatedAt && (!data || data.length === 0)) return { error: null, conflict: true };
+  return { error: null, updatedAt: payload.updated_at };
+}
+
+/** Maior número de carga (EMB-###) existente no banco. Retorna 0 se não houver. */
+export async function fetchMaxLoadNumber(): Promise<number> {
+  if (!supabaseOps) return 0;
+  const { data, error } = await supabaseOps.from('concrem_programacoes_embarque').select('id');
+  if (error) { console.error('[Supabase OPS] fetch max load id:', error.message); return 0; }
+  let max = 0;
+  for (const r of (data ?? []) as { id: string }[]) {
+    const m = /^EMB-(\d+)$/.exec(String(r.id));
+    if (m) { const n = Number(m[1]); if (n > max) max = n; }
+  }
+  return max;
 }
 
 export async function deleteProgramacaoCarregamento(id: string) {

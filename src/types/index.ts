@@ -250,6 +250,8 @@ export interface Load {
   shipmentStatus: 'Aguardando Despacho' | 'Despachado' | 'Em Rota' | 'Entregue' | 'Cancelado';
   estimatedWeight: number;
   freightValue: number;
+  /** updated_at vindo do banco — usado para trava de concorrência otimista no updateLoad. */
+  updatedAt?: string;
 }
 
 export type PaymentStatus = 'Pendente' | 'Pago' | 'Vencido';

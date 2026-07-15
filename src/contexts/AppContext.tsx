@@ -24,6 +24,9 @@ import {
   insertProducaoConfirmacao,
   upsertEntregas,
   upsertProgramacaoCarregamento,
+  insertProgramacaoCarregamento,
+  updateProgramacaoCarregamentoGuarded,
+  fetchMaxLoadNumber,
   listTiposDespesa,
   listLancamentosFinanceiros,
   upsertTipoDespesa,
@@ -428,14 +431,14 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
       const res1 = await supabaseOps
         .from('concrem_programacoes_embarque')
-        .select('id, driver_id, pedidos, planned_date, realization_date, previsao_entrega, obs, criado_por, criado_em, production_status, shipment_status, estimated_weight, freight_value');
+        .select('id, driver_id, pedidos, planned_date, realization_date, previsao_entrega, obs, criado_por, criado_em, updated_at, production_status, shipment_status, estimated_weight, freight_value');
       if (cancelled) return;
 
       if (res1.error) {
         // Retry without realization_date in case the column doesn't exist yet
         const res2 = await supabaseOps
           .from('concrem_programacoes_embarque')
-          .select('id, driver_id, pedidos, planned_date, previsao_entrega, obs, criado_por, criado_em, production_status, shipment_status, estimated_weight, freight_value');
+          .select('id, driver_id, pedidos, planned_date, previsao_entrega, obs, criado_por, criado_em, updated_at, production_status, shipment_status, estimated_weight, freight_value');
         if (cancelled) return;
         if (res2.error || !res2.data) {
           console.error('[Supabase OPS] Falha ao carregar programacoes_embarque:', res2.error?.message);
@@ -467,6 +470,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
           shipmentStatus: (row.shipment_status || row.shipmentStatus || 'Aguardando Despacho') as Load['shipmentStatus'],
           estimatedWeight: Number(row.estimated_weight ?? row.estimatedWeight ?? 0),
           freightValue: Number(row.freight_value ?? row.freightValue ?? 0),
+          updatedAt: row.updated_at ?? row.updatedAt ?? undefined,
         };
       });
 
@@ -1012,22 +1016,39 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   }, []);
 
   const addLoad = useCallback(async (l: Omit<Load, 'id' | 'createdAt' | 'createdBy'>) => {
-    const newLoadId = nextId('EMB', 'load');
     const createdAt = new Date().toISOString();
     const createdBy = user?.username || 'faturamento';
-    const nextLoad: Load = { ...l, id: newLoadId, createdAt, createdBy };
-    setLoads((prev) => [...prev, nextLoad]);
 
+    // Aloca o ID a partir do MAIOR EMB-### real no banco (não só do contador em memória,
+    // que pode estar desatualizado entre sessões). A gravação é INSERT: se o id colidir
+    // com uma carga criada por outra sessão, o INSERT falha (23505) e tentamos o próximo
+    // id — assim NUNCA sobrescrevemos a carga de outro usuário (incidente EMB-382).
+    let base = await fetchMaxLoadNumber();
+    if (base < counters.load) base = counters.load;
+    let nextLoad: Load | null = null;
+    let lastErr: { code?: string; message: string } | null = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      base += 1;
+      const candidate = `EMB-${String(base).padStart(3, '0')}`;
+      const tentativa: Load = { ...l, id: candidate, createdAt, createdBy };
+      const { error } = await insertProgramacaoCarregamento(tentativa);
+      if (!error) { nextLoad = tentativa; if (base > counters.load) counters.load = base; break; }
+      lastErr = error;
+      if (error.code === '23505') continue; // id já existe → tenta o próximo número
+      throw new Error(`Erro ao salvar carregamento: ${error.message}`);
+    }
+    if (!nextLoad) {
+      throw new Error(`Não foi possível gerar um ID único para o carregamento${lastErr ? `: ${lastErr.message}` : ''}. Tente novamente.`);
+    }
+    const newLoadId = nextLoad.id;
+
+    // Persistência confirmada → atualiza estado local
+    setLoads((prev) => [...prev, nextLoad!]);
     skipBatchInitRef.current = true;
     setOrders((prev) =>
       prev.map((o) =>
         l.orderIds.includes(o.id)
-          ? {
-              ...o,
-              driverId: l.driverId,
-              carregamentoId: newLoadId,
-              status: mapLoadToOrderStatus(nextLoad),
-            }
+          ? { ...o, driverId: l.driverId, carregamentoId: newLoadId, status: mapLoadToOrderStatus(nextLoad!) }
           : o,
       ),
     );
@@ -1035,23 +1056,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     setSupportOrders((prev) =>
       prev.map((o) =>
         l.orderIds.includes(o.id)
-          ? {
-              ...o,
-              carregamentoId: newLoadId,
-              status: mapLoadToOrderStatus(nextLoad) as SupportOrderStatus,
-            }
+          ? { ...o, carregamentoId: newLoadId, status: mapLoadToOrderStatus(nextLoad!) as SupportOrderStatus }
           : o,
       ),
     );
 
     setDrivers((prev) =>
       prev.map((d) =>
-        d.id === l.driverId ? { ...d, status: nextLoad.shipmentStatus === 'Entregue' ? 'Disponível' : 'Em Trânsito' } : d,
+        d.id === l.driverId ? { ...d, status: nextLoad!.shipmentStatus === 'Entregue' ? 'Disponível' : 'Em Trânsito' } : d,
       ),
     );
 
-    const { error: saveErr } = await upsertProgramacaoCarregamento(nextLoad);
-    if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(nextLoad.id, nextLoad.orderIds, 'pendente');
     void recordEmbarqueCriado(nextLoad, user?.username || null);
 
@@ -1075,7 +1090,18 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   const updateLoad = useCallback(async (l: Load) => {
     const oldLoad = loads.find(x => x.id === l.id);
-    setLoads(prev => prev.map(x => x.id === l.id ? l : x));
+
+    // Trava de concorrência otimista: grava ANTES de mexer no estado local e só se a carga
+    // não tiver sido alterada por outra sessão desde que este cliente a carregou. Se outro
+    // usuário mexeu no meio-tempo, aborta sem sobrescrever (defesa contra lost update na edição).
+    const guard = await updateProgramacaoCarregamentoGuarded(l, oldLoad?.updatedAt);
+    if (guard.conflict) {
+      throw new Error('Este carregamento foi alterado por outro usuário. Recarregue a página e tente novamente.');
+    }
+    if (guard.error) throw new Error(`Erro ao salvar carregamento: ${guard.error.message}`);
+    const lSalvo: Load = { ...l, updatedAt: guard.updatedAt ?? l.updatedAt };
+
+    setLoads(prev => prev.map(x => x.id === l.id ? lSalvo : x));
 
     skipBatchInitRef.current = true;
     setOrders((prev) =>
@@ -1125,8 +1151,6 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       return d;
     }));
 
-    const { error: saveErr } = await upsertProgramacaoCarregamento(l);
-    if (saveErr) throw new Error(`Erro ao salvar carregamento: ${saveErr.message}`);
     await upsertEntregas(l.id, l.orderIds, l.shipmentStatus === 'Entregue' ? 'entregue' : 'pendente');
     if (oldLoad) await recordEmbarqueAlterado(oldLoad, l, user?.username || null);
 
