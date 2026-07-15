@@ -10,6 +10,10 @@ export interface PedidoPrioridade {
   criado_por: string | null;
   criado_em: string;
   ativo: boolean;
+  // Controle de atendimento (colunas adicionadas por migration; null-safe até aplicar)
+  atendida?: boolean | null;
+  atendida_em?: string | null;
+  atendida_por?: string | null;
 }
 
 export async function listTodasPrioridades(): Promise<PedidoPrioridade[]> {
@@ -66,6 +70,34 @@ export async function upsertPrioridade(row: {
     return null;
   }
   return data as PedidoPrioridade;
+}
+
+/** Marca a prioridade do pedido como atendida (data/hora UTC + responsável). */
+export async function marcarPrioridadeAtendida(pedidoId: string, atendidaPor: string | null): Promise<boolean> {
+  if (!supabaseOps) return false;
+  const { error } = await supabaseOps
+    .from('concrem_pedido_prioridades')
+    .update({ atendida: true, atendida_em: new Date().toISOString(), atendida_por: atendidaPor })
+    .eq('pedido_id', pedidoId);
+  if (error) {
+    console.error('[Supabase OPS] marcar prioridade atendida:', error.message);
+    return false;
+  }
+  return true;
+}
+
+/** Reabre a prioridade (volta a pendente, limpa data/responsável de atendimento). */
+export async function reabrirPrioridade(pedidoId: string): Promise<boolean> {
+  if (!supabaseOps) return false;
+  const { error } = await supabaseOps
+    .from('concrem_pedido_prioridades')
+    .update({ atendida: false, atendida_em: null, atendida_por: null })
+    .eq('pedido_id', pedidoId);
+  if (error) {
+    console.error('[Supabase OPS] reabrir prioridade:', error.message);
+    return false;
+  }
+  return true;
 }
 
 export async function desativarPrioridade(pedidoId: string): Promise<void> {
