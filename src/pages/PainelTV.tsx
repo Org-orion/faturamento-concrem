@@ -5,6 +5,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { getValorTotalPedido } from '@/lib/valorPedido';
+import { formatCurrencyBRL } from '@/lib/formatters';
 import { cn } from '@/lib/utils';
 import logoSidebar from '@/assets/logo-sidebar.png';
 
@@ -102,8 +103,7 @@ type StatusRow = { pedido_id: string; status_atual: string; atualizado_em: strin
 type ErpRow    = { numero_pedido: string; cliente_nome: string; representante: string; total_pedido_venda: number };
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-const fmtCurrency = (v: number) =>
-  v ? `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : '-';
+const fmtCurrency = (v: number) => (v ? formatCurrencyBRL(v) : '-');
 
 const fmtRelative = (iso: string) => {
   const diff = Date.now() - new Date(iso).getTime();

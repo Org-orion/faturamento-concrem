@@ -1,5 +1,6 @@
 import React from 'react';
 import { Order, OrderItem, OrderStatus } from '@/types';
+import { formatCurrencyBRL } from '@/lib/formatters';
 
 export const statusColors: Record<OrderStatus, string> = {
   'Aguardando Avaliação': 'bg-status-warning/15 text-status-warning',
@@ -41,8 +42,8 @@ export const StatusBadge = ({ status, colorMap }: { status: string; colorMap: Re
   </span>
 );
 
-export const formatCurrency = (value: number) =>
-  new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+// Fonte única de formatação monetária — delega ao formatter central (pt-BR / BRL).
+export const formatCurrency = (value: number) => formatCurrencyBRL(value);
 
 export const getOrderTotal = (order: { items: OrderItem[]; totalPedidoVenda?: number | null }) => {
   if (typeof order.totalPedidoVenda === 'number' && Number.isFinite(order.totalPedidoVenda) && order.totalPedidoVenda > 0)
