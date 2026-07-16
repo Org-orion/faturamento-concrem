@@ -95,6 +95,8 @@ interface AppState {
   updateSupportOrderCommercialNotes: (id: string, notes: string) => void;
   decideSupportOrderCommercial: (id: string, decision: 'Liberado p/ Produção', note?: string) => void;
   allOrdersById: Map<string, Order | SupportOrder>;
+  /** Revalida a lista de pedidos excluídos (lixeira) e recarrega telas dependentes. */
+  refreshPedidosExcluidos: () => void;
   hasMoreOrders: boolean;
   loadingMoreOrders: boolean;
   loadMoreOrders: () => Promise<void>;
@@ -345,6 +347,10 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       .catch((e) => console.error('[AppContext] listExcludedPedidoIds:', e));
     return () => { cancelled = true; };
   }, [pedidoStatusVersion]);
+
+  // Chamado após excluir/restaurar na Lixeira: bump da versão recarrega o excludedIds
+  // (effect acima) e as telas que dependem de pedidoStatusVersion (Painel, etc.).
+  const refreshPedidosExcluidos = useCallback(() => setPedidoStatusVersion((v) => v + 1), []);
 
   const visibleOrders = useMemo(
     () => (excludedIds.size === 0 ? orders : orders.filter((o) => !excludedIds.has(String(o.id)))),
@@ -1547,6 +1553,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       updateOrderCommercialNotes, decideOrderCommercial,
       updateSupportOrderCommercialNotes, decideSupportOrderCommercial,
       allOrdersById,
+      refreshPedidosExcluidos,
       hasMoreOrders,
       loadingMoreOrders,
       loadMoreOrders,

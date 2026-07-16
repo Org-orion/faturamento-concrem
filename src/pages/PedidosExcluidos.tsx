@@ -65,7 +65,7 @@ const SituacaoBadge: React.FC<{ excluidoEm: string }> = ({ excluidoEm }) => {
 };
 
 const PedidosExcluidos: React.FC = () => {
-  const { user } = useApp();
+  const { user, refreshPedidosExcluidos } = useApp();
   const { showToast } = useToast();
 
   const isAdmin =
@@ -161,6 +161,7 @@ const PedidosExcluidos: React.FC = () => {
     setAlvoExcluir(null);
     setMotivo('');
     setAtivos((prev) => prev.filter((p) => p.pedidoId !== alvoExcluir.pedidoId));
+    refreshPedidosExcluidos(); // some das telas operacionais na mesma sessão
     void carregarExcluidos();
   };
 
@@ -172,6 +173,7 @@ const PedidosExcluidos: React.FC = () => {
     if (!r.ok) { showToast(r.error || 'Falha ao restaurar.', 'error'); return; }
     showToast(`Pedido ${alvoRestaurar.numeroPedido} restaurado.`, 'success');
     setAlvoRestaurar(null);
+    refreshPedidosExcluidos(); // volta às telas operacionais na mesma sessão
     void carregarExcluidos();
   };
 
