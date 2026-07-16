@@ -92,14 +92,39 @@ export async function listPedidosEmProducao(): Promise<PedidoPrazoBase[]> {
     chunk(ids, 200).map(async (batch) => {
       const { data, error } = await supabasePedidos!
         .from(ERP_TABLE)
-        .select('numero_pedido, cliente_nome, cliente_cidade, cliente_uf, representante, id_nota_conf, total_pedido_venda, total_produtos, frete')
+        .select('numero_pedido, cliente_nome, cliente_cidade, cliente_uf, representante, grupo_cliente, id_nota_conf, total_pedido_venda, total_produtos, frete')
         .in('numero_pedido', batch);
       if (error) { console.error('[controlePrazoRepo] erp:', error.message); return; }
       for (const row of (data ?? []) as any[]) erpMap.set(String(row.numero_pedido), row);
     }),
   );
 
-  // 5) Monta a lista final classificada
+  // 5) Carregamentos programados ativos → pedido_id → carga mais iminente
+  //    Ativo = shipment_status diferente de Cancelado/Entregue (concluído).
+  //    Um carregamento tem vários pedidos; um pedido em várias cargas → menor planned_date.
+  const CARGA_INATIVA = new Set(['Cancelado', 'Entregue']);
+  const cargaMap = new Map<string, { id: string; data: string | null; status: string | null }>();
+  {
+    const { data, error } = await supabaseOps
+      .from('concrem_programacoes_embarque')
+      .select('id, planned_date, shipment_status, pedidos')
+      .not('pedidos', 'is', null);
+    if (error) console.error('[controlePrazoRepo] carregamentos:', error.message);
+    for (const l of (data ?? []) as { id: string; planned_date: string | null; shipment_status: string | null; pedidos: string[] | null }[]) {
+      if (CARGA_INATIVA.has(String(l.shipment_status ?? ''))) continue;
+      const data0 = l.planned_date ? String(l.planned_date).slice(0, 10) : null;
+      for (const pid of l.pedidos ?? []) {
+        const key = String(pid);
+        const prev = cargaMap.get(key);
+        // mantém a carga com data mais próxima (menor planned_date)
+        if (!prev || (data0 && (!prev.data || data0 < prev.data))) {
+          cargaMap.set(key, { id: String(l.id), data: data0, status: l.shipment_status ?? null });
+        }
+      }
+    }
+  }
+
+  // 6) Monta a lista final classificada
   const result: PedidoPrazoBase[] = [];
   for (const id of ids) {
     const erp = erpMap.get(id);
@@ -108,6 +133,7 @@ export async function listPedidosEmProducao(): Promise<PedidoPrazoBase[]> {
     if (!tipo) continue;
     const liberadoEm = liberadoEmMap.get(id) || fallbackDate.get(id) || '';
     if (!liberadoEm) continue; // sem data confiável → não listar (não inventar)
+    const carga = cargaMap.get(id) ?? null;
     result.push({
       pedidoId: id,
       numeroPedido: String(erp.numero_pedido ?? id),
@@ -115,9 +141,13 @@ export async function listPedidosEmProducao(): Promise<PedidoPrazoBase[]> {
       cidade: erp.cliente_cidade ?? null,
       uf: erp.cliente_uf ?? null,
       representante: erp.representante ?? null,
+      grupoCliente: erp.grupo_cliente ?? null,
       tipo,
       liberadoEm,
       valor: getValorTotalPedido(erp),
+      carregamentoId: carga?.id ?? null,
+      carregamentoData: carga?.data ?? null,
+      carregamentoStatus: carga?.status ?? null,
     });
   }
   return result;

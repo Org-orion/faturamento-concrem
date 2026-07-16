@@ -9,7 +9,7 @@
  * mais recente) até hoje, no calendário de Brasília (America/Sao_Paulo).
  */
 
-import { diasDecorridosBR } from '@/lib/dateUtils';
+import { diasDecorridosBR, toBRDateStr, todayBR } from '@/lib/dateUtils';
 
 /** Faixas de prazo (dias decorridos em produção). */
 export const LIMITE_DENTRO = 30;  // 0..30  → dentro do prazo
@@ -44,9 +44,14 @@ export type PedidoPrazoBase = {
   cidade: string | null;
   uf: string | null;
   representante: string | null;
+  grupoCliente: string | null;
   tipo: PedidoTipo;
   liberadoEm: string; // ISO timestamp da entrada em liberado_producao
   valor: number;
+  // Carregamento programado ativo (não cancelado/concluído). Null quando não houver.
+  carregamentoId: string | null;
+  carregamentoData: string | null;   // planned_date (data civil YYYY-MM-DD)
+  carregamentoStatus: string | null; // shipment_status do embarque
 };
 
 /** Pedido monitorado + cálculo de prazo já resolvido. */
@@ -73,15 +78,64 @@ export function ordenarPorCriticidade(a: PedidoPrazo, b: PedidoPrazo): number {
   return a.numeroPedido.localeCompare(b.numeroPedido, 'pt-BR');
 }
 
-/** Contagem por faixa, para o resumo operacional. */
-export type PrazoResumo = { total: number; dentro: number; atencao: number; critico: number };
+/** Pedido possui carregamento programado ativo? */
+export function temCarregamento(p: PedidoPrazoBase): boolean {
+  return Boolean(p.carregamentoData);
+}
+
+/**
+ * Ordenação operacional combinada (regra única): dentro de cada faixa de criticidade,
+ * quem NÃO tem carregamento programado vem antes (maior necessidade de intervenção).
+ * Resultado: crítico s/carga → crítico c/carga → atenção s/carga → atenção c/carga →
+ * dentro s/carga → dentro c/carga. Dentro de cada grupo, mais dias primeiro.
+ */
+export function ordenarOperacional(a: PedidoPrazo, b: PedidoPrazo): number {
+  const ka = a.prazo.ordemPrioridade * 2 + (temCarregamento(a) ? 1 : 0);
+  const kb = b.prazo.ordemPrioridade * 2 + (temCarregamento(b) ? 1 : 0);
+  if (ka !== kb) return ka - kb;
+  if (a.dias !== b.dias) return b.dias - a.dias;
+  return a.numeroPedido.localeCompare(b.numeroPedido, 'pt-BR');
+}
+
+/** Dias entre hoje e uma data civil (BR): positivo = futuro, negativo = passado, 0 = hoje. */
+export function diasAteData(iso?: string | null): number | null {
+  const alvo = toBRDateStr(iso);
+  if (!alvo) return null;
+  const hoje = todayBR();
+  const [hy, hm, hd] = hoje.split('-').map(Number);
+  const [ay, am, ad] = alvo.split('-').map(Number);
+  return Math.round((Date.UTC(ay, am - 1, ad) - Date.UTC(hy, hm - 1, hd)) / 86400000);
+}
+
+export type CarregamentoInfo = {
+  tem: boolean;
+  data: string | null;      // YYYY-MM-DD
+  diasAte: number | null;   // + futuro, − atraso, 0 hoje
+  atrasado: boolean;        // programado no passado e ainda ativo
+};
+
+// "Atrasado" só se aplica a carga ainda PENDENTE de despacho com data no passado.
+// Cargas já "Despachado"/"Em Rota" saíram — não são atraso; canceladas/entregues nem entram.
+const CARGA_PENDENTE_DESPACHO = new Set(['Aguardando Despacho']);
+
+/** Situação do carregamento de um pedido (para exibição e visão de agenda). */
+export function carregamentoInfo(p: PedidoPrazoBase): CarregamentoInfo {
+  if (!p.carregamentoData) return { tem: false, data: null, diasAte: null, atrasado: false };
+  const diasAte = diasAteData(p.carregamentoData);
+  const pendente = CARGA_PENDENTE_DESPACHO.has(String(p.carregamentoStatus ?? ''));
+  return { tem: true, data: p.carregamentoData, diasAte, atrasado: diasAte != null && diasAte < 0 && pendente };
+}
+
+/** Contagem por faixa + carregamento, para o resumo operacional. */
+export type PrazoResumo = { total: number; dentro: number; atencao: number; critico: number; comCarga: number; semCarga: number };
 
 export function resumir(pedidos: PedidoPrazo[]): PrazoResumo {
-  const r: PrazoResumo = { total: pedidos.length, dentro: 0, atencao: 0, critico: 0 };
+  const r: PrazoResumo = { total: pedidos.length, dentro: 0, atencao: 0, critico: 0, comCarga: 0, semCarga: 0 };
   for (const p of pedidos) {
     if (p.prazo.criticidade === 'critico') r.critico++;
     else if (p.prazo.criticidade === 'atencao') r.atencao++;
     else r.dentro++;
+    if (temCarregamento(p)) r.comCarga++; else r.semCarga++;
   }
   return r;
 }

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -E \"\\\\.\\(ts|tsx\\)$\")",
+      "PowerShell(node -v)",
+      "PowerShell(npm -v)",
+      "PowerShell(npm install jspdf@^2.5.2 jspdf-autotable@^3.8.4 2>&1)",
+      "Bash(node -e \"const p=require\\('./package.json'\\); console.log\\('jspdf', p.dependencies.jspdf\\); console.log\\('autotable', p.dependencies['jspdf-autotable']\\);\")",
+      "PowerShell(npm run build 2>&1)",
+      "PowerShell(npm install 2>&1)",
+      "Bash(node -e \"console.log\\(require\\('./package.json'\\).scripts\\)\")",
+      "PowerShell(git add src/lib/protocoloFinanceiro.ts src/pages/financeiro/ProtocoloFinanceiro.tsx src/components/financeiro/ src/utils/access.ts src/components/Layout/Sidebar.tsx src/types/permissions.ts src/App.tsx package.json package-lock.json)",
+      "Bash(cd \"c:/Users/PC040/OneDrive/Documentos/Aplicações/faturamento-concrem-main\")",
+      "Bash(grep VITE_SUPABASE_OPS_KEY .env.example)"
+    ]
+  }
+}

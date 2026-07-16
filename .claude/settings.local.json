@@ -105,7 +105,39 @@
       "PowerShell(node \"c:\\\\tmp\\\\delete-emb130.mjs\")",
       "Bash(grep -n \"totalQtdM3\\\\|totalPedidoVenda\\\\|total_qtd_m3\\\\|formatCurrency\\\\|R\\\\$\\\\|valor\" \"c:\\\\Users\\\\PC030\\\\Documents\\\\aplicações\\\\Faturamento - Concrem\\\\order-flow\\\\src\\\\pages\\\\CreateShipment.tsx\")",
       "Bash(npx supabase *)",
-      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\({k:v for k,v in d.get\\('dependencies',{}\\).items\\(\\) if 'supabase' in k.lower\\(\\) or 'react' in k.lower\\(\\)}\\)\")"
+      "Bash(python -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\({k:v for k,v in d.get\\('dependencies',{}\\).items\\(\\) if 'supabase' in k.lower\\(\\) or 'react' in k.lower\\(\\)}\\)\")",
+      "Bash(git init *)",
+      "Bash(git fetch *)",
+      "Bash(git reset *)",
+      "PowerShell(git add public/security-scanner-verify-a34553dc.txt)",
+      "PowerShell(git push)",
+      "PowerShell(git push --set-upstream origin master)",
+      "PowerShell(git fetch origin)",
+      "PowerShell(git checkout main)",
+      "PowerShell(git pull origin main)",
+      "PowerShell(git checkout master -- public/security-scanner-verify-a34553dc.txt)",
+      "PowerShell(git push origin main)",
+      "PowerShell(npx tsc --noEmit -p tsconfig.json 2>&1)",
+      "Bash(node_modules/.bin/tsc --noEmit -p tsconfig.json)",
+      "PowerShell($node = \\(Get-Command node -ErrorAction SilentlyContinue\\); if \\($node\\) { node --version } else { \"no node\" }; if \\(Test-Path node_modules\\) { \"has node_modules\" } else { \"no node_modules\" })",
+      "Bash(cd \"c:\\\\Users\\\\1kmz\\\\OneDrive\\\\Documentos\\\\Aplicações\\\\faturamento-concrem-main\" && rm -f scratch_query.mjs scratch_query2.mjs scratch_query3.mjs scratch_query4.mjs scratch_fix.mjs && echo \"limpo\")",
+      "PowerShell(npx tsc --noEmit -p tsconfig.app.json 2>&1)",
+      "PowerShell($out = npx tsc --noEmit -p tsconfig.app.json 2>&1 | Out-String; $mine = \\($out -split \"`n\"\\) | Where-Object { $_ -match \"Commercial\\\\.tsx|PedidoSuporte\\\\.tsx|dateUtils\\\\.ts\" }; if \\($mine\\) { $mine } else { \"Nenhum erro nos arquivos editados.\" })",
+      "Bash(node -e \"const c=require\\('./vercel.json'\\); const h=c.headers[0].headers; console.log\\('JSON válido ✅'\\); console.log\\('rewrites destino:', c.rewrites[0].destination\\); console.log\\('headers na regra /\\(.*\\):'\\); h.forEach\\(x=>console.log\\('  -', x.key\\)\\); const csp=h.find\\(x=>x.key==='Content-Security-Policy-Report-Only'\\); console.log\\('CSP é linha única:', !csp.value.includes\\('\\\\n'\\)\\);\")",
+      "Bash(cd \"c:\\\\Users\\\\1kmz\\\\OneDrive\\\\Documentos\\\\Aplicações\\\\faturamento-concrem-main\" && rm -f scratch_q.mjs scratch_q2.mjs && echo limpo)",
+      "PowerShell($out = npx tsc --noEmit -p tsconfig.app.json 2>&1 | Out-String; $mine = \\($out -split \"`n\"\\) | Where-Object { $_ -match \"permissions\\\\.ts|CreateShipment\\\\.tsx|access\\\\.ts\" }; if \\($mine\\) { $mine } else { \"Nenhum erro nos arquivos alterados.\" })",
+      "PowerShell($out = npx tsc --noEmit -p tsconfig.app.json 2>&1 | Out-String; $mine = \\($out -split \"`n\"\\) | Where-Object { $_ -match \"pedidosStatusRepo\\\\.ts|AppContext\\\\.tsx|CreateShipment\\\\.tsx\" }; if \\($mine\\) { $mine } else { \"Nenhum erro nos arquivos alterados.\" })",
+      "PowerShell($out = npx tsc --noEmit -p tsconfig.app.json 2>&1 | Out-String; $mine = \\($out -split \"`n\"\\) | Where-Object { $_ -match \"Loads\\\\.tsx|pedidosStatusRepo\\\\.ts\" }; if \\($mine\\) { $mine } else { \"Nenhum erro nos arquivos alterados.\" })",
+      "Bash(ls -la supabase/)",
+      "Bash(ls supabase/migrations/)",
+      "Bash(find . -name \"*.sql\" -not -path \"*/node_modules/*\")",
+      "Bash(grep -ril \"ROW LEVEL SECURITY\\\\|CREATE POLICY\" --include=*.sql .)",
+      "PowerShell($out = npx tsc --noEmit -p tsconfig.app.json 2>&1 | Out-String; $mine = \\($out -split \"`n\"\\) | Where-Object { $_ -match \"evolutionApi\\\\.ts\" }; if \\($mine\\) { \"ERROS em evolutionApi.ts:`n$mine\" } else { \"evolutionApi.ts: sem erros de tipo.\" })",
+      "PowerShell(npm run build 2>&1)",
+      "PowerShell(npm install 2>&1)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\1kmz\\OneDrive\\Documentos\\Aplicações\\faturamento-concrem-main"
     ]
   }
 }
