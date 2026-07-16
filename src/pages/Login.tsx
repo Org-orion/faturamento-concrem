@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
 import { useNavigate } from 'react-router-dom';
-import { User, Lock, ArrowRight, Loader2 } from 'lucide-react';
+import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
 import logo from '@/assets/logo.png';
 import loginBg from '@/assets/wallpaper-concrem.jpg';
 import { getHomePathForRole, UserRole } from '@/utils/access';
@@ -20,14 +20,14 @@ const Login = () => {
     setIsLoading(true);
 
     if (!username.trim() || !password.trim()) {
-      setError('Preencha usuário e senha');
+      setError('Preencha e-mail e senha');
       setIsLoading(false);
       return;
     }
 
     const ok = await login(username.trim(), password.trim());
     if (!ok) {
-      setError('Usuário ou senha inválidos');
+      setError('E-mail ou senha inválidos');
       setIsLoading(false);
       return;
     }
@@ -62,17 +62,18 @@ const Login = () => {
           <form onSubmit={handleSubmit} className="space-y-6">
             <div className="space-y-4">
               <div className="space-y-2">
-                <label className="text-sm font-medium font-display text-[#0a2315] ml-1">Usuário</label>
+                <label className="text-sm font-medium font-display text-[#0a2315] ml-1">E-mail</label>
                 <div className="relative">
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground">
-                    <User className="h-5 w-5" />
+                    <Mail className="h-5 w-5" />
                   </div>
                   <input
-                    type="text"
+                    type="email"
+                    autoComplete="username"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="w-full pl-10 pr-4 py-3 rounded-xl border border-input bg-muted/30 focus:bg-white transition-colors focus:outline-none focus:ring-2 focus:ring-[#0a2315]/20 focus:border-[#0a2315]"
-                    placeholder="Digite seu usuário"
+                    placeholder="Digite seu e-mail"
                   />
                 </div>
               </div>

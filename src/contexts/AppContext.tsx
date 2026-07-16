@@ -85,7 +85,7 @@ interface AppState {
   isAuthenticated: boolean;
   user: { name: string; username: string; role: UserRole; permissions: PagePermission[] | null; funcionalidades: Funcionalidade[] | null; grupoId: string | null } | null;
   login: (username: string, password: string) => Promise<boolean>;
-  logout: () => void;
+  logout: () => void | Promise<void>;
   addUser: (u: Omit<AppUser, 'id'>) => void;
   updateUser: (id: string, patch: Partial<Omit<AppUser, 'id'>>) => void;
   deleteUser: (id: string) => void;
@@ -642,70 +642,83 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     refresh().catch(() => {});
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const login = useCallback(async (username: string, password: string) => {
-    if (supabaseOps) {
-      try {
-        const { data, error } = await supabaseOps
-          .from('concrem_usuarios')
-          .select('*')
-          .eq('email', username)
-          .eq('ativo', true)
-          .single();
+  // Resolve o perfil (role/permissões/funcionalidades) a partir da linha de concrem_usuarios.
+  // Usado tanto pelo login via Supabase Auth quanto pelo login legado.
+  const buildProfileFromRow = useCallback(async (data: any) => {
+    const roleMap: Record<string, UserRole> = {
+      administrador: 'ADMIN', faturamento: 'FATURAMENTO', producao: 'PRODUCAO', comercial: 'COMERCIAL', logistica: 'LOGISTICA',
+    };
+    const role = roleMap[data.perfil_acesso] || 'COMERCIAL';
+    const permissions: PagePermission[] | null =
+      Array.isArray(data.paginas_acesso) && data.paginas_acesso.length > 0 ? (data.paginas_acesso as PagePermission[]) : null;
+    const grupoId: string | null = data.grupo_id || null;
+    let funcionalidades: Funcionalidade[] | null = null;
+    if (isSuperAdmin(data.email || '')) {
+      funcionalidades = ALL_FUNCIONALIDADES;
+    } else {
+      let groupFuncs: Funcionalidade[] | null = null;
+      if (grupoId) {
+        try {
+          const grupo = await getGrupoById(grupoId);
+          groupFuncs = grupo?.nome === 'Administrador' ? ALL_FUNCIONALIDADES : (grupo?.funcionalidades ?? null);
+        } catch { /* leave null */ }
+      }
+      funcionalidades = computeEffectiveFuncionalidades(groupFuncs, data.funcionalidades);
+    }
+    return { name: data.nome, username: data.email, role, permissions, funcionalidades, grupoId };
+  }, []);
 
-        if (!error && data) {
-          const isValid = await verifyPassword(password, data.senha_hash);
-          if (isValid) {
-            setIsAuthenticated(true);
-            const roleMap: Record<string, UserRole> = {
-              administrador: 'ADMIN',
-              faturamento: 'FATURAMENTO',
-              producao: 'PRODUCAO',
-              comercial: 'COMERCIAL',
-              logistica: 'LOGISTICA',
-            };
-            const role = roleMap[data.perfil_acesso] || 'COMERCIAL';
-            const permissions: PagePermission[] | null =
-              Array.isArray(data.paginas_acesso) && data.paginas_acesso.length > 0
-                ? (data.paginas_acesso as PagePermission[])
-                : null;
-            const grupoId: string | null = data.grupo_id || null;
-            let funcionalidades: Funcionalidade[] | null = null;
-            if (isSuperAdmin(data.email || '')) {
-              funcionalidades = ALL_FUNCIONALIDADES;
-            } else {
-              let groupFuncs: Funcionalidade[] | null = null;
-              if (grupoId) {
-                try {
-                  const grupo = await getGrupoById(grupoId);
-                  groupFuncs = grupo?.nome === 'Administrador' ? ALL_FUNCIONALIDADES : (grupo?.funcionalidades ?? null);
-                } catch { /* leave null */ }
-              }
-              funcionalidades = computeEffectiveFuncionalidades(groupFuncs, data.funcionalidades);
-            }
-            const newUser = { name: data.nome, username: data.email, role, permissions, funcionalidades, grupoId };
-            setUser(newUser);
-            sessionStorage.setItem('auth_token', 'true');
-            sessionStorage.setItem('auth_user', JSON.stringify(newUser));
-            return true;
-          }
-        }
+  const finalizeLogin = useCallback((profile: { name: string; username: string; role: UserRole; permissions: PagePermission[] | null; funcionalidades: Funcionalidade[] | null; grupoId: string | null }) => {
+    setIsAuthenticated(true);
+    setUser(profile);
+    sessionStorage.setItem('auth_token', 'true');
+    sessionStorage.setItem('auth_user', JSON.stringify(profile));
+  }, []);
+
+  const login = useCallback(async (username: string, password: string) => {
+    // Login SOMENTE por e-mail (auth_email), case-insensitive. O username deixou de ser aceito.
+    // Busca a linha uma vez e reaproveita para Auth e fallback.
+    const entrada = username.trim();
+    let row: any = null;
+    if (supabaseOps && entrada) {
+      try {
+        const { data } = await supabaseOps
+          .from('concrem_usuarios').select('*')
+          .ilike('auth_email', entrada)
+          .eq('ativo', true)
+          .limit(1);
+        row = (data && data[0]) ?? null;
       } catch (err) {
         console.error('Supabase login error', err);
       }
     }
 
+    // 1) Supabase Auth usando o e-mail REAL vinculado ao username (auth_email).
+    //    Se der certo, a sessão vira o JWT do usuário (role authenticated).
+    if (row?.auth_email && supabaseOps) {
+      try {
+        const { error } = await supabaseOps.auth.signInWithPassword({ email: String(row.auth_email), password });
+        if (!error) { console.info('[login] via Supabase Auth'); finalizeLogin(await buildProfileFromRow(row)); return true; }
+      } catch { /* Auth indisponível → cai no fallback legado */ }
+    }
+
+    // 2) Fallback legado (senha_hash) — evita lockout enquanto a migração não conclui.
+    //    REMOVER após o cutover completo para Supabase Auth.
+    if (row && (await verifyPassword(password, row.senha_hash))) {
+      console.info('[login] via legado (senha_hash)');
+      finalizeLogin(await buildProfileFromRow(row));
+      return true;
+    }
+
+    // 3) Fallback local (seed) — legado.
     const found = users.find((u) => u.username === username && u.password === password);
     if (!found) return false;
-
-    setIsAuthenticated(true);
-    const newUser = { name: found.name, username: found.username, role: found.role, permissions: null as PagePermission[] | null, funcionalidades: null as Funcionalidade[] | null, grupoId: null as string | null };
-    setUser(newUser);
-    sessionStorage.setItem('auth_token', 'true');
-    sessionStorage.setItem('auth_user', JSON.stringify(newUser));
+    finalizeLogin({ name: found.name, username: found.username, role: found.role, permissions: null, funcionalidades: null, grupoId: null });
     return true;
-  }, [users]);
+  }, [users, buildProfileFromRow, finalizeLogin]);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    try { await supabaseOps?.auth.signOut(); } catch { /* ignore */ }
     setIsAuthenticated(false);
     setUser(null);
     sessionStorage.removeItem('auth_token');
