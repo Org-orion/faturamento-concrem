@@ -227,23 +227,26 @@ const AtualizacaoStatus = () => {
     if (!data?.length) return;
     const o = rowToOrder((data as any[])[0], 'CLI-001');
     const found: UnifiedPedido = { id: o.id, numero: o.id, cliente: o.clientName || o.clientCode || 'Cliente', representante: o.representativeName || '-', repPhone: o.representativePhone || null };
+    // Checa status/exclusão ANTES de adicionar: pedido na lixeira não deve reaparecer.
+    let statusRow: PedidoStatusRow | null = null;
+    if (supabaseOps) {
+      await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero }], user?.username || null);
+      const { data: statusData } = await supabaseOps.from('concrem_pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
+      const srow = statusData?.length ? ((statusData as any[])[0] as any) : null;
+      if (srow?.excluido_em) return; // na lixeira → não adiciona à lista
+      statusRow = srow as PedidoStatusRow | null;
+    }
     setExtraPedidos((prev) => {
       if (prev.some((p) => p.id === found.id)) return prev;
       return [...prev, found];
     });
-    // Inicializa status se ainda não existir
-    if (supabaseOps) {
-      await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero }], user?.username || null);
-      const { data: statusData } = await supabaseOps.from('concrem_pedidos_status').select('*').eq('pedido_id', found.id).limit(1);
-      if (statusData?.length) {
-        setStatusRows((prev) => {
-          const key = String(found.id);
-          if (statusRowsMapRef.current.has(key)) return prev;
-          const row = (statusData as any[])[0] as PedidoStatusRow;
-          statusRowsMapRef.current.set(key, row);
-          return [...prev, row];
-        });
-      }
+    if (statusRow) {
+      setStatusRows((prev) => {
+        const key = String(found.id);
+        if (statusRowsMapRef.current.has(key)) return prev;
+        statusRowsMapRef.current.set(key, statusRow!);
+        return [...prev, statusRow!];
+      });
     }
   };
 

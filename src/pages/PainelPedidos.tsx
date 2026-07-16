@@ -243,11 +243,21 @@ const PainelPedidos = () => {
       await ensurePedidosStatusInitializedBatch([{ pedidoId: found.id, numeroPedido: found.numero, grupoCliente: found.grupoCliente }], user?.username || null);
       const { data, error: statusError } = await supabaseOps
         .from('concrem_pedidos_status')
-        .select(STATUS_PAINEL_COLS)
+        .select(`${STATUS_PAINEL_COLS}, excluido_em`)
         .eq('pedido_id', found.id)
         .maybeSingle();
       if (statusError) console.error('[PainelPedidos] searchErpByNumero status error:', statusError.message);
-      else statusRow = data as PedidoStatusRow | null;
+      else {
+        // Pedido na lixeira não deve ser ressuscitado pela busca direta no ERP.
+        if ((data as any)?.excluido_em) {
+          if (!notFoundToastedRef.current.has(numero)) {
+            notFoundToastedRef.current.add(numero);
+            showToast(`Pedido ${numero} está na lixeira (excluído).`, 'info');
+          }
+          return;
+        }
+        statusRow = data as PedidoStatusRow | null;
+      }
     }
 
     // Atualizar statusRows e extraPedidos juntos para evitar estado intermediário
