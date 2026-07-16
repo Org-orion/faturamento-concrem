@@ -39,6 +39,7 @@ export async function listPedidosEmProducao(): Promise<PedidoPrazoBase[]> {
       .from('concrem_pedidos_status')
       .select('pedido_id, atualizado_em')
       .eq('status_atual', 'liberado_producao')
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .range(from, from + PAGE - 1);
     if (error) { console.error('[controlePrazoRepo] status:', error.message); break; }
     const page = (data ?? []) as { pedido_id: string; atualizado_em: string | null }[];

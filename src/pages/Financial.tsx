@@ -61,6 +61,7 @@ const Financial = () => {
     void supabaseOps.from('concrem_pedidos_status')
       .select('pedido_id, status_atual')
       .gte('atualizado_em', isoCorte)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .limit(500)
       .then(({ data }) => {
         if (data) setPedidoStatusRows(data as PedidoStatusRow[]);

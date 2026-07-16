@@ -137,6 +137,7 @@ async function fetchStatusRows(statuses: string[], limit: number, since?: string
       .in('status_atual', statuses)
       .gt('atualizado_em', since)
       .lte('atualizado_em', now)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .order('atualizado_em', { ascending: false })
       .range(0, limit - 1);
     return (data || []) as StatusRow[];
@@ -147,6 +148,7 @@ async function fetchStatusRows(statuses: string[], limit: number, since?: string
     .select('pedido_id, status_atual, atualizado_em')
     .in('status_atual', statuses)
     .lte('atualizado_em', now)
+    .is('excluido_em', null) // ignora pedidos na lixeira
     .order('atualizado_em', { ascending: false })
     .range(0, limit - 1);
   return (data || []) as StatusRow[];
@@ -255,6 +257,7 @@ async function loadStatusCounts(): Promise<Record<string, number>> {
       .from('concrem_pedidos_status')
       .select('status_atual')
       .in('status_atual', ALL_STATUSES)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .range(from, from + 999);
     if (error || !data?.length) break;
     for (const r of data as { status_atual: string }[]) {

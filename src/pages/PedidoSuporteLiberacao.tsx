@@ -59,6 +59,7 @@ const PedidoSuporteLiberacao = () => {
         supabaseOps!.from('concrem_pedidos_status')
           .select('pedido_id')
           .eq('status_atual', 'liberado_comercial')
+          .is('excluido_em', null) // ignora pedidos na lixeira
           .range(from, to) as any
       );
       if (!statusData.length) { setSuporteOrders([]); return; }

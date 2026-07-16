@@ -26,7 +26,8 @@ export type AppRouteKey =
   | 'prioridades'
   | 'painel-tv'
   | 'analise-pedidos'
-  | 'controle-prazos';
+  | 'controle-prazos'
+  | 'pedidos-excluidos';
 
 /** Actions a user can perform on a page */
 export type PageAction = 'view' | 'edit' | 'execute';
@@ -38,7 +39,7 @@ export type PagePermission = {
 };
 
 export type MenuItem =
-  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign' | 'clock' }
+  | { type: 'link'; label: string; href: string; icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign' | 'clock' | 'trash-2' }
   | { type: 'group'; label: string; icon: 'users' | 'box'; items: { label: string; href: string }[] };
 
 // ---------------------------------------------------------------------------
@@ -85,6 +86,7 @@ export const routeLabels: Record<AppRouteKey, string> = {
   'painel-tv': 'Painel TV',
   'analise-pedidos': 'Análise de Pedidos',
   'controle-prazos': 'Controle de Prazos',
+  'pedidos-excluidos': 'Lixeira de Pedidos',
 };
 
 export const actionLabels: Record<PageAction, string> = {
@@ -225,6 +227,7 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   if (path === '/painel-tv') return 'painel-tv';
   if (path === '/analise-pedidos') return 'analise-pedidos';
   if (path === '/controle-prazos') return 'controle-prazos';
+  if (path === '/pedidos-excluidos') return 'pedidos-excluidos';
   return null;
 }
 
@@ -253,6 +256,7 @@ export const routeToFuncionalidades: Partial<Record<AppRouteKey, Funcionalidade[
   prioridades:                ['prioridades.view'],
   'painel-tv':                ['painel_tv.view'],
   'controle-prazos':          ['controle_prazos.view'],
+  'pedidos-excluidos':        ['pedidos.gerenciar_lixeira'],
 };
 
 /** Check if a user can perform a specific named action (new group-based system) */
@@ -363,7 +367,7 @@ type MenuItemDef = {
   routeKey: AppRouteKey;
   label: string;
   href: string;
-  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign' | 'clock';
+  icon: 'dashboard' | 'users' | 'truck' | 'box' | 'file' | 'credit-card' | 'clipboard-list' | 'flame' | 'factory' | 'monitor' | 'bar-chart-2' | 'dollar-sign' | 'clock' | 'trash-2';
   group?: string;
 };
 
@@ -386,6 +390,7 @@ const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
   { routeKey: 'painel-tv',               label: 'Painel TV',                href: '/painel-tv',                 icon: 'monitor' },
   { routeKey: 'analise-pedidos',         label: 'Análise de Pedidos',       href: '/analise-pedidos',           icon: 'bar-chart-2' },
   { routeKey: 'controle-prazos',         label: 'Controle de Prazos',       href: '/controle-prazos',           icon: 'clock' },
+  { routeKey: 'pedidos-excluidos',       label: 'Lixeira de Pedidos',       href: '/pedidos-excluidos',         icon: 'trash-2' },
   { routeKey: 'representantes',          label: 'Representantes',           href: '/representantes',            icon: 'users', group: 'Cadastro' },
   { routeKey: 'motoristas',              label: 'Motoristas',               href: '/motoristas',                icon: 'users', group: 'Cadastro' },
   { routeKey: 'usuarios',               label: 'Usuários',                 href: '/usuarios',                  icon: 'users', group: 'Cadastro' },
@@ -448,6 +453,7 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
       { type: 'link', label: 'Painel TV', href: '/painel-tv', icon: 'monitor' },
       { type: 'link', label: 'Análise de Pedidos', href: '/analise-pedidos', icon: 'bar-chart-2' },
       { type: 'link', label: 'Controle de Prazos', href: '/controle-prazos', icon: 'clock' },
+      { type: 'link', label: 'Lixeira de Pedidos', href: '/pedidos-excluidos', icon: 'trash-2' },
       { type: 'group', label: 'Cadastro', icon: 'users', items: [
         { label: 'Representantes', href: '/representantes' },
         { label: 'Motoristas', href: '/motoristas' },
@@ -586,4 +592,5 @@ export const routeAccess: Record<AppRouteKey, UserRole[]> = {
   'protocolo-financeiro': ['ADMIN', 'FATURAMENTO'],
   'analise-pedidos': ['ADMIN'],
   'controle-prazos': ['ADMIN', 'FATURAMENTO', 'COMERCIAL'],
+  'pedidos-excluidos': ['ADMIN'],
 };

@@ -373,6 +373,7 @@ const CreateShipment = () => {
           .from('concrem_pedidos_status')
           .select(STATUS_CS_COLS)
           .in('status_atual', CARREGAMENTO_ALLOWED_STATUSES)
+          .is('excluido_em', null) // não oferecer pedidos da lixeira para novas cargas
           .order('atualizado_em', { ascending: false })
           .range(from, from + PAGE - 1);
         if (error) { console.error('[CreateShipment] status load error:', error.message); return; }

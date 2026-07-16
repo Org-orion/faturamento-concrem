@@ -133,6 +133,7 @@ async function fetchOpsRows(): Promise<OpsRow[]> {
       .from('concrem_pedidos_status')
       .select(OPS_COLS)
       .not('mes_programacao', 'is', null)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .range(from, from + PAGE - 1);
     if (error) { console.error('[Programacao] ops programados:', error.message); break; }
     const page = (data ?? []) as OpsRow[];
@@ -149,6 +150,7 @@ async function fetchOpsRows(): Promise<OpsRow[]> {
       .select(OPS_COLS)
       .in('status_atual', PRODUCAO_STATUSES)
       .is('mes_programacao', null)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .range(from, from + PAGE - 1);
     if (error) { console.error('[Programacao] ops sem prog:', error.message); break; }
     const page = (data ?? []) as OpsRow[];

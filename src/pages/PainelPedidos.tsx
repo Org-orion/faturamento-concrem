@@ -38,6 +38,7 @@ async function fetchPainelStatusRows(): Promise<PedidoStatusRow[]> {
     const { data, error } = await supabaseOps
       .from('concrem_pedidos_status')
       .select(STATUS_PAINEL_COLS)
+      .is('excluido_em', null) // ignora pedidos na lixeira (evita reaparecerem como "ghost")
       .order('atualizado_em', { ascending: false })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(`[PainelPedidos] fetchPainelStatusRows: ${error.message}`);

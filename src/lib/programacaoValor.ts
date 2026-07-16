@@ -99,6 +99,7 @@ export async function fetchProgramacaoMes(
       .from('concrem_pedidos_status')
       .select('pedido_id, numero_pedido')
       .eq('mes_programacao', month)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .range(from, from + PAGE - 1);
 
     if (error) { console.error('[programacaoValor] query A:', error.message); break; }
@@ -123,6 +124,7 @@ export async function fetchProgramacaoMes(
       .select('pedido_id, numero_pedido, status_atual')
       .in('status_atual', PRODUCAO_STATUSES)
       .is('mes_programacao', null)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .range(from2, from2 + PAGE - 1);
 
     if (error) { console.error('[programacaoValor] query B:', error.message); break; }

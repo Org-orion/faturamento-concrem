@@ -36,6 +36,7 @@ const AccessDenied = lazy(() => import('@/pages/AccessDenied'));
 const NotFound = lazy(() => import('@/pages/NotFound'));
 const PainelTVPage = lazy(() => import('@/pages/PainelTV'));
 const AnalisePedidosPage = lazy(() => import('@/pages/AnalisePedidos'));
+const PedidosExcluidosPage = lazy(() => import('@/pages/PedidosExcluidos'));
 
 const ProtectedRoute = ({ children }: { children: React.ReactNode }) => {
   const { isAuthenticated, user } = useApp();
@@ -120,6 +121,7 @@ const AppRoutes = () => {
         <Route path="/painel-tv" element={<PainelTVPage />} />
         <Route path="/analise-pedidos" element={<ProtectedRoute><AnalisePedidosPage /></ProtectedRoute>} />
         <Route path="/controle-prazos" element={<ProtectedRoute><ControlePrazos /></ProtectedRoute>} />
+        <Route path="/pedidos-excluidos" element={<ProtectedRoute><PedidosExcluidosPage /></ProtectedRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Suspense>

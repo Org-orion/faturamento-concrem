@@ -15,6 +15,7 @@ import {
   BarChart2,
   DollarSign,
   Clock,
+  Trash2,
   Sun,
   Moon,
   Menu,
@@ -59,6 +60,7 @@ const iconMap = {
   'bar-chart-2': BarChart2,
   'dollar-sign': DollarSign,
   clock: Clock,
+  'trash-2': Trash2,
 } as const;
 
 // ---------------------------------------------------------------------------
@@ -86,6 +88,7 @@ const HREF_TO_SECTION: Record<string, string> = {
   '/painel-pedidos': 'ANÁLISES',
   '/painel-tv': 'ANÁLISES',
   '/analise-pedidos': 'ANÁLISES',
+  '/pedidos-excluidos': 'SISTEMA',
 };
 
 const GROUP_TITLE_TO_SECTION: Record<string, string> = {

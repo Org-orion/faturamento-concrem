@@ -77,6 +77,9 @@ export type Funcionalidade =
   // Controle de Prazos
   | 'controle_prazos.view'
 
+  // Lixeira de Pedidos (admin-only — não atribuível na tela de permissões)
+  | 'pedidos.gerenciar_lixeira'
+
   // Representantes
   | 'representantes.view'
   | 'representantes.criar_editar'
@@ -159,6 +162,8 @@ export const funcionalidadeLabels: Record<Funcionalidade, string> = {
   'analise_pedidos.view': 'Acessar análise de pedidos',
 
   'controle_prazos.view': 'Acessar controle de prazos de produção',
+
+  'pedidos.gerenciar_lixeira': 'Gerenciar lixeira de pedidos (excluir / restaurar)',
 
   'representantes.view':        'Visualizar representantes',
   'representantes.criar_editar':'Criar / editar representante',

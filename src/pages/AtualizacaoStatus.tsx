@@ -112,6 +112,7 @@ const AtualizacaoStatus = () => {
             .from('concrem_pedidos_status')
             .select('id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em')
             .neq('status_atual', 'finalizado')
+            .is('excluido_em', null) // ignora pedidos na lixeira
             .order('atualizado_em', { ascending: false })
             .limit(STATUS_PAGE);
           if (error) { console.error('[AtualizacaoStatus] refresh query error:', error); return; }
@@ -197,6 +198,7 @@ const AtualizacaoStatus = () => {
         .from('concrem_pedidos_status')
         .select('id, pedido_id, numero_pedido, status_atual, atualizado_em, atualizado_por, criado_em')
         .neq('status_atual', 'finalizado')
+        .is('excluido_em', null) // ignora pedidos na lixeira
         .order('atualizado_em', { ascending: false })
         .lt('atualizado_em', statusCursorRef.current!)
         .limit(200);

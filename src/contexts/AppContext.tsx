@@ -40,6 +40,7 @@ import { verifyPassword } from '@/lib/password';
 import { ensurePedidosStatusInitializedBatch, listPedidosStatusByPedidoIds, setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, updatePedidoStatus, runMigrationSuporteLiberadoProducao, resetPedidoStatusToPreEmbarque, revertRemovedFromCarregamento, batchSetEmEntregaForLoad, batchSyncSituacaoEntrega, archiveEntreguesPrioAtencao } from '@/lib/pedidosStatusRepo';
 import { fetchAllPages } from '@/lib/supabaseUtils';
 import { recordEmbarqueCriado, recordEmbarqueAlterado } from '@/lib/embarqueHistoricoRepo';
+import { listExcludedPedidoIds } from '@/lib/lixeiraRepo';
 
 interface AppState {
   clients: Client[];
@@ -333,15 +334,36 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
   // o batch init não precisa rodar — os pedidos já têm status. Esta flag suprime o disparo.
   const skipBatchInitRef = useRef(false);
 
+  // Pedidos logicamente excluídos (lixeira). Filtrados de TODAS as visões operacionais
+  // de uma vez, aqui no contexto — as telas consomem `orders`/`supportOrders` já sem eles.
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    if (!supabaseOps) return;
+    let cancelled = false;
+    listExcludedPedidoIds()
+      .then((s) => { if (!cancelled) setExcludedIds(s); })
+      .catch((e) => console.error('[AppContext] listExcludedPedidoIds:', e));
+    return () => { cancelled = true; };
+  }, [pedidoStatusVersion]);
+
+  const visibleOrders = useMemo(
+    () => (excludedIds.size === 0 ? orders : orders.filter((o) => !excludedIds.has(String(o.id)))),
+    [orders, excludedIds],
+  );
+  const visibleSupportOrders = useMemo(
+    () => (excludedIds.size === 0 ? supportOrders : supportOrders.filter((o) => !excludedIds.has(String(o.id)))),
+    [supportOrders, excludedIds],
+  );
+
   // Ref kept in sync with memoized Map for O(1) lookups inside stale callbacks
   const allOrdersByIdRef = useRef(new Map<string, Order | SupportOrder>());
   const allOrdersById = useMemo(() => {
     const m = new Map<string, Order | SupportOrder>();
-    for (const o of orders) m.set(String(o.id), o);
-    for (const o of supportOrders) m.set(String(o.id), o);
+    for (const o of visibleOrders) m.set(String(o.id), o);
+    for (const o of visibleSupportOrders) m.set(String(o.id), o);
     allOrdersByIdRef.current = m;
     return m;
-  }, [orders, supportOrders]);
+  }, [visibleOrders, visibleSupportOrders]);
 
   useEffect(() => {
     if (!supabasePedidos) return;
@@ -1508,8 +1530,8 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AppContext.Provider value={{
-      clients, drivers, orders, loads, invoices, users,
-      supportOrders, productionSchedules, expenseTypes, freightEntries,
+      clients, drivers, orders: visibleOrders, loads, invoices, users,
+      supportOrders: visibleSupportOrders, productionSchedules, expenseTypes, freightEntries,
       addClient, updateClient, deleteClient,
       addDriver, updateDriver, deleteDriver,
       addOrder, updateOrder, updateOrderStatus, assignDriver,

@@ -93,6 +93,7 @@ const ComercialLiberacao = () => {
           .from('concrem_pedidos_status')
           .select('pedido_id, status_atual, numero_pedido, atualizado_em, mes_programacao')
           .in('status_atual', ['liberado_comercial', 'aguardando_gerencia', 'confirmado_gerencia'])
+          .is('excluido_em', null) // ignora pedidos na lixeira
           .order('atualizado_em', { ascending: false })
           .range(offset, offset + PAGE - 1);
         if (statusErr) { console.error('[ComercialLiberacao] status query error:', statusErr.message); return; }

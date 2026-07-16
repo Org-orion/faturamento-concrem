@@ -134,6 +134,7 @@ async function fetchPedidosDoMes(month: string): Promise<PedidoAnalise[]> {
       .from('concrem_pedidos_status')
       .select('pedido_id, numero_pedido, status_atual')
       .eq('mes_programacao', month)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .range(from, from + PAGE - 1);
     if (error) break;
     const page = (data ?? []) as any[];
@@ -156,6 +157,7 @@ async function fetchPedidosDoMes(month: string): Promise<PedidoAnalise[]> {
       .select('pedido_id, numero_pedido, status_atual')
       .in('status_atual', PRODUCAO_STATUSES)
       .is('mes_programacao', null)
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .range(from2, from2 + PAGE - 1);
     if (error) break;
     const page = (data ?? []) as any[];

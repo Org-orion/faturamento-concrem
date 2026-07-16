@@ -113,6 +113,7 @@ const Producao = () => {
       .from('concrem_pedidos_status')
       .select('pedido_id, status_atual')
       .in('status_atual', ['liberado_producao', 'em_producao', 'producao_finalizada'])
+      .is('excluido_em', null) // ignora pedidos na lixeira
       .then(({ data }) => { if (data) setStatusRows(data as any); });
   }, []);
 
