@@ -38,7 +38,7 @@ type Tab = 'prioridades' | 'atencoes';
 type StatusFiltro = 'pendentes' | 'atendidas' | 'todas';
 
 const Prioridades = () => {
-  const { user } = useApp();
+  const { user, pedidosExcluidosIds } = useApp();
   const canGerenciar = can(user, 'prioridades.gerenciar', 'prioridades', 'execute');
   const { map: prioMap, refresh: refreshPrio } = usePrioridades();
   const { map: atencaoMap, refresh: refreshAtencao } = useAtencao();
@@ -62,8 +62,9 @@ const Prioridades = () => {
   // Client info cache for listed items
   const [pedidoInfo, setPedidoInfo] = useState<Map<string, { cliente: string }>>(new Map());
 
-  const prioList  = useMemo(() => Array.from(prioMap.values()),   [prioMap]);
-  const atencList = useMemo(() => Array.from(atencaoMap.values()), [atencaoMap]);
+  // Oculta pedidos na lixeira (exclusão lógica) das listas de prioridade/atenção.
+  const prioList  = useMemo(() => Array.from(prioMap.values()).filter(p => !pedidosExcluidosIds.has(String(p.pedido_id))),   [prioMap, pedidosExcluidosIds]);
+  const atencList = useMemo(() => Array.from(atencaoMap.values()).filter(a => !pedidosExcluidosIds.has(String(a.pedido_id))), [atencaoMap, pedidosExcluidosIds]);
 
   // ── Controle de prazos: filtro por mês + status de atendimento (aba Prioridades) ──
   const mesAtual = currentYearMonthBR();

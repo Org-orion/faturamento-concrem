@@ -95,6 +95,8 @@ interface AppState {
   updateSupportOrderCommercialNotes: (id: string, notes: string) => void;
   decideSupportOrderCommercial: (id: string, decision: 'Liberado p/ Produção', note?: string) => void;
   allOrdersById: Map<string, Order | SupportOrder>;
+  /** IDs de pedidos logicamente excluídos (lixeira) — para telas com lista própria (ex.: Prioridades). */
+  pedidosExcluidosIds: Set<string>;
   /** Revalida a lista de pedidos excluídos (lixeira) e recarrega telas dependentes. */
   refreshPedidosExcluidos: () => void;
   hasMoreOrders: boolean;
@@ -1553,6 +1555,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
       updateOrderCommercialNotes, decideOrderCommercial,
       updateSupportOrderCommercialNotes, decideSupportOrderCommercial,
       allOrdersById,
+      pedidosExcluidosIds: excludedIds,
       refreshPedidosExcluidos,
       hasMoreOrders,
       loadingMoreOrders,
