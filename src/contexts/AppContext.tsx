@@ -705,6 +705,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     sessionStorage.setItem('auth_user', JSON.stringify(profile));
   }, []);
 
+  // Métrica de adesão ao Supabase Auth (pré-Fase 4): registra o método do último
+  // login. Fire-and-forget — nunca bloqueia nem derruba o login.
+  const registrarLoginMetodo = useCallback((usuarioId: string | null | undefined, metodo: 'auth' | 'legado') => {
+    if (!supabaseOps || !usuarioId) return;
+    void supabaseOps
+      .from('concrem_usuarios')
+      .update({ ultimo_login_metodo: metodo, ultimo_login_em: new Date().toISOString() })
+      .eq('id', usuarioId)
+      .then(({ error }) => { if (error) console.warn('[login] métrica de adesão falhou:', error.message); });
+  }, []);
+
   const login = useCallback(async (username: string, password: string) => {
     // Login SOMENTE por e-mail (auth_email), case-insensitive. O username deixou de ser aceito.
     // Busca a linha uma vez e reaproveita para Auth e fallback.
@@ -728,7 +739,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (row?.auth_email && supabaseOps) {
       try {
         const { error } = await supabaseOps.auth.signInWithPassword({ email: String(row.auth_email), password });
-        if (!error) { console.info('[login] via Supabase Auth'); finalizeLogin(await buildProfileFromRow(row)); return true; }
+        if (!error) { console.info('[login] via Supabase Auth'); registrarLoginMetodo(row.id, 'auth'); finalizeLogin(await buildProfileFromRow(row)); return true; }
       } catch { /* Auth indisponível → cai no fallback legado */ }
     }
 
@@ -736,6 +747,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     //    REMOVER após o cutover completo para Supabase Auth.
     if (row && (await verifyPassword(password, row.senha_hash))) {
       console.info('[login] via legado (senha_hash)');
+      registrarLoginMetodo(row.id, 'legado');
       finalizeLogin(await buildProfileFromRow(row));
       return true;
     }
@@ -745,7 +757,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     if (!found) return false;
     finalizeLogin({ name: found.name, username: found.username, role: found.role, permissions: null, funcionalidades: null, grupoId: null });
     return true;
-  }, [users, buildProfileFromRow, finalizeLogin]);
+  }, [users, buildProfileFromRow, finalizeLogin, registrarLoginMetodo]);
 
   const logout = useCallback(async () => {
     try { await supabaseOps?.auth.signOut(); } catch { /* ignore */ }
