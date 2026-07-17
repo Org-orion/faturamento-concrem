@@ -361,6 +361,17 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
     () => (excludedIds.size === 0 ? supportOrders : supportOrders.filter((o) => !excludedIds.has(String(o.id)))),
     [supportOrders, excludedIds],
   );
+  // Remove pedidos excluídos (lixeira) da lista de cada carregamento — some das
+  // telas de Carregamento/Cronograma e recalcula totais/contagem/peso, já que
+  // essas telas derivam tudo de load.orderIds. Os IDs permanecem persistidos no
+  // banco (só ocultos); ao restaurar, o pedido reaparece no carregamento.
+  const visibleLoads = useMemo(
+    () => (excludedIds.size === 0 ? loads : loads.map((l) => {
+      const filtered = l.orderIds.filter((id) => !excludedIds.has(String(id)));
+      return filtered.length === l.orderIds.length ? l : { ...l, orderIds: filtered };
+    })),
+    [loads, excludedIds],
+  );
 
   // Ref kept in sync with memoized Map for O(1) lookups inside stale callbacks
   const allOrdersByIdRef = useRef(new Map<string, Order | SupportOrder>());
@@ -1530,7 +1541,7 @@ export const AppProvider = ({ children }: { children: ReactNode }) => {
 
   return (
     <AppContext.Provider value={{
-      clients, drivers, orders: visibleOrders, loads, invoices, users,
+      clients, drivers, orders: visibleOrders, loads: visibleLoads, invoices, users,
       supportOrders: visibleSupportOrders, productionSchedules, expenseTypes, freightEntries,
       addClient, updateClient, deleteClient,
       addDriver, updateDriver, deleteDriver,
