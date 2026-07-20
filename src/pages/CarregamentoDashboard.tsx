@@ -173,23 +173,21 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, or
     ? load.orderIds.reduce((s, id) => s + (orderValueMap.get(id) || 0), 0)
     : null;
 
-  if (compact) {
-    return (
-      <div
-        className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-semibold truncate ${colorClass} hover:opacity-80 transition-opacity cursor-pointer select-none`}
-        title={`${driverName} — ${formatCurrency(load.freightValue || 0)}`}
-        onClick={onClick}
-        draggable={draggable}
-        onDragStart={onDragStart}
-      >
-        {priorityNivel && <PrioridadeDot nivel={priorityNivel as any} />}
-        <Truck className="h-2.5 w-2.5 shrink-0" />
-        <span className="truncate">{driverName}</span>
-      </div>
-    );
-  }
+  const hasPopover = !!orderClientMap && load.orderIds.length > 0;
 
-  const card = (
+  const card = compact ? (
+    <div
+      className={`flex items-center gap-1.5 px-2 py-1 rounded border text-[10px] font-semibold truncate ${colorClass} hover:opacity-80 transition-opacity cursor-pointer select-none`}
+      title={hasPopover ? undefined : `${driverName} — ${formatCurrency(load.freightValue || 0)}`}
+      onClick={onClick}
+      draggable={draggable}
+      onDragStart={onDragStart}
+    >
+      {priorityNivel && <PrioridadeDot nivel={priorityNivel as any} />}
+      <Truck className="h-2.5 w-2.5 shrink-0" />
+      <span className="truncate">{driverName}</span>
+    </div>
+  ) : (
     <div
       className="flex rounded-lg border border-border bg-card overflow-hidden hover:shadow-md transition-shadow group cursor-pointer select-none"
       onClick={onClick}
@@ -221,7 +219,7 @@ function LoadCard({ load, driverName, compact, canEdit = true, priorityNivel, or
   );
 
   // Sem mapa de clientes ou sem pedidos: card puro, sem tooltip.
-  if (!orderClientMap || load.orderIds.length === 0) return card;
+  if (!hasPopover) return card;
 
   return (
     <TooltipProvider delayDuration={150}>
