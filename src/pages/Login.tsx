@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { useApp } from '@/contexts/AppContext';
-import { useNavigate } from 'react-router-dom';
 import { Mail, Lock, ArrowRight, Loader2 } from 'lucide-react';
 import logo from '@/assets/logo.png';
 import loginBg from '@/assets/wallpaper-concrem.jpg';
@@ -8,7 +7,6 @@ import { getHomePathForRole, UserRole } from '@/utils/access';
 
 const Login = () => {
   const { login } = useApp();
-  const navigate = useNavigate();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -42,7 +40,11 @@ const Login = () => {
     } catch {
       role = 'ADMIN';
     }
-    navigate(getHomePathForRole(role, permissions));
+    // Recarrega a app (em vez de navegar via SPA) para que o AppProvider remonte
+    // já com a sessão do Supabase Auth — assim os efeitos de dados (orders/loads
+    // etc.) rodam autenticados. Com RLS ligada, sem isto o primeiro login numa
+    // sessão nova traria dados vazios até um reload manual.
+    window.location.assign(getHomePathForRole(role, permissions));
   };
 
   return (
