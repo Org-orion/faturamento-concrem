@@ -73,7 +73,7 @@ export const PageTabs: React.FC = () => {
   return (
     <div
       className="sticky top-14 z-20 flex items-stretch overflow-x-auto no-scrollbar shrink-0"
-      style={{ background: 'hsl(var(--muted) / 0.4)', borderBottom: '1px solid hsl(var(--border))' }}
+      style={{ background: 'hsl(var(--muted))', borderBottom: '1px solid hsl(var(--border))' }}
       role="tablist"
     >
       <TabButton active={isHome} icon={Home} label="Início" onClick={goHome} />
