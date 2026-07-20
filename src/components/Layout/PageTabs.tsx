@@ -77,14 +77,14 @@ export const PageTabs: React.FC = () => {
       role="tablist"
     >
       <TabButton active={isHome} icon={Home} label="Início" onClick={goHome} />
-      {tabs.map((path) => (
+      {tabs.map((tab) => (
         <TabButton
-          key={path}
-          active={path === activePath}
-          icon={ICONS[getRouteIconName(path)] || ClipboardList}
-          label={getRouteLabel(path)}
-          onClick={() => goTo(path)}
-          onClose={() => closeTab(path)}
+          key={tab.path}
+          active={tab.path === activePath}
+          icon={ICONS[getRouteIconName(tab.path)] || ClipboardList}
+          label={getRouteLabel(tab.path)}
+          onClick={() => goTo(tab.href)}
+          onClose={() => closeTab(tab.path)}
         />
       ))}
     </div>

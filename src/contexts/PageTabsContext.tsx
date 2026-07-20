@@ -7,21 +7,24 @@ import { getHomePathForRole, UserRole } from '@/utils/access';
  * Navegação por abas (estilo navegador): cada página aberta vira uma aba, com
  * uma aba fixa "Início". Estado vive acima das rotas (o MainLayout remonta a
  * cada navegação), então persiste durante a sessão + sessionStorage.
+ *
+ * Cada aba é única por `path` (pathname) — hubs como /pedidos e /carregamento
+ * são UMA aba só — mas guarda o `href` completo (pathname + query) da última
+ * visita, para restaurar a sub-aba (?tab=...) ao voltar.
  */
 
 const PAGE_TABS_KEY = 'page_tabs';
-// Rotas que nunca viram aba.
 const NON_TABBABLE = new Set(['/login', '/acesso-negado', '/painel-tv']);
 
+export type PageTab = { path: string; href: string };
+
 type PageTabsCtx = {
-  /** pathnames abertos (fora a Início). */
-  tabs: string[];
-  /** pathname da Início (home do usuário). */
+  tabs: PageTab[];
   homePath: string;
   /** pathname ativo no momento. */
   activePath: string;
   goHome: () => void;
-  goTo: (path: string) => void;
+  goTo: (href: string) => void;
   closeTab: (path: string) => void;
 };
 
@@ -33,10 +36,13 @@ export const usePageTabs = () => {
   return c;
 };
 
-const readStored = (): string[] => {
+const readStored = (): PageTab[] => {
   try {
     const v = JSON.parse(sessionStorage.getItem(PAGE_TABS_KEY) || '[]');
-    return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : [];
+    if (!Array.isArray(v)) return [];
+    return v
+      .map((x) => (typeof x === 'string' ? { path: x, href: x } : x))
+      .filter((x): x is PageTab => !!x && typeof x.path === 'string' && typeof x.href === 'string');
   } catch {
     return [];
   }
@@ -52,32 +58,39 @@ export function PageTabsProvider({ children }: { children: React.ReactNode }) {
     [user],
   );
 
-  const [tabs, setTabs] = useState<string[]>(readStored);
+  const [tabs, setTabs] = useState<PageTab[]>(readStored);
 
   const path = location.pathname;
+  const href = path + location.search;
   const isHome = path === homePath || path === '/';
 
-  // Abre/garante a aba da rota atual (exceto Início e rotas não-tabuláveis).
+  // Abre/atualiza a aba da rota atual (uma por pathname; guarda a última query).
   useEffect(() => {
     if (NON_TABBABLE.has(path) || isHome) return;
-    setTabs((prev) => (prev.includes(path) ? prev : [...prev, path]));
-  }, [path, isHome]);
+    setTabs((prev) => {
+      const i = prev.findIndex((t) => t.path === path);
+      if (i === -1) return [...prev, { path, href }];
+      if (prev[i].href === href) return prev;
+      const next = prev.slice();
+      next[i] = { path, href };
+      return next;
+    });
+  }, [path, href, isHome]);
 
   useEffect(() => {
     sessionStorage.setItem(PAGE_TABS_KEY, JSON.stringify(tabs));
   }, [tabs]);
 
   const goHome = useCallback(() => navigate(homePath), [navigate, homePath]);
-  const goTo = useCallback((p: string) => navigate(p), [navigate]);
+  const goTo = useCallback((h: string) => navigate(h), [navigate]);
 
   const closeTab = useCallback((p: string) => {
     setTabs((prev) => {
-      const idx = prev.indexOf(p);
+      const idx = prev.findIndex((t) => t.path === p);
       if (idx === -1) return prev;
-      const next = prev.filter((x) => x !== p);
-      // Se fechou a aba ativa, vai para a vizinha (ou Início).
+      const next = prev.filter((t) => t.path !== p);
       if (p === location.pathname) {
-        const dest = next[idx] ?? next[idx - 1] ?? homePath;
+        const dest = next[idx]?.href ?? next[idx - 1]?.href ?? homePath;
         navigate(dest);
       }
       return next;
