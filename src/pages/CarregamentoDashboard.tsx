@@ -343,12 +343,13 @@ function DayColumn({
 // ── MonthCell ─────────────────────────────────────────────────────────────────
 
 function MonthCell({
-  dateStr, loads, driverMap, today, currentMonth, canEdit, prioMap, orderValueMap,
+  dateStr, loads, driverMap, today, currentMonth, canEdit, prioMap, orderValueMap, orderClientMap,
   onLoadClick, onDropLoad, dragOverDate, setDragOverDate,
 }: {
   dateStr: string; loads: Load[]; driverMap: Map<string, string>; today: string;
   currentMonth: string; canEdit: boolean; prioMap: Map<string, { nivel: string }>;
   orderValueMap?: Map<string, number>;
+  orderClientMap?: Map<string, string>;
   onLoadClick: (load: Load) => void;
   onDropLoad: (loadId: string, newDate: string) => void;
   dragOverDate: string | null;
@@ -389,6 +390,7 @@ function MonthCell({
             canEdit={canEdit}
             priorityNivel={getLoadPriorityNivel(l, prioMap)}
             orderValueMap={orderValueMap}
+            orderClientMap={orderClientMap}
             onClick={() => onLoadClick(l)}
             draggable={canEdit}
             onDragStart={(e) => { e.dataTransfer.setData('loadId', l.id); }}
@@ -1726,6 +1728,7 @@ const CarregamentoDashboard = () => {
               {calendarCells.map((d) => (
                 <MonthCell key={d} dateStr={d} loads={loadsByDate.get(d) || []} driverMap={driverMap}
                   today={today} currentMonth={monthStr} canEdit={canEditLoad} prioMap={prioMap} orderValueMap={monthOrderValueMap}
+                  orderClientMap={orderClientMap}
                   onLoadClick={setSelectedLoad} onDropLoad={handleDropLoad}
                   dragOverDate={dragOverDate} setDragOverDate={setDragOverDate} />
               ))}
