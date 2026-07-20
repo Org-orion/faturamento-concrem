@@ -100,8 +100,11 @@ const ControlePrazos = () => {
   const resumo = useMemo(() => resumir(escopo), [escopo]);
 
   const prioridades = useMemo(
-    () => escopo.filter((p) => p.prazo.criticidade === 'critico' || p.prazo.criticidade === 'atencao').sort(ordenarOperacional).slice(0, 6),
-    [escopo],
+    () => escopo
+      .filter((p) => p.prazo.criticidade === 'critico' || p.prazo.criticidade === 'atencao')
+      .filter((p) => critFilter === 'todos' || p.prazo.criticidade === critFilter) // respeita o filtro de faixa
+      .sort(ordenarOperacional).slice(0, 6),
+    [escopo, critFilter],
   );
 
   const filtrados = useMemo(() => {
