@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import { Sidebar } from './Sidebar';
 import { Header } from './Header';
+import { PageTabs } from './PageTabs';
 
 interface SidebarContextType {
   isCollapsed: boolean;
@@ -41,6 +42,7 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
         {/* Content area: flex-1 + overflow-y-auto → scroll fica aqui dentro */}
         <div className="flex-1 flex flex-col min-w-0 overflow-y-auto transition-[margin] duration-300 ease-in-out">
           <Header />
+          <PageTabs />
           <main className="p-3 md:p-4 lg:p-5 xl:p-7 flex-1">
             {children}
           </main>

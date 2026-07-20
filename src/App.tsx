@@ -7,6 +7,7 @@ import SkeletonLoader from '@/components/SkeletonLoader';
 import { canAccessRoute } from '@/utils/access';
 import { PrioridadesProvider } from '@/contexts/PrioridadesContext';
 import { AtencaoProvider } from '@/contexts/AtencaoContext';
+import { PageTabsProvider } from '@/contexts/PageTabsContext';
 
 const LAST_ROUTE_KEY = 'last_route';
 
@@ -135,7 +136,9 @@ const App = () => {
         <AtencaoProvider>
           <ToastProvider>
             <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-              <AppRoutes />
+              <PageTabsProvider>
+                <AppRoutes />
+              </PageTabsProvider>
             </Router>
           </ToastProvider>
         </AtencaoProvider>

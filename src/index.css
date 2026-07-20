@@ -120,6 +120,15 @@
   display: none;
 }
 
+/* Esconde a scrollbar mantendo o scroll (barra de abas) */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 @media print {
   aside,
   header,

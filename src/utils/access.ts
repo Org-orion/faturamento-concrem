@@ -397,6 +397,26 @@ const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
   { routeKey: 'permissoes',             label: 'Permissões',               href: '/permissoes',                icon: 'users', group: 'Cadastro' },
 ];
 
+// ---------------------------------------------------------------------------
+// Helpers por pathname (usados pela barra de abas / breadcrumb)
+// ---------------------------------------------------------------------------
+
+const ICON_BY_ROUTE = new Map<AppRouteKey, MenuItemDef['icon']>(
+  ALL_MENU_ITEM_DEFS.map((d) => [d.routeKey, d.icon] as const),
+);
+
+/** Rótulo amigável de uma rota a partir do pathname. */
+export function getRouteLabel(pathname: string): string {
+  const key = pathnameToRouteKey(pathname);
+  return key ? routeLabels[key] : 'Página';
+}
+
+/** Nome do ícone (mesma nomenclatura do menu) para um pathname. */
+export function getRouteIconName(pathname: string): MenuItemDef['icon'] {
+  const key = pathnameToRouteKey(pathname);
+  return (key && ICON_BY_ROUTE.get(key)) || 'clipboard-list';
+}
+
 /** Build sidebar menu from a group's funcionalidades (new permission system) */
 export function getMenuByFuncionalidades(funcionalidades: Funcionalidade[]): MenuItem[] {
   const funcSet = new Set(funcionalidades);
