@@ -59,11 +59,12 @@ const UrlCleaner = () => {
   useEffect(() => {
     if (location.pathname !== '/login' && location.pathname !== '/painel-tv') {
       if (location.pathname !== '/') {
-        sessionStorage.setItem(LAST_ROUTE_KEY, location.pathname);
+        // Guarda a URL completa (com ?tab=...) para restaurar a sub-aba no F5.
+        sessionStorage.setItem(LAST_ROUTE_KEY, location.pathname + location.search);
       }
       window.history.replaceState(null, '', '/');
     }
-  }, [location.pathname]);
+  }, [location.pathname, location.search]);
   return null;
 };
 
