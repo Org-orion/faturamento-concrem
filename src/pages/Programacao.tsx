@@ -1,8 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import ReactDOM from 'react-dom';
-import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, FileDown, Pencil, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
+import { AlertTriangle, CalendarDays, Check, ChevronDown, ChevronRight, FileDown, FileSpreadsheet, Loader2, Pencil, Printer, RefreshCw, Search, Trash2, Upload, X } from 'lucide-react';
 import { MultiSelectFilter } from '@/components/filters/MultiSelectFilter';
 import logoProgramacao from '@/assets/logo-programacao.png';
+import { buildProgramacaoExport } from '@/lib/programacaoExport/buildProgramacaoExport';
+import { openProgramacaoPdf } from '@/lib/programacaoExport/programacaoPdf';
+import { gerarProgramacaoExcel } from '@/lib/programacaoExport/programacaoExcel';
 import { supabaseOps, supabasePedidos } from '@/lib/supabase';
 import { getPedidoStatusLabel, getPedidoStatusBadgeClass } from '@/lib/pedidoStatusFlow';
 import { cn } from '@/lib/utils';
@@ -660,6 +663,7 @@ const Programacao: React.FC = () => {
 
   // ── Print ─────────────────────────────────────────────────────────────────────
   const [printMes, setPrintMes] = useState<string | null>(null);
+  const [exportandoExcel, setExportandoExcel] = useState(false);
   const [printOverrides, setPrintOverrides] = useState<Map<string, string>>(new Map());
   const [printScrolled, setPrintScrolled] = useState(false);
   const printScrollRef = useRef<HTMLDivElement>(null);
@@ -1140,96 +1144,36 @@ const Programacao: React.FC = () => {
     setPrintMes(mes);
   };
 
+  // Monta o modelo ÚNICO de exportação (mesma fonte para PDF e Excel).
+  const buildPrintModel = () => {
+    if (!printMes) return null;
+    const pedidos = groupedMonths.get(printMes) ?? [];
+    return buildProgramacaoExport({ pedidos, mes: printMes, overrides: printOverrides, now: new Date() });
+  };
+
   const generatePrintPdf = () => {
-    if (!printMes) return;
-    const pedidos = (groupedMonths.get(printMes) ?? []).slice().sort((a, b) => {
-      const da = printOverrides.get(a.pedidoId) ?? a.dataEmbarqueProgramacao ?? '';
-      const db = printOverrides.get(b.pedidoId) ?? b.dataEmbarqueProgramacao ?? '';
-      if (da && db) return da.localeCompare(db);
-      if (da) return -1;
-      if (db) return 1;
-      return a.clienteNome.localeCompare(b.clienteNome, 'pt-BR');
-    });
-    const mesLabel = fmtMesLabel(printMes);
-    const now = new Date();
-    const emissao = `${now.toLocaleDateString('pt-BR')} ${now.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`;
-    const fmtCurrency = (v: number) => `R$ ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-    const fmtD = (iso: string) => { const [y, m, d] = iso.slice(0, 10).split('-'); return `${d}/${m}/${y}`; };
-
-    let totalValor = 0;
-    const rows = pedidos.map(p => {
-      totalValor += p.valor;
-      const previsao = printOverrides.get(p.pedidoId) ?? p.dataEmbarqueProgramacao;
-      return `<tr>
-        <td style="font-weight:700">${p.numeroPedido}</td>
-        <td>${p.clienteNome}</td>
-        <td style="font-size:8px;color:#555">${p.cidadeCliente ?? '—'}</td>
-        <td style="font-size:8px;text-align:center">${p.ufCliente ?? '—'}</td>
-        <td style="font-size:8px;color:#555">${p.representante ?? '—'}</td>
-        <td style="text-align:center">${p.totalQtd != null ? p.totalQtd : '—'}</td>
-        <td style="text-align:right">${fmtCurrency(p.valor)}</td>
-        <td style="text-align:center">${previsao ? fmtD(previsao) : '<span style="color:#dc2626;font-weight:600">A DEFINIR</span>'}</td>
-      </tr>`;
-    }).join('');
-
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-<title></title>
-<style>
-  @page { size: A4 landscape; margin: 7mm 8mm; }
-  @page { @top-left { content: ""; } @top-center { content: ""; } @top-right { content: ""; } @bottom-left { content: ""; } @bottom-center { content: ""; } @bottom-right { content: ""; } }
-  * { margin:0; padding:0; box-sizing:border-box; }
-  body { font-family:'Segoe UI',Arial,sans-serif; color:#1a1a1a; font-size:9px; }
-  .page-header { display:flex; align-items:center; justify-content:space-between; padding-bottom:4px; border-bottom:2px solid #0a2315; margin-bottom:4px; }
-  .page-header img { height:28px; }
-  .ph-title { text-align:right; }
-  .ph-title h1 { font-size:12px; color:#0a2315; font-weight:800; text-transform:uppercase; letter-spacing:0.5px; }
-  .ph-title p { font-size:8px; color:#888; margin-top:1px; }
-  table { width:100%; border-collapse:collapse; }
-  thead th { background:#0a2315; color:#fff; padding:3px 6px; font-size:8px; text-transform:uppercase; letter-spacing:0.3px; font-weight:700; white-space:nowrap; }
-  thead { display:table-header-group; }
-  tbody td { padding:1.5px 6px; border-bottom:1px solid #e8e8e8; font-size:9px; line-height:1.1; }
-  tbody tr:nth-child(even) { background:#f5f7f5; }
-  .total-row td { padding:4px 6px; font-weight:800; font-size:9px; border-top:2px solid #0a2315; background:#f0f2f0; }
-  @media print { body { -webkit-print-color-adjust:exact; print-color-adjust:exact; } }
-</style>
-<script>window.onload = () => { window.focus(); window.print(); };</script>
-</head><body>
-  <div class="page-header">
-    <img src="${logoProgramacao}" alt="Concrem" />
-    <div class="ph-title">
-      <h1>Programação de Pedidos — ${mesLabel}</h1>
-      <p>Emissão: ${emissao} &nbsp;·&nbsp; ${pedidos.length} pedido(s)</p>
-    </div>
-  </div>
-  <table>
-    <thead><tr>
-      <th style="text-align:left">Nº Pedido</th>
-      <th style="text-align:left">Cliente</th>
-      <th style="text-align:left">Cidade</th>
-      <th style="text-align:center">UF</th>
-      <th style="text-align:left">Representante</th>
-      <th style="text-align:center">Qtd Kits</th>
-      <th style="text-align:right">Valor</th>
-      <th style="text-align:center">Prev. Embarque</th>
-    </tr></thead>
-    <tbody>
-      ${rows}
-      <tr class="total-row">
-        <td colspan="5" style="text-align:right">TOTAL</td>
-        <td></td>
-        <td style="text-align:right;white-space:nowrap">${fmtCurrency(totalValor)}</td>
-        <td></td>
-      </tr>
-    </tbody>
-  </table>
-</body></html>`;
-
-    const w = window.open('', '_blank', 'width=1200,height=800');
-    if (!w) return;
-    w.document.open();
-    w.document.write(html);
-    w.document.close();
+    const model = buildPrintModel();
+    if (!model) return;
+    const ok = openProgramacaoPdf(model, logoProgramacao);
+    if (!ok) { showToast('Não foi possível abrir o PDF. Verifique o bloqueador de pop-ups.', 'error'); return; }
     setPrintMes(null);
+  };
+
+  const generatePrintExcel = async () => {
+    if (exportandoExcel) return;
+    const model = buildPrintModel();
+    if (!model) return;
+    setExportandoExcel(true);
+    try {
+      await gerarProgramacaoExcel(model, logoProgramacao);
+      showToast('Planilha exportada com sucesso.');
+      setPrintMes(null);
+    } catch (e) {
+      console.error('[Programacao] export excel:', e);
+      showToast('Não foi possível gerar a planilha. Tente novamente.', 'error');
+    } finally {
+      setExportandoExcel(false);
+    }
   };
 
   // ── Export PDF dos pedidos selecionados (sem programação) ────────────────────
@@ -1915,11 +1859,19 @@ const Programacao: React.FC = () => {
                     <p className="text-xs text-muted-foreground mt-0.5">{pedidos.length} pedidos · {semPrevisao.length} sem previsão</p>
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    <button onClick={generatePrintPdf} className={btnPrimary}>
+                    <button onClick={generatePrintPdf} disabled={exportandoExcel} className={btnPrimary}>
                       <Printer className="h-4 w-4" />
                       Gerar PDF
                     </button>
-                    <button onClick={() => setPrintMes(null)} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground">
+                    <button
+                      onClick={generatePrintExcel}
+                      disabled={exportandoExcel}
+                      className="flex items-center gap-1.5 text-sm font-medium px-3 py-1.5 rounded-lg border border-emerald-600/40 text-emerald-700 dark:text-emerald-400 hover:bg-emerald-600/10 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                    >
+                      {exportandoExcel ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileSpreadsheet className="h-4 w-4" />}
+                      {exportandoExcel ? 'Gerando…' : 'Gerar Excel'}
+                    </button>
+                    <button onClick={() => setPrintMes(null)} disabled={exportandoExcel} className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground disabled:opacity-60">
                       <X className="h-4 w-4" />
                     </button>
                   </div>
