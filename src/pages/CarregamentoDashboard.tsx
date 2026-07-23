@@ -530,20 +530,21 @@ function LoadDetailsPanel({
     const temNf = docs.some((d) => d.tipo === 'nf');
     const temBoleto = docs.some((d) => d.tipo.startsWith('boleto'));
     const temComprovante = docs.some((d) => d.tipo.startsWith('comprovante'));
+    // Regras atuais: NF define "Em Rota"; comprovante define "Entregue" (boleto não é gate de status).
     let label: string; let tone: 'ok' | 'warn' | 'muted';
     if (docs.length === 0) { label = 'Sem documentos'; tone = 'muted'; }
-    else if (temComprovante && temNf && temBoleto) { label = 'Documentação completa'; tone = 'ok'; }
-    else if (temNf && temBoleto) { label = 'Comprovante pendente'; tone = 'warn'; }
-    else { label = 'Documentação parcial'; tone = 'warn'; }
+    else if (temNf && temComprovante) { label = 'Documentação completa'; tone = 'ok'; }
+    else if (temNf) { label = 'Comprovante pendente'; tone = 'warn'; }
+    else { label = 'NF pendente'; tone = 'warn'; }
     return { docs, temNf, temBoleto, temComprovante, label, tone };
   };
 
   const totalPedidos = load.orderIds.length;
   const comComprovante = load.orderIds.filter((id) => (docsByPedido.get(id) ?? []).some((d) => d.tipo.startsWith('comprovante'))).length;
-  // Pedidos com documentação incompleta (falta NF, boleto ou comprovante).
+  // Pedidos com documentação incompleta (falta NF ou comprovante — boleto não é gate).
   const pedidosComPendencia = load.orderIds.filter((id) => {
     const s = situacaoPedido(id);
-    return !(s.temNf && s.temBoleto && s.temComprovante);
+    return !(s.temNf && s.temComprovante);
   });
 
   useEffect(() => {
