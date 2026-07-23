@@ -1918,17 +1918,36 @@ const CreateShipment = () => {
             </FormField>
 
             <FormField label="Status da Programação">
-              <select
-                className={inputClass}
-                value={shipmentStatus}
-                onChange={e => setShipmentStatus(e.target.value as ShipmentStatus)}
-              >
-                <option value="Aguardando Despacho">Aguardando Despacho</option>
-                <option value="Despachado">Despachado</option>
-                <option value="Em Rota">Em Rota</option>
-                <option value="Entregue">Entregue</option>
-                <option value="Cancelado">Cancelado</option>
-              </select>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-muted text-foreground border border-border">
+                    {shipmentStatus}
+                  </span>
+                  {shipmentStatus !== 'Entregue' && shipmentStatus !== 'Cancelado' && (
+                    <button
+                      type="button"
+                      onClick={() => setShipmentStatus('Cancelado')}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-destructive/40 text-destructive hover:bg-destructive/10 transition-colors"
+                    >
+                      Cancelar carregamento
+                    </button>
+                  )}
+                  {shipmentStatus === 'Cancelado' && (
+                    <button
+                      type="button"
+                      onClick={() => setShipmentStatus('Aguardando Despacho')}
+                      className="text-xs font-semibold px-2.5 py-1 rounded-lg border border-border text-muted-foreground hover:bg-muted transition-colors"
+                    >
+                      Reativar
+                    </button>
+                  )}
+                </div>
+                <p className="text-[11px] text-muted-foreground leading-snug">
+                  O status é atualizado automaticamente conforme os documentos:{' '}
+                  <strong>Em Rota</strong> quando todos os pedidos têm NF e boleto;{' '}
+                  <strong>Entregue</strong> quando todos têm comprovante de entrega. Não é editável manualmente.
+                </p>
+              </div>
             </FormField>
           </div>
 

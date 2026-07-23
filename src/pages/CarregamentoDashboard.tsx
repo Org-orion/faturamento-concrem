@@ -12,8 +12,10 @@ import {
   Search, X, Pencil, Calendar, CalendarCheck, User, FileText,
   Paperclip, Trash2, Upload, Save, ExternalLink,
   Target, TrendingUp, TrendingDown, AlertTriangle, FileDown,
+  Eye, Download, FileCheck2, Clock, Image as ImageIcon,
 } from 'lucide-react';
 import logoSrc from '@/assets/logo-programacao.png';
+import { listRelatorioEntregaAnexos, type RelatorioEntregaAnexo } from '@/lib/opsRepo';
 
 const getLogoDataUrl = async (): Promise<string> => {
   try {
@@ -435,6 +437,32 @@ const JUST_TYPE_COLOR: Record<string, string> = {
 
 const STORAGE_BUCKET = 'relatorio-entrega';
 
+// Linha de documento (aba Documentos) — visualizar / baixar / abrir.
+function DocRow({ doc, label, onPreview }: { doc: RelatorioEntregaAnexo; label: string; onPreview: () => void }) {
+  const nome = (doc.arquivo_nome || '').replace(/^\d+_/, '');
+  return (
+    <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5">
+      <div className="w-7 h-7 rounded bg-muted flex items-center justify-center shrink-0">
+        <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-xs font-semibold text-foreground truncate">{label}</p>
+        <p className="text-[10px] text-muted-foreground truncate">
+          {nome}{doc.criado_em ? ` · ${fmtDate(doc.criado_em)}` : ''}{doc.criado_por ? ` · ${doc.criado_por}` : ''}
+        </p>
+      </div>
+      <button onClick={onPreview} title="Visualizar" className="shrink-0 p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground">
+        <Eye className="h-3.5 w-3.5" />
+      </button>
+      <a href={doc.arquivo_url} download target="_blank" rel="noopener noreferrer" title="Baixar"
+        onClick={(e) => e.stopPropagation()}
+        className="shrink-0 p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground">
+        <Download className="h-3.5 w-3.5" />
+      </a>
+    </div>
+  );
+}
+
 function LoadDetailsPanel({
   load, driverName, onClose, canEdit, onEdit, onUpdateLoad, prioMap,
 }: {
@@ -451,9 +479,72 @@ function LoadDetailsPanel({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [dragActive, setDragActive] = useState(false);
 
+  // ── navegação por abas do drawer ──
+  const [tab, setTab] = useState<'resumo' | 'pedidos' | 'documentos' | 'historico'>('resumo');
+
   // ── order details fetch ──
   const [orderDetails, setOrderDetails] = useState<Map<string, OrderDetail>>(new Map());
   const [loadingDetails, setLoadingDetails] = useState(false);
+
+  // ── documentos por pedido (concrem_relatorio_entrega_anexos) ──
+  const [relDocs, setRelDocs] = useState<RelatorioEntregaAnexo[]>([]);
+  const [loadingRelDocs, setLoadingRelDocs] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState<RelatorioEntregaAnexo | null>(null);
+  // Pedidos expandidos na aba Documentos (fechados por padrão).
+  const [openDocs, setOpenDocs] = useState<Set<string>>(new Set());
+  const toggleDocPedido = (pid: string) => setOpenDocs((prev) => {
+    const next = new Set(prev);
+    if (next.has(pid)) next.delete(pid); else next.add(pid);
+    return next;
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoadingRelDocs(true);
+    listRelatorioEntregaAnexos(load.id)
+      .then((rows) => { if (!cancelled) setRelDocs(rows); })
+      .finally(() => { if (!cancelled) setLoadingRelDocs(false); });
+    return () => { cancelled = true; };
+  }, [load.id]);
+
+  const tipoDocLabel = (tipo: string): string =>
+    tipo === 'nf' ? 'Nota Fiscal'
+      : tipo.startsWith('boleto') ? 'Boleto'
+      : tipo.startsWith('comprovante') ? 'Comprovante de Entrega'
+      : tipo;
+
+  // pedido_id → documentos
+  const docsByPedido = useMemo(() => {
+    const m = new Map<string, RelatorioEntregaAnexo[]>();
+    for (const d of relDocs) {
+      const arr = m.get(d.pedido_id) ?? [];
+      arr.push(d);
+      m.set(d.pedido_id, arr);
+    }
+    return m;
+  }, [relDocs]);
+
+  // situação documental de um pedido (regras reais: NF/boleto p/ Em Rota, comprovante p/ Entregue)
+  const situacaoPedido = (pedidoId: string) => {
+    const docs = docsByPedido.get(pedidoId) ?? [];
+    const temNf = docs.some((d) => d.tipo === 'nf');
+    const temBoleto = docs.some((d) => d.tipo.startsWith('boleto'));
+    const temComprovante = docs.some((d) => d.tipo.startsWith('comprovante'));
+    let label: string; let tone: 'ok' | 'warn' | 'muted';
+    if (docs.length === 0) { label = 'Sem documentos'; tone = 'muted'; }
+    else if (temComprovante && temNf && temBoleto) { label = 'Documentação completa'; tone = 'ok'; }
+    else if (temNf && temBoleto) { label = 'Comprovante pendente'; tone = 'warn'; }
+    else { label = 'Documentação parcial'; tone = 'warn'; }
+    return { docs, temNf, temBoleto, temComprovante, label, tone };
+  };
+
+  const totalPedidos = load.orderIds.length;
+  const comComprovante = load.orderIds.filter((id) => (docsByPedido.get(id) ?? []).some((d) => d.tipo.startsWith('comprovante'))).length;
+  // Pedidos com documentação incompleta (falta NF, boleto ou comprovante).
+  const pedidosComPendencia = load.orderIds.filter((id) => {
+    const s = situacaoPedido(id);
+    return !(s.temNf && s.temBoleto && s.temComprovante);
+  });
 
   useEffect(() => {
     if (!load.orderIds.length || !supabasePedidos) return;
@@ -583,26 +674,69 @@ function LoadDetailsPanel({
         className="relative z-10 w-full max-w-2xl bg-card border-l border-border shadow-2xl flex flex-col h-full"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-border shrink-0">
-          <div className="flex items-center gap-2">
-            <Truck className="h-4 w-4 text-primary" />
-            <div>
-              <span className="font-bold text-base text-foreground">Detalhes do Carregamento</span>
-              <p className="text-[11px] text-muted-foreground font-mono leading-tight">{load.id} · {driverName}</p>
+        {/* Header (fixo) */}
+        <div className="px-5 py-4 border-b border-border shrink-0">
+          <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Truck className="h-4 w-4 text-primary shrink-0" />
+              <div className="min-w-0">
+                <span className="font-bold text-base text-foreground">Detalhes do Carregamento</span>
+                <p className="text-[11px] text-muted-foreground font-mono leading-tight truncate">{load.id} · {driverName}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 shrink-0">
+              <span className={`inline-flex text-[11px] font-semibold px-2.5 py-1 rounded-full border ${colorClass}`}>{status}</span>
+              <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
+                <X className="h-4 w-4" />
+              </button>
             </div>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-lg hover:bg-muted transition-colors text-muted-foreground">
-            <X className="h-4 w-4" />
-          </button>
+          {/* Abas */}
+          <div className="flex gap-1 mt-3">
+            {(([['resumo', 'Resumo'], ['pedidos', 'Pedidos'], ['documentos', 'Documentos'], ['historico', 'Histórico']]) as const).map(([k, lbl]) => (
+              <button
+                key={k}
+                onClick={() => setTab(k)}
+                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${tab === k ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-muted'}`}
+              >
+                {lbl}{k === 'documentos' && relDocs.length > 0 ? ` (${relDocs.length})` : ''}
+                {k === 'documentos' && !loadingRelDocs && pedidosComPendencia.length > 0 && (
+                  <span className="ml-1 inline-block w-1.5 h-1.5 rounded-full bg-amber-500 align-middle" title="Documentos pendentes" />
+                )}
+              </button>
+            ))}
+          </div>
+
+          {/* Aviso de documentos pendentes (visível em qualquer aba) */}
+          {!loadingRelDocs && pedidosComPendencia.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setTab('documentos')}
+              className="mt-3 w-full flex items-center gap-2 rounded-lg border border-amber-300 bg-amber-50 dark:bg-amber-900/20 dark:border-amber-800 px-3 py-2 text-left hover:bg-amber-100 dark:hover:bg-amber-900/30 transition-colors"
+            >
+              <AlertTriangle className="h-4 w-4 text-amber-600 dark:text-amber-400 shrink-0" />
+              <span className="text-xs font-semibold text-amber-800 dark:text-amber-200 flex-1">
+                {pedidosComPendencia.length} de {totalPedidos} pedido(s) com documentos pendentes
+              </span>
+              <span className="text-[11px] font-medium text-amber-700 dark:text-amber-300 underline shrink-0">ver</span>
+            </button>
+          )}
         </div>
 
-        {/* Scrollable body */}
+        {/* Corpo rolável (somente a aba ativa) */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-5">
+          {tab === 'resumo' && (<>
           {/* Status + prioridade */}
           <div className="flex items-center gap-2 flex-wrap">
             <span className={`inline-flex text-xs font-semibold px-2.5 py-1 rounded-full border ${colorClass}`}>{status}</span>
             {(() => { const n = getLoadPriorityNivel(load, prioMap); return n ? <PrioridadeBadge nivel={n as any} /> : null; })()}
+          </div>
+          {/* Documentação da entrega */}
+          <div className="rounded-lg border border-border bg-muted/20 p-3">
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-1">Documentação da entrega</p>
+            <p className="text-sm font-semibold text-foreground">
+              {comComprovante} de {totalPedidos} pedido(s) com comprovante
+            </p>
           </div>
 
           {/* Driver + Creator */}
@@ -664,9 +798,9 @@ function LoadDetailsPanel({
               <p className="text-[10px] text-primary/70 uppercase tracking-wide">Total</p>
             </div>
           </div>
+          </>)}
 
-          {/* Orders list */}
-          {load.orderIds.length > 0 && (
+          {tab === 'pedidos' && (load.orderIds.length > 0 ? (
             <div>
               <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-2 flex items-center gap-1">
                 <FileText className="h-3.5 w-3.5" /> Pedidos
@@ -685,6 +819,12 @@ function LoadDetailsPanel({
                             {(() => { const n = prioMap.get(id)?.nivel; return n ? <PrioridadeBadge nivel={n as any} /> : null; })()}
                           </div>
                           <p className="text-[11px] text-muted-foreground truncate">{detail?.clientName || '-'}</p>
+                          {(() => { const s = situacaoPedido(id); return (
+                            <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                              <span className="text-[10px] text-muted-foreground">{s.docs.length} documento(s)</span>
+                              <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${s.tone === 'ok' ? 'text-emerald-600 bg-emerald-500/10' : s.tone === 'warn' ? 'text-amber-600 bg-amber-500/10' : 'text-muted-foreground bg-muted'}`}>{s.label}</span>
+                            </div>
+                          ); })()}
                         </div>
                         {detail && (
                           <div className="text-right shrink-0">
@@ -700,8 +840,11 @@ function LoadDetailsPanel({
                 </div>
               )}
             </div>
-          )}
+          ) : (
+            <p className="text-sm text-muted-foreground text-center py-8">Nenhum pedido neste carregamento.</p>
+          ))}
 
+          {tab === 'resumo' && (<>
           {/* ── Observações ── */}
           <div className="border-t border-border pt-4">
             <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-2">
@@ -725,8 +868,65 @@ function LoadDetailsPanel({
               </button>
             )}
           </div>
+          </>)}
 
-          {/* ── Anexos ── */}
+          {tab === 'documentos' && (<>
+          {/* Documentos por pedido (NF / Boleto / Comprovante) */}
+          <div>
+            <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-2">Documentos por pedido</p>
+            {loadingRelDocs ? (
+              <p className="text-xs text-muted-foreground animate-pulse py-2">Carregando documentos...</p>
+            ) : load.orderIds.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground/60 text-center py-4">Sem pedidos.</p>
+            ) : (
+              <div className="space-y-3">
+                {load.orderIds.map((pid) => {
+                  const sit = situacaoPedido(pid);
+                  const detail = orderDetails.get(pid);
+                  const open = openDocs.has(pid);
+                  return (
+                    <div key={pid} className="rounded-lg border border-border bg-muted/10 overflow-hidden">
+                      <button
+                        type="button"
+                        onClick={() => toggleDocPedido(pid)}
+                        aria-expanded={open}
+                        className="w-full flex items-center justify-between gap-2 p-3 text-left hover:bg-muted/30 transition-colors"
+                      >
+                        <div className="flex items-center gap-2 min-w-0">
+                          <ChevronRight className={`h-3.5 w-3.5 text-muted-foreground shrink-0 transition-transform ${open ? 'rotate-90' : ''}`} />
+                          <div className="min-w-0">
+                            <p className="text-xs font-bold font-mono-data text-foreground">{pid}</p>
+                            <p className="text-[11px] text-muted-foreground truncate">
+                              {detail?.clientName || '-'} · {sit.docs.length} documento(s)
+                            </p>
+                          </div>
+                        </div>
+                        <span className={`shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${sit.tone === 'ok' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-500/20' : sit.tone === 'warn' ? 'bg-amber-500/10 text-amber-600 border-amber-500/20' : 'bg-muted text-muted-foreground border-border'}`}>
+                          {sit.tone === 'ok' ? <FileCheck2 className="h-3 w-3" /> : sit.tone === 'warn' ? <Clock className="h-3 w-3" /> : <FileText className="h-3 w-3" />}
+                          {sit.label}
+                        </span>
+                      </button>
+                      {open && (
+                        <div className="px-3 pb-3">
+                          {sit.docs.length > 0 ? (
+                            <div className="space-y-1.5">
+                              {sit.docs.map((d) => (
+                                <DocRow key={d.id} doc={d} label={tipoDocLabel(d.tipo)} onPreview={() => setPreviewDoc(d)} />
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="text-[11px] text-muted-foreground/60">Nenhum documento anexado a este pedido.</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* ── Anexos (do carregamento) ── */}
           <div className="border-t border-border pt-4 pb-2">
             <div className="flex items-center justify-between mb-2">
               <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium flex items-center gap-1">
@@ -805,10 +1005,10 @@ function LoadDetailsPanel({
               <p className="mt-2 text-[11px] text-muted-foreground/50 text-center">Nenhum anexo ainda.</p>
             )}
           </div>
-        </div>
+          </>)}
 
-        {/* ── Histórico de movimentações ── */}
-        <div className="border-t border-border pt-4 pb-2 px-5">
+          {tab === 'historico' && (
+          <div className="pt-1 pb-2">
           <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-3 flex items-center gap-1">
             <Calendar className="h-3.5 w-3.5" /> Histórico
           </p>
@@ -893,9 +1093,11 @@ function LoadDetailsPanel({
 
             </div>
           )}
+          </div>
+          )}
         </div>
 
-        {/* Footer */}
+        {/* Footer (fixo) */}
         {canEdit && (
           <div className="px-5 py-4 border-t border-border shrink-0">
             <button
@@ -905,6 +1107,40 @@ function LoadDetailsPanel({
               <Pencil className="h-4 w-4" />
               Editar Carregamento
             </button>
+          </div>
+        )}
+
+        {/* Modal de visualização de documento (sobre o drawer, sem 2º drawer) */}
+        {previewDoc && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60" onClick={() => setPreviewDoc(null)}>
+            <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-foreground truncate">{tipoDocLabel(previewDoc.tipo)}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">
+                    {previewDoc.pedido_id} · {(previewDoc.arquivo_nome || '').replace(/^\d+_/, '')}
+                  </p>
+                </div>
+                <div className="flex items-center gap-1 shrink-0">
+                  <a href={previewDoc.arquivo_url} target="_blank" rel="noopener noreferrer" title="Abrir em nova aba" className="p-1.5 rounded hover:bg-muted text-muted-foreground"><ExternalLink className="h-4 w-4" /></a>
+                  <a href={previewDoc.arquivo_url} download target="_blank" rel="noopener noreferrer" title="Baixar" className="p-1.5 rounded hover:bg-muted text-muted-foreground"><Download className="h-4 w-4" /></a>
+                  <button onClick={() => setPreviewDoc(null)} title="Fechar" className="p-1.5 rounded hover:bg-muted text-muted-foreground"><X className="h-4 w-4" /></button>
+                </div>
+              </div>
+              <div className="flex-1 overflow-auto bg-muted/20 flex items-center justify-center min-h-[300px]">
+                {isImage(previewDoc.arquivo_nome) ? (
+                  <img src={previewDoc.arquivo_url} alt={previewDoc.arquivo_nome} className="max-w-full max-h-[75vh] object-contain" />
+                ) : /\.pdf$/i.test(previewDoc.arquivo_nome) ? (
+                  <iframe src={previewDoc.arquivo_url} title="Documento" className="w-full h-[75vh] border-0" />
+                ) : (
+                  <div className="text-center p-8">
+                    <FileText className="h-10 w-10 mx-auto text-muted-foreground/50 mb-2" />
+                    <p className="text-sm text-muted-foreground">Pré-visualização não disponível para este formato.</p>
+                    <a href={previewDoc.arquivo_url} download target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 mt-3 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-sm font-semibold"><Download className="h-4 w-4" /> Baixar arquivo</a>
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>
