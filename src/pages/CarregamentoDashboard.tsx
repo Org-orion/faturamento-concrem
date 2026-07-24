@@ -32,6 +32,7 @@ import type { Load } from '@/types';
 import { usePrioridades } from '@/contexts/PrioridadesContext';
 import { PrioridadeDot, PrioridadeBadge } from '@/components/pedidos/PrioridadeBadge';
 import { supabasePedidos, supabaseOps } from '@/lib/supabase';
+import { listarVinculosAtivos } from '@/lib/vinculosRepo';
 import { fetchProgramacaoMes, type ProgramacaoMesResult } from '@/lib/programacaoValor';
 import { listEmbarqueHistorico, type EmbarqueHistoricoRow } from '@/lib/embarqueHistoricoRepo';
 import { fmtDateTime } from '@/lib/dateUtils';
@@ -499,6 +500,7 @@ function LoadDetailsPanel({
   const [loadingRelDocs, setLoadingRelDocs] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<RelatorioEntregaAnexo | null>(null);
   const [comprovVinculos, setComprovVinculos] = useState<ComprovanteVinculo[]>([]);
+  const [vincByPedido, setVincByPedido] = useState<Map<string, { role: 'principal' | 'vinculado'; principal: string; total: number }>>(new Map());
   // Pedidos expandidos na aba Documentos (fechados por padrão).
   const [openDocs, setOpenDocs] = useState<Set<string>>(new Set());
   const toggleDocPedido = (pid: string) => setOpenDocs((prev) => {
@@ -510,11 +512,37 @@ function LoadDetailsPanel({
   useEffect(() => {
     let cancelled = false;
     setLoadingRelDocs(true);
-    Promise.all([listRelatorioEntregaAnexos(load.id), listComprovanteVinculos(load.id)])
-      .then(([rows, vinc]) => { if (!cancelled) { setRelDocs(rows); setComprovVinculos(vinc); } })
+    Promise.all([listRelatorioEntregaAnexos(load.id), listComprovanteVinculos(load.id), listarVinculosAtivos()])
+      .then(([rows, vinc, vincs]) => {
+        if (cancelled) return;
+        setRelDocs(rows); setComprovVinculos(vinc);
+        const byPrincipal = new Map<string, string[]>();
+        for (const r of vincs) { const a = byPrincipal.get(r.pedido_principal_id) ?? []; a.push(r.pedido_vinculado_id); byPrincipal.set(r.pedido_principal_id, a); }
+        const m = new Map<string, { role: 'principal' | 'vinculado'; principal: string; total: number }>();
+        for (const [p, vs] of byPrincipal.entries()) {
+          const total = 1 + vs.length;
+          m.set(p, { role: 'principal', principal: p, total });
+          for (const v of vs) m.set(v, { role: 'vinculado', principal: p, total });
+        }
+        setVincByPedido(m);
+      })
       .finally(() => { if (!cancelled) setLoadingRelDocs(false); });
     return () => { cancelled = true; };
   }, [load.id]);
+
+  // Grupos de pedidos vinculados presentes NESTE carregamento (informativo).
+  const gruposNaCarga = useMemo(() => {
+    const byPrincipal = new Map<string, string[]>();
+    for (const id of load.orderIds) {
+      const info = vincByPedido.get(id);
+      if (!info) continue;
+      const arr = byPrincipal.get(info.principal) ?? [];
+      arr.push(id); byPrincipal.set(info.principal, arr);
+    }
+    return [...byPrincipal.entries()].map(([principal, ids]) => ({
+      principal, ids, total: vincByPedido.get(principal)?.total ?? ids.length,
+    }));
+  }, [load.orderIds, vincByPedido]);
 
   const tipoDocLabel = (tipo: string): string =>
     tipo === 'nf' ? 'Nota Fiscal'
@@ -839,6 +867,15 @@ function LoadDetailsPanel({
               <p className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium mb-2 flex items-center gap-1">
                 <FileText className="h-3.5 w-3.5" /> Pedidos
               </p>
+              {gruposNaCarga.length > 0 && (
+                <div className="mb-2 space-y-1">
+                  {gruposNaCarga.map((g) => (
+                    <div key={g.principal} className="text-[11px] rounded-md bg-primary/5 border border-primary/20 px-2 py-1 text-primary/80">
+                      Grupo do pedido <strong className="font-mono-data">{g.principal}</strong> · {g.ids.length} de {g.total} pedido(s) do grupo neste carregamento
+                    </div>
+                  ))}
+                </div>
+              )}
               {loadingDetails ? (
                 <div className="text-xs text-muted-foreground animate-pulse py-2">Carregando detalhes...</div>
               ) : (
@@ -848,8 +885,15 @@ function LoadDetailsPanel({
                     return (
                       <div key={id} className="flex items-start justify-between gap-3 rounded-lg border border-border bg-muted/20 px-3 py-2">
                         <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
+                          <div className="flex items-center gap-1.5 flex-wrap">
                             <p className="text-xs font-bold font-mono-data text-foreground">{id}</p>
+                            {(() => {
+                              const info = vincByPedido.get(id);
+                              if (!info) return null;
+                              return info.role === 'principal'
+                                ? <span className="text-[9px] font-bold px-1 rounded bg-primary/10 text-primary" title={`Pedido principal · ${info.total - 1} vinculado(s)`}>principal · {info.total - 1} vinc.</span>
+                                : <span className="text-[9px] font-bold px-1 rounded bg-sky-100 text-sky-700" title={`Vinculado ao principal ${info.principal}`}>vinculado</span>;
+                            })()}
                             {(() => { const n = prioMap.get(id)?.nivel; return n ? <PrioridadeBadge nivel={n as any} /> : null; })()}
                           </div>
                           <p className="text-[11px] text-muted-foreground truncate">{detail?.clientName || '-'}</p>

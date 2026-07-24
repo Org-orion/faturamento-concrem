@@ -27,6 +27,7 @@ export type AppRouteKey =
   | 'painel-tv'
   | 'analise-pedidos'
   | 'controle-prazos'
+  | 'agrupamento-pedidos'
   | 'pedidos-excluidos';
 
 /** Actions a user can perform on a page */
@@ -86,6 +87,7 @@ export const routeLabels: Record<AppRouteKey, string> = {
   'painel-tv': 'Painel TV',
   'analise-pedidos': 'Análise de Pedidos',
   'controle-prazos': 'Controle de Prazos',
+  'agrupamento-pedidos': 'Agrupamento de Pedidos',
   'pedidos-excluidos': 'Lixeira de Pedidos',
 };
 
@@ -227,6 +229,7 @@ function pathnameToRouteKey(pathname: string): AppRouteKey | null {
   if (path === '/painel-tv') return 'painel-tv';
   if (path === '/analise-pedidos') return 'analise-pedidos';
   if (path === '/controle-prazos') return 'controle-prazos';
+  if (path === '/agrupamento-pedidos') return 'agrupamento-pedidos';
   if (path === '/pedidos-excluidos') return 'pedidos-excluidos';
   return null;
 }
@@ -256,6 +259,7 @@ export const routeToFuncionalidades: Partial<Record<AppRouteKey, Funcionalidade[
   prioridades:                ['prioridades.view'],
   'painel-tv':                ['painel_tv.view'],
   'controle-prazos':          ['controle_prazos.view'],
+  'agrupamento-pedidos':      ['vinculos.visualizar'],
   'pedidos-excluidos':        ['pedidos.gerenciar_lixeira'],
 };
 
@@ -390,6 +394,7 @@ const ALL_MENU_ITEM_DEFS: MenuItemDef[] = [
   { routeKey: 'painel-tv',               label: 'Painel TV',                href: '/painel-tv',                 icon: 'monitor' },
   { routeKey: 'analise-pedidos',         label: 'Análise de Pedidos',       href: '/analise-pedidos',           icon: 'bar-chart-2' },
   { routeKey: 'controle-prazos',         label: 'Controle de Prazos',       href: '/controle-prazos',           icon: 'clock' },
+  { routeKey: 'agrupamento-pedidos',     label: 'Agrupamento de Pedidos',   href: '/agrupamento-pedidos',       icon: 'box' },
   { routeKey: 'pedidos-excluidos',       label: 'Lixeira de Pedidos',       href: '/pedidos-excluidos',         icon: 'trash-2' },
   { routeKey: 'representantes',          label: 'Representantes',           href: '/representantes',            icon: 'users', group: 'Cadastro' },
   { routeKey: 'motoristas',              label: 'Motoristas',               href: '/motoristas',                icon: 'users', group: 'Cadastro' },
@@ -468,6 +473,7 @@ function originalMenuForRole(role: UserRole): MenuItem[] {
       { type: 'link', label: 'Prioridades', href: '/prioridades', icon: 'flame' },
       { type: 'link', label: 'Produção', href: '/producao', icon: 'factory' },
       { type: 'link', label: 'Carregamento', href: '/carregamento', icon: 'truck' },
+      { type: 'link', label: 'Agrupamento de Pedidos', href: '/agrupamento-pedidos', icon: 'box' },
       { type: 'link', label: 'Financeiro', href: '/financeiro', icon: 'credit-card' },
       { type: 'link', label: 'Protocolo Financeiro', href: '/protocolo-financeiro', icon: 'dollar-sign' },
       { type: 'link', label: 'Painel TV', href: '/painel-tv', icon: 'monitor' },

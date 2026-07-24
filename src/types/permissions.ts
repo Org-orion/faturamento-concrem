@@ -39,6 +39,11 @@ export type Funcionalidade =
   | 'carregamento.dashboard'
   | 'carregamento.remover_entregue'
 
+  // Agrupamento de Pedidos (vínculo de complementares)
+  | 'vinculos.visualizar'
+  | 'vinculos.gerenciar'
+  | 'vinculos.dissolver'
+
   // Financeiro
   | 'financeiro.view'
   | 'financeiro.criar_editar'
@@ -133,6 +138,10 @@ export const funcionalidadeLabels: Record<Funcionalidade, string> = {
   'carregamento.cronograma':   'Visualizar cronograma',
   'carregamento.dashboard':    'Visualizar dashboard',
   'carregamento.remover_entregue': 'Remover pedido "Totalmente Entregue" do carregamento',
+
+  'vinculos.visualizar': 'Visualizar grupos e vínculos de pedidos',
+  'vinculos.gerenciar':  'Criar / adicionar / remover / transferir vínculos',
+  'vinculos.dissolver':  'Dissolver grupo de pedidos',
 
   'financeiro.view':                   'Visualizar lançamentos',
   'financeiro.criar_editar':           'Criar / editar lançamento',
@@ -242,6 +251,10 @@ export const funcionalidadeSections: FuncionalidadeSection[] = [
     keys: ['carregamento.view', 'carregamento.criar_editar', 'carregamento.excluir', 'carregamento.cronograma', 'carregamento.dashboard', 'carregamento.remover_entregue'],
   },
   {
+    label: 'Agrupamento de Pedidos',
+    keys: ['vinculos.visualizar', 'vinculos.gerenciar', 'vinculos.dissolver'],
+  },
+  {
     label: 'Financeiro',
     keys: [
       'financeiro.view',
@@ -306,6 +319,7 @@ export const GRUPOS_PADRAO: GrupoPadrao[] = [
     is_system: true,
     funcionalidades: [
       'carregamento.view', 'carregamento.criar_editar', 'carregamento.excluir', 'carregamento.cronograma', 'carregamento.dashboard',
+      'vinculos.visualizar', 'vinculos.gerenciar', 'vinculos.dissolver',
       'financeiro.view', 'financeiro.criar_editar', 'financeiro.excluir',
       'financeiro.marcar_lancado_conferido', 'financeiro.imprimir', 'financeiro.gerenciar_tipos',
       'protocolo_financeiro.view', 'protocolo_financeiro.gerar',
@@ -326,6 +340,7 @@ export const GRUPOS_PADRAO: GrupoPadrao[] = [
       'comercial.exportar_pdf_programacao', 'comercial.mover_suporte',
       'suporte.view', 'suporte.detalhes', 'suporte.atualizar_status',
       'suporte.liberar_producao', 'suporte.mover_vendas',
+      'vinculos.visualizar', 'vinculos.gerenciar',
       'programacao_comercial.view', 'programacao_comercial.editar_mes', 'programacao_comercial.sincronizar',
       'prioridades.view', 'prioridades.gerenciar',
       'representantes.view', 'representantes.criar_editar',

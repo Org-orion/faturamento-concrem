@@ -83,6 +83,7 @@ const HREF_TO_SECTION: Record<string, string> = {
   '/atualizacao-status': 'OPERAÇÃO',
   '/producao': 'GESTÃO',
   '/carregamento': 'GESTÃO',
+  '/agrupamento-pedidos': 'GESTÃO',
   '/financeiro': 'FINANCEIRO',
   '/protocolo-financeiro': 'FINANCEIRO',
   '/painel-pedidos': 'ANÁLISES',

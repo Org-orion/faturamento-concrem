@@ -21,6 +21,8 @@ import { DriverSelectField } from '@/components/drivers/DriverSelectField';
 import { cn } from '@/lib/utils';
 import { createPortal } from 'react-dom';
 import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas, upsertRelatorioEntregaNotificacao, listRelatorioEntregaNotificacoes, insertRelatorioEntregaAnexoReturningId, vincularComprovanteAosPedidos, type RelatorioEntregaNotificacao } from '@/lib/opsRepo';
+import { obterGrupoPedido, buscarStatusPedidos, removerVinculo, dissolverGrupo, listarVinculosAtivos } from '@/lib/vinculosRepo';
+import { getPedidoStatusLabel } from '@/lib/pedidoStatusFlow';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 
 import { usePrioridades } from '@/contexts/PrioridadesContext';
@@ -87,6 +89,46 @@ const CreateShipment = () => {
 
   // Comprovante de Entrega compartilhável (um / vários / todos os pedidos) — salva na hora via M2M.
   const [comprovModalOpen, setComprovModalOpen] = useState(false);
+  const [groupModal, setGroupModal] = useState<{
+    selected: string;
+    principal: string;
+    posicao: 'principal' | 'vinculado';
+    membros: { id: string; status: string; elegivel: boolean; emOutraCarga: boolean; cargaAtual?: string }[];
+    todosElegiveis: boolean;
+    algumEmOutraCarga: boolean;
+    selectedElegivel: boolean;
+    podeGrupo: boolean;        // todos elegíveis OU já em carga (movíveis)
+    precisaMover: boolean;     // algum já está em outra carga
+  } | null>(null);
+  const [groupBusy, setGroupBusy] = useState(false);
+  // Mapa de vínculos ativos (para badge "vinculado/principal" na lista)
+  const [vinculoInfo, setVinculoInfo] = useState<Map<string, { role: 'principal' | 'vinculado'; principal: string; total: number }>>(new Map());
+  useEffect(() => {
+    let cancel = false;
+    listarVinculosAtivos().then((rows) => {
+      if (cancel) return;
+      const byPrincipal = new Map<string, string[]>();
+      for (const r of rows) {
+        const arr = byPrincipal.get(r.pedido_principal_id) ?? [];
+        arr.push(r.pedido_vinculado_id); byPrincipal.set(r.pedido_principal_id, arr);
+      }
+      const m = new Map<string, { role: 'principal' | 'vinculado'; principal: string; total: number }>();
+      for (const [principal, vincs] of byPrincipal.entries()) {
+        const total = 1 + vincs.length;
+        m.set(principal, { role: 'principal', principal, total });
+        for (const v of vincs) m.set(v, { role: 'vinculado', principal, total });
+      }
+      setVinculoInfo(m);
+    }).catch(() => { /* silencioso — badge é informativo */ });
+    return () => { cancel = true; };
+  }, []);
+  const VinculoBadge = ({ id }: { id: string }) => {
+    const info = vinculoInfo.get(id);
+    if (!info) return null;
+    return info.role === 'principal'
+      ? <span className="text-[9px] font-bold px-1 rounded bg-primary/10 text-primary" title={`Pedido principal · ${info.total - 1} vinculado(s)`}>principal · {info.total - 1} vinc.</span>
+      : <span className="text-[9px] font-bold px-1 rounded bg-sky-100 text-sky-700" title={`Vinculado ao principal ${info.principal}`}>vinculado</span>;
+  };
   const [comprovFile, setComprovFile] = useState<File | null>(null);
   const [comprovMode, setComprovMode] = useState<'um' | 'varios' | 'todos'>('todos');
   const [comprovPedidos, setComprovPedidos] = useState<Set<string>>(new Set());
@@ -688,12 +730,129 @@ const CreateShipment = () => {
     return true;
   };
 
+  const addOrdersToSelection = (ids: string[]) =>
+    setSelectedOrderIds(prev => {
+      const set = new Set(prev);
+      ids.forEach(id => set.add(id));
+      return [...set];
+    });
+
+  // Resolve o GRUPO ao adicionar qualquer integrante (Etapa 3 — vínculos).
+  const tryAddOrder = async (orderId: string) => {
+    try {
+      const g = await obterGrupoPedido(orderId);
+      if (!g.em_grupo) { addOrdersToSelection([orderId]); return; }
+      const membrosIds = [g.principal, ...g.vinculados.map(v => v.pedido_vinculado_id)];
+      const statusMap = await buscarStatusPedidos(membrosIds);
+      const findOtherCarga = (oid: string): string | undefined => {
+        for (const l of loads) {
+          if (isEditing && l.id === id) continue;      // ignora a carga em edição
+          if (l.shipmentStatus === 'Cancelado') continue;
+          if (l.orderIds.includes(oid)) return l.id;
+        }
+        return undefined;
+      };
+      const membros = membrosIds.map(mid => {
+        const status = statusMap[mid] ?? '';
+        const cargaAtual = findOtherCarga(mid);
+        return {
+          id: mid, status,
+          elegivel: status === 'liberado_producao',
+          emOutraCarga: !!cargaAtual,
+          cargaAtual,
+        };
+      });
+      const sel = membros.find(m => m.id === orderId)!;
+      setGroupModal({
+        selected: orderId,
+        principal: g.principal,
+        posicao: g.posicao,
+        membros,
+        todosElegiveis: membros.every(m => m.elegivel),
+        algumEmOutraCarga: membros.some(m => m.emOutraCarga),
+        selectedElegivel: sel.elegivel || sel.emOutraCarga,
+        podeGrupo: membros.every(m => m.elegivel || m.emOutraCarga),
+        precisaMover: membros.some(m => m.emOutraCarga),
+      });
+    } catch {
+      // Falha ao resolver o grupo não deve travar a seleção normal do pedido.
+      addOrdersToSelection([orderId]);
+    }
+  };
+
+  const confirmarGrupoCompleto = () => {
+    if (!groupModal) return;
+    addOrdersToSelection(groupModal.membros.map(m => m.id));
+    showToast(`${groupModal.membros.length} pedidos do grupo adicionados ao carregamento.`);
+    setGroupModal(null);
+  };
+
+  // Grupo inteiro MOVENDO os membros que já estão em outra carga para esta.
+  const confirmarMoverGrupo = async () => {
+    if (!groupModal) return;
+    setGroupBusy(true);
+    try {
+      for (const m of groupModal.membros) {
+        if (!m.cargaAtual) continue;
+        const old = loads.find(l => l.id === m.cargaAtual);
+        if (!old) continue;
+        try {
+          await updateLoad({ ...old, orderIds: old.orderIds.filter(oid => oid !== m.id) });
+        } catch (e: any) {
+          showToast(`Falha ao remover ${m.id} do carregamento ${m.cargaAtual}: ${e?.message ?? e}`, 'error');
+          return; // aborta sem adicionar à seleção
+        }
+      }
+      addOrdersToSelection(groupModal.membros.map(m => m.id));
+      showToast(`${groupModal.membros.length} pedidos do grupo adicionados (movidos das cargas anteriores).`);
+      setGroupModal(null);
+    } finally {
+      setGroupBusy(false);
+    }
+  };
+
+  const confirmarSomenteSelecionado = async () => {
+    if (!groupModal) return;
+    if (!groupModal.selectedElegivel) {
+      showToast('O pedido selecionado não está liberado em produção — regularize o status antes.', 'error');
+      return;
+    }
+    setGroupBusy(true);
+    try {
+      // Rompe o vínculo conforme a posição ANTES de incluir (server-side, auditado).
+      const res = groupModal.posicao === 'principal'
+        ? await dissolverGrupo(groupModal.principal, 'inclusão isolada do pedido principal em carregamento')
+        : await removerVinculo(groupModal.selected, 'inclusão isolada em carregamento');
+      if (!res.ok) { showToast(res.error, 'error'); return; }
+      // Se o próprio selecionado já estava em outra carga, move-o para esta.
+      const selM = groupModal.membros.find(m => m.id === groupModal.selected);
+      if (selM?.cargaAtual) {
+        const old = loads.find(l => l.id === selM.cargaAtual);
+        if (old) {
+          try { await updateLoad({ ...old, orderIds: old.orderIds.filter(oid => oid !== selM.id) }); }
+          catch (e: any) { showToast(`Falha ao mover ${selM.id} do carregamento ${selM.cargaAtual}: ${e?.message ?? e}`, 'error'); return; }
+        }
+      }
+      addOrdersToSelection([groupModal.selected]);
+      showToast(
+        groupModal.posicao === 'principal'
+          ? `Pedido principal ${groupModal.selected} incluído; grupo dissolvido.`
+          : `Pedido ${groupModal.selected} incluído; vínculo desfeito.`,
+      );
+      setGroupModal(null);
+    } finally {
+      setGroupBusy(false);
+    }
+  };
+
   const toggleOrder = (orderId: string) => {
     const isSelected = selectedOrderIds.includes(orderId);
-    if (isSelected && !guardRemoveEntregue(orderId)) return;
-    setSelectedOrderIds(prev =>
-      prev.includes(orderId) ? prev.filter(oid => oid !== orderId) : [...prev, orderId]
-    );
+    if (isSelected) {
+      if (!guardRemoveEntregue(orderId)) return;
+      setSelectedOrderIds(prev => prev.filter(oid => oid !== orderId));
+      return;
+    }
+    void tryAddOrder(orderId);
   };
 
   const selectOrder = (e: React.MouseEvent, orderId: string) => {
@@ -1906,6 +2065,77 @@ const CreateShipment = () => {
 
   return (
     <div className="space-y-8">
+      {/* Modal de grupo de pedidos vinculados (Etapa 3) — nível superior */}
+      {groupModal && createPortal((
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50" onClick={() => !groupBusy && setGroupModal(null)}>
+          <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+              <h3 className="text-sm font-bold text-foreground">
+                {groupModal.podeGrupo ? 'Pedidos vinculados encontrados' : 'Nem todos os pedidos podem ser adicionados'}
+              </h3>
+              <button type="button" onClick={() => setGroupModal(null)} disabled={groupBusy} className="p-1.5 rounded hover:bg-muted text-muted-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="p-4 space-y-3 overflow-y-auto">
+              <p className="text-xs text-muted-foreground">
+                O pedido <strong>{groupModal.selected}</strong> pertence a um grupo com <strong>{groupModal.membros.length}</strong> pedido(s) (principal <strong>{groupModal.principal}</strong>).{' '}
+                {groupModal.podeGrupo && !groupModal.precisaMover && 'Todos estão liberados em produção e serão adicionados ao carregamento.'}
+                {groupModal.podeGrupo && groupModal.precisaMover && 'Todos estão aptos; os que já estão em outro carregamento serão movidos para esta carga.'}
+                {!groupModal.podeGrupo && 'Há pedido(s) que não estão liberados em produção nem em nenhuma carga — o grupo não pode ser adicionado inteiro.'}
+              </p>
+              <div className="rounded-lg border border-border divide-y divide-border">
+                {groupModal.membros.map((m) => (
+                  <div key={m.id} className="flex items-center justify-between gap-2 px-3 py-2 text-xs">
+                    <div className="flex items-center gap-2">
+                      <span className="font-mono-data font-bold">{m.id}</span>
+                      {m.id === groupModal.principal && <span className="text-[10px] px-1 rounded bg-primary/10 text-primary font-bold">principal</span>}
+                      {m.id === groupModal.selected && <span className="text-[10px] px-1 rounded bg-sky-100 text-sky-700 font-bold">selecionado</span>}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={m.elegivel ? 'text-emerald-600' : 'text-amber-600'}>{m.status ? getPedidoStatusLabel(m.status as any) : '—'}</span>
+                      {m.emOutraCarga && <span className="text-[10px] px-1 rounded bg-destructive/10 text-destructive font-bold">em outra carga</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+              {groupModal.precisaMover && (
+                <div className="rounded-lg bg-sky-50 border border-sky-200 p-2.5 text-[11px] text-sky-800">
+                  Ao adicionar o grupo inteiro, estes pedidos serão <strong>movidos</strong> das cargas atuais para esta:{' '}
+                  {groupModal.membros.filter(m => m.cargaAtual).map(m => `${m.id} (${m.cargaAtual})`).join(', ')}.
+                </div>
+              )}
+              {!groupModal.podeGrupo && (
+                <div className="rounded-lg bg-amber-50 border border-amber-200 p-2.5 text-[11px] text-amber-800">
+                  {groupModal.posicao === 'principal'
+                    ? <>Adicionar somente o principal <strong>{groupModal.selected}</strong> irá <strong>dissolver o grupo</strong>: todos os vinculados ficam independentes. Documentos e status não mudam.</>
+                    : <>Adicionar somente <strong>{groupModal.selected}</strong> irá <strong>remover o vínculo</strong> dele com o principal <strong>{groupModal.principal}</strong>. Os demais continuam vinculados.</>}
+                </div>
+              )}
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2 px-4 py-3 border-t border-border shrink-0">
+              <button type="button" className="px-3 py-1.5 rounded-md text-xs font-medium bg-muted text-foreground" onClick={() => setGroupModal(null)} disabled={groupBusy}>Cancelar</button>
+              {!groupModal.podeGrupo ? (
+                <button type="button" className="px-3 py-1.5 rounded-md text-xs font-bold bg-destructive text-destructive-foreground disabled:opacity-50" onClick={() => void confirmarSomenteSelecionado()} disabled={groupBusy || !groupModal.selectedElegivel}>
+                  {groupBusy ? 'Processando…' : `Adicionar somente ${groupModal.selected}`}
+                </button>
+              ) : groupModal.precisaMover ? (
+                <>
+                  <button type="button" className="px-3 py-1.5 rounded-md text-xs font-bold bg-destructive text-destructive-foreground disabled:opacity-50" onClick={() => void confirmarSomenteSelecionado()} disabled={groupBusy}>
+                    Adicionar somente {groupModal.selected}
+                  </button>
+                  <button type="button" className="px-3 py-1.5 rounded-md text-xs font-bold bg-primary text-primary-foreground disabled:opacity-50" onClick={() => void confirmarMoverGrupo()} disabled={groupBusy}>
+                    {groupBusy ? 'Processando…' : `Adicionar grupo inteiro (${groupModal.membros.length})`}
+                  </button>
+                </>
+              ) : (
+                <button type="button" className="px-3 py-1.5 rounded-md text-xs font-bold bg-primary text-primary-foreground" onClick={confirmarGrupoCompleto}>
+                  Adicionar {groupModal.membros.length} pedidos à carga
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ), document.body)}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
@@ -2132,7 +2362,10 @@ const CreateShipment = () => {
                           />
                           <div className="grid grid-cols-1 md:grid-cols-6 gap-4 flex-1 items-center">
                             <div>
-                              <p className="font-bold text-sm font-mono-data text-foreground/80">{order.id}</p>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <p className="font-bold text-sm font-mono-data text-foreground/80">{order.id}</p>
+                                <VinculoBadge id={order.id} />
+                              </div>
                               <p className="text-[10px] text-muted-foreground font-medium uppercase tracking-tighter">Nº Pedido</p>
                             </div>
                             <div className="flex justify-center">
@@ -2288,6 +2521,7 @@ const CreateShipment = () => {
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <p className="font-bold text-sm font-mono-data">{order.id}</p>
                                 <span className="text-[10px] bg-primary/10 text-primary px-1.5 py-0.5 rounded font-bold uppercase tracking-tighter">Embarcado</span>
+                                <VinculoBadge id={order.id} />
                                 {prioMap.has(order.id) && <PrioridadeIcon nivel={prioMap.get(order.id)!.nivel} motivo={prioMap.get(order.id)!.motivo} />}
                                 {atencaoMap.has(order.id) && <AtencaoIcon motivo={atencaoMap.get(order.id)!.motivo} />}
                               </div>
