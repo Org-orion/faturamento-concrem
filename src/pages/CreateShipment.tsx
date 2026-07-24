@@ -16,7 +16,7 @@ import {
   getOrderTotal
 } from '@/components/shared';
 import { getValorTotalOrder } from '@/lib/valorPedido';
-import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle } from 'lucide-react';
+import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle, X } from 'lucide-react';
 import { DriverSelectField } from '@/components/drivers/DriverSelectField';
 import { cn } from '@/lib/utils';
 import { createPortal } from 'react-dom';
