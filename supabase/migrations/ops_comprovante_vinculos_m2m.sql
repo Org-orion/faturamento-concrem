@@ -104,11 +104,22 @@ $$;
 
 -- 5) BACKFILL: cada comprovante existente vira 1 vínculo (pedido atual).
 --    Preserva o comportamento individual atual (não amplia cobertura).
+--    A validação é DESLIGADA durante o backfill: dados legados podem ter o
+--    comprovante apontando para um pedido que não está mais no array `pedidos`
+--    da carga (inconsistência antiga). Confiamos no dado existente aqui.
+do $$ begin
+  alter table public.concrem_comprovante_entrega_pedidos disable trigger trg_valida_comprovante_vinculo;
+exception when others then null; end $$;
+
 insert into public.concrem_comprovante_entrega_pedidos (documento_id, pedido_id, criado_por)
 select a.id, a.pedido_id, a.criado_por
 from public.concrem_relatorio_entrega_anexos a
 where a.tipo like 'comprovante%'
 on conflict (documento_id, pedido_id) do nothing;
+
+do $$ begin
+  alter table public.concrem_comprovante_entrega_pedidos enable trigger trg_valida_comprovante_vinculo;
+exception when others then null; end $$;
 
 -- ── VERIFICAÇÃO ──────────────────────────────────────────────────────────────
 -- Tentar inserir vínculo com documento NF → erro (tipo não permite).
