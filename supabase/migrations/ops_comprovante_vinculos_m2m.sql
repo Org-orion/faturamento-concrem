@@ -21,6 +21,15 @@ create table if not exists public.concrem_comprovante_entrega_pedidos (
 create index if not exists idx_comprov_vinc_pedido on public.concrem_comprovante_entrega_pedidos (pedido_id);
 create index if not exists idx_comprov_vinc_doc    on public.concrem_comprovante_entrega_pedidos (documento_id);
 
+-- Acesso: o app (anon/authenticated) opera a tabela; a regra de negócio é
+-- garantida pelo TRIGGER de validação (não pelo RLS). Policies permissivas
+-- (mesma postura das demais tabelas operacionais hoje).
+alter table public.concrem_comprovante_entrega_pedidos enable row level security;
+drop policy if exists comprov_vinc_all on public.concrem_comprovante_entrega_pedidos;
+create policy comprov_vinc_all on public.concrem_comprovante_entrega_pedidos
+  for all to anon, authenticated using (true) with check (true);
+grant all on public.concrem_comprovante_entrega_pedidos to anon, authenticated;
+
 -- 2) Validação do vínculo (BEFORE INSERT/UPDATE): só comprovante, mesma carga.
 create or replace function public.valida_comprovante_vinculo()
 returns trigger language plpgsql security definer set search_path = public as $$
