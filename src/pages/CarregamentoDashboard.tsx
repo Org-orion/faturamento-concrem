@@ -15,7 +15,7 @@ import {
   Eye, Download, FileCheck2, Clock, Image as ImageIcon,
 } from 'lucide-react';
 import logoSrc from '@/assets/logo-programacao.png';
-import { listRelatorioEntregaAnexos, type RelatorioEntregaAnexo } from '@/lib/opsRepo';
+import { listRelatorioEntregaAnexos, listComprovanteVinculos, type RelatorioEntregaAnexo, type ComprovanteVinculo } from '@/lib/opsRepo';
 
 const getLogoDataUrl = async (): Promise<string> => {
   try {
@@ -438,15 +438,23 @@ const JUST_TYPE_COLOR: Record<string, string> = {
 const STORAGE_BUCKET = 'relatorio-entrega';
 
 // Linha de documento (aba Documentos) — visualizar / baixar / abrir.
-function DocRow({ doc, label, onPreview }: { doc: RelatorioEntregaAnexo; label: string; onPreview: () => void }) {
+function DocRow({ doc, label, onPreview, sharedCount }: { doc: RelatorioEntregaAnexo; label: string; onPreview: () => void; sharedCount?: number }) {
   const nome = (doc.arquivo_nome || '').replace(/^\d+_/, '');
+  const shared = (sharedCount ?? 0) > 1;
   return (
     <div className="flex items-center gap-2 rounded-lg border border-border bg-background px-2.5 py-1.5">
       <div className="w-7 h-7 rounded bg-muted flex items-center justify-center shrink-0">
         <FileText className="h-3.5 w-3.5 text-muted-foreground" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-xs font-semibold text-foreground truncate">{label}</p>
+        <p className="text-xs font-semibold text-foreground truncate">
+          {label}
+          {shared && (
+            <span className="ml-1.5 text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-primary/10 text-primary align-middle">
+              compartilhado · {sharedCount} pedidos
+            </span>
+          )}
+        </p>
         <p className="text-[10px] text-muted-foreground truncate">
           {nome}{doc.criado_em ? ` · ${fmtDate(doc.criado_em)}` : ''}{doc.criado_por ? ` · ${doc.criado_por}` : ''}
         </p>
@@ -490,6 +498,7 @@ function LoadDetailsPanel({
   const [relDocs, setRelDocs] = useState<RelatorioEntregaAnexo[]>([]);
   const [loadingRelDocs, setLoadingRelDocs] = useState(false);
   const [previewDoc, setPreviewDoc] = useState<RelatorioEntregaAnexo | null>(null);
+  const [comprovVinculos, setComprovVinculos] = useState<ComprovanteVinculo[]>([]);
   // Pedidos expandidos na aba Documentos (fechados por padrão).
   const [openDocs, setOpenDocs] = useState<Set<string>>(new Set());
   const toggleDocPedido = (pid: string) => setOpenDocs((prev) => {
@@ -501,8 +510,8 @@ function LoadDetailsPanel({
   useEffect(() => {
     let cancelled = false;
     setLoadingRelDocs(true);
-    listRelatorioEntregaAnexos(load.id)
-      .then((rows) => { if (!cancelled) setRelDocs(rows); })
+    Promise.all([listRelatorioEntregaAnexos(load.id), listComprovanteVinculos(load.id)])
+      .then(([rows, vinc]) => { if (!cancelled) { setRelDocs(rows); setComprovVinculos(vinc); } })
       .finally(() => { if (!cancelled) setLoadingRelDocs(false); });
     return () => { cancelled = true; };
   }, [load.id]);
@@ -524,13 +533,37 @@ function LoadDetailsPanel({
     return m;
   }, [relDocs]);
 
-  // situação documental de um pedido (regras reais: NF/boleto p/ Em Rota, comprovante p/ Entregue)
+  const relDocById = useMemo(() => new Map(relDocs.map((d) => [d.id, d] as const)), [relDocs]);
+
+  // Comprovantes que cobrem cada pedido: diretos (anexo.pedido_id) + compartilhados (via M2M).
+  const comprovantesByPedido = useMemo(() => {
+    const m = new Map<string, RelatorioEntregaAnexo[]>();
+    const add = (pid: string, doc: RelatorioEntregaAnexo) => {
+      const arr = m.get(pid) ?? [];
+      if (!arr.some((x) => x.id === doc.id)) arr.push(doc);
+      m.set(pid, arr);
+    };
+    for (const v of comprovVinculos) { const doc = relDocById.get(v.documento_id); if (doc) add(v.pedido_id, doc); }
+    for (const d of relDocs) { if (d.tipo.startsWith('comprovante')) add(d.pedido_id, d); }
+    return m;
+  }, [comprovVinculos, relDocs, relDocById]);
+
+  // Quantos pedidos cada comprovante cobre (rótulo "compartilhado · N pedidos").
+  const coberturaPorDoc = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const v of comprovVinculos) m.set(v.documento_id, (m.get(v.documento_id) ?? 0) + 1);
+    return m;
+  }, [comprovVinculos]);
+
+  // situação documental de um pedido (NF/boleto p/ Em Rota; comprovante — direto OU compartilhado — p/ Entregue)
   const situacaoPedido = (pedidoId: string) => {
-    const docs = docsByPedido.get(pedidoId) ?? [];
-    const temNf = docs.some((d) => d.tipo === 'nf');
-    const temBoleto = docs.some((d) => d.tipo.startsWith('boleto'));
-    const temComprovante = docs.some((d) => d.tipo.startsWith('comprovante'));
-    // Regras atuais: NF define "Em Rota"; comprovante define "Entregue" (boleto não é gate de status).
+    const diretos = docsByPedido.get(pedidoId) ?? [];
+    const nfBoleto = diretos.filter((d) => d.tipo.startsWith('nf') || d.tipo.startsWith('boleto'));
+    const comprovantes = comprovantesByPedido.get(pedidoId) ?? [];
+    const docs = [...nfBoleto, ...comprovantes]; // exibição: NF/boleto diretos + comprovantes (com M2M)
+    const temNf = diretos.some((d) => d.tipo.startsWith('nf'));
+    const temBoleto = diretos.some((d) => d.tipo.startsWith('boleto'));
+    const temComprovante = comprovantes.length > 0;
     let label: string; let tone: 'ok' | 'warn' | 'muted';
     if (docs.length === 0) { label = 'Sem documentos'; tone = 'muted'; }
     else if (temNf && temComprovante) { label = 'Documentação completa'; tone = 'ok'; }
@@ -540,7 +573,7 @@ function LoadDetailsPanel({
   };
 
   const totalPedidos = load.orderIds.length;
-  const comComprovante = load.orderIds.filter((id) => (docsByPedido.get(id) ?? []).some((d) => d.tipo.startsWith('comprovante'))).length;
+  const comComprovante = load.orderIds.filter((id) => (comprovantesByPedido.get(id)?.length ?? 0) > 0).length;
   // Pedidos com documentação incompleta (falta NF ou comprovante — boleto não é gate).
   const pedidosComPendencia = load.orderIds.filter((id) => {
     const s = situacaoPedido(id);
@@ -912,7 +945,7 @@ function LoadDetailsPanel({
                           {sit.docs.length > 0 ? (
                             <div className="space-y-1.5">
                               {sit.docs.map((d) => (
-                                <DocRow key={d.id} doc={d} label={tipoDocLabel(d.tipo)} onPreview={() => setPreviewDoc(d)} />
+                                <DocRow key={d.id} doc={d} label={tipoDocLabel(d.tipo)} onPreview={() => setPreviewDoc(d)} sharedCount={d.tipo.startsWith('comprovante') ? coberturaPorDoc.get(d.id) : undefined} />
                               ))}
                             </div>
                           ) : (
