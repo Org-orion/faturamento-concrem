@@ -19,7 +19,8 @@ import { getValorTotalOrder } from '@/lib/valorPedido';
 import { ArrowLeft, Check, Search, Truck, Package, Info, Save, MoreVertical, FileText, Upload, Eye, Trash, FileCheck, ArrowUp, ArrowDown, ChevronRight, ChevronLeft, MessageCircle } from 'lucide-react';
 import { DriverSelectField } from '@/components/drivers/DriverSelectField';
 import { cn } from '@/lib/utils';
-import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas, upsertRelatorioEntregaNotificacao, listRelatorioEntregaNotificacoes, type RelatorioEntregaNotificacao } from '@/lib/opsRepo';
+import { createPortal } from 'react-dom';
+import { findRepresentanteContato, insertNotificacaoRepresentante, upsertEntregasDetalhesSafe, upsertRelatorioEntregaAnexo, listRelatorioEntregaAnexos, listEntregas, upsertRelatorioEntregaNotificacao, listRelatorioEntregaNotificacoes, insertRelatorioEntregaAnexoReturningId, vincularComprovanteAosPedidos, type RelatorioEntregaNotificacao } from '@/lib/opsRepo';
 import { setPedidoStatusWithOptionalNotify, syncEntregaStatusFromOps, listPedidosStatusByPedidoIds, updatePedidoStatus, normalizePhoneToE164, isLeroy } from '@/lib/pedidosStatusRepo';
 
 import { usePrioridades } from '@/contexts/PrioridadesContext';
@@ -81,6 +82,13 @@ const CreateShipment = () => {
   const comprovanteTipo = (idx: number): string => idx === 0 ? 'comprovante' : `comprovante_${idx + 1}`;
   const isComprovanteTipo = (tipo: string): boolean => tipo === 'comprovante' || /^comprovante_\d+$/.test(tipo);
   const [orderAttachments, setOrderAttachments] = useState<Record<string, OrderAttachments>>({});
+
+  // Comprovante de Entrega compartilhável (um / vários / todos os pedidos) — salva na hora via M2M.
+  const [comprovModalOpen, setComprovModalOpen] = useState(false);
+  const [comprovFile, setComprovFile] = useState<File | null>(null);
+  const [comprovMode, setComprovMode] = useState<'um' | 'varios' | 'todos'>('todos');
+  const [comprovPedidos, setComprovPedidos] = useState<Set<string>>(new Set());
+  const [comprovSaving, setComprovSaving] = useState(false);
 
   // --- Modal de envio WhatsApp ---
   type RepSendItem = {
@@ -1592,6 +1600,59 @@ const CreateShipment = () => {
     showToast('Alterações salvas com sucesso!');
   };
 
+  const toggleComprovPedido = (pid: string) => setComprovPedidos((prev) => {
+    const next = new Set(prev);
+    if (next.has(pid)) next.delete(pid); else next.add(pid);
+    return next;
+  });
+
+  const handleShareComprovante = async () => {
+    if (!id || !comprovFile || !supabaseOps || comprovSaving) return;
+    const pedidos = comprovMode === 'todos'
+      ? [...selectedOrderIds]
+      : comprovMode === 'um'
+        ? Array.from(comprovPedidos).slice(0, 1)
+        : Array.from(comprovPedidos);
+    if (!pedidos.length) { showToast('Selecione ao menos um pedido.', 'error'); return; }
+    setComprovSaving(true);
+    try {
+      const sanitized = comprovFile.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${id}/comprovantes-compartilhados/${Date.now()}_${sanitized}`;
+      const { error: upErr } = await supabaseOps.storage.from('relatorio-entrega').upload(path, comprovFile, { upsert: true });
+      if (upErr) throw new Error(upErr.message);
+      const { data: urlData } = supabaseOps.storage.from('relatorio-entrega').getPublicUrl(path);
+      // Arquivo salvo UMA vez (linha do documento); a cobertura vai na tabela de vínculos (M2M).
+      const docId = await insertRelatorioEntregaAnexoReturningId({
+        carregamento_id: id,
+        pedido_id: pedidos[0],
+        tipo: `comprovante_${Date.now()}`,
+        arquivo_nome: comprovFile.name,
+        arquivo_url: urlData.publicUrl,
+        criado_por: user?.username || null,
+      });
+      if (!docId) throw new Error('Falha ao salvar o documento.');
+      const res = await vincularComprovanteAosPedidos(docId, pedidos, user?.username || null);
+      if (!res.ok) throw new Error(res.error || 'Falha ao vincular o comprovante.');
+      // Feedback imediato: mostra o comprovante nos pedidos cobertos (já salvo).
+      setOrderAttachments((prev) => {
+        const next = { ...prev };
+        for (const pid of pedidos) {
+          const cur = next[pid] || { boletos: [], comprovantes: [] };
+          next[pid] = { ...cur, comprovantes: [...(cur.comprovantes || []), { url: urlData.publicUrl, nome: comprovFile.name, saved: true }] };
+        }
+        return next;
+      });
+      showToast(`Comprovante vinculado a ${pedidos.length} pedido(s).`);
+      setComprovModalOpen(false); setComprovFile(null); setComprovPedidos(new Set()); setComprovMode('todos');
+    } catch (e: any) {
+      console.error('[comprovante compartilhado]', e);
+      const msg = String(e?.message || '');
+      showToast(msg.includes('não permite') || msg.includes('não pertence') ? msg : 'Não foi possível vincular o comprovante. Tente novamente.', 'error');
+    } finally {
+      setComprovSaving(false);
+    }
+  };
+
   const handleOrderSequenceChange = (orderId: string, value: string) => {
     const seq = parseInt(value, 10);
     if (!isNaN(seq)) {
@@ -2133,6 +2194,63 @@ const CreateShipment = () => {
                     Gerar Formulários de Entrega
                   </button>
                 </div>
+
+                {comprovModalOpen && createPortal((
+                  <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/50" onClick={() => !comprovSaving && setComprovModalOpen(false)}>
+                    <div className="bg-card border border-border rounded-xl shadow-2xl w-full max-w-lg max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+                        <h3 className="text-sm font-bold text-foreground">Anexar Comprovante de Entrega</h3>
+                        <button type="button" onClick={() => setComprovModalOpen(false)} disabled={comprovSaving} className="p-1.5 rounded hover:bg-muted text-muted-foreground"><X className="h-4 w-4" /></button>
+                      </div>
+                      <div className="p-4 space-y-4 overflow-y-auto">
+                        <div>
+                          <label className="text-xs font-semibold text-foreground">Arquivo</label>
+                          <input type="file" accept="image/*,application/pdf,.xml" onChange={(e) => setComprovFile(e.target.files?.[0] || null)} className="mt-1 block w-full text-xs text-muted-foreground file:mr-2 file:rounded-md file:border-0 file:bg-muted file:px-2 file:py-1 file:text-xs" />
+                        </div>
+                        <div>
+                          <p className="text-xs font-semibold text-foreground mb-1.5">Aplicar a:</p>
+                          <div className="space-y-1.5">
+                            {(([['todos', 'Todos os pedidos deste carregamento'], ['varios', 'Selecionar vários pedidos'], ['um', 'Somente um pedido']]) as const).map(([m, lbl]) => (
+                              <label key={m} className="flex items-center gap-2 text-xs cursor-pointer">
+                                <input type="radio" name="comprovMode" checked={comprovMode === m} onChange={() => { setComprovMode(m); setComprovPedidos(m === 'todos' ? new Set(selectedOrderIds) : new Set()); }} />
+                                {lbl}
+                              </label>
+                            ))}
+                          </div>
+                        </div>
+                        {comprovMode === 'todos' && (
+                          <p className="text-[11px] text-muted-foreground">Este comprovante será vinculado a <strong>{selectedOrderIds.length}</strong> pedido(s).</p>
+                        )}
+                        {(comprovMode === 'varios' || comprovMode === 'um') && (
+                          <div className="max-h-48 overflow-y-auto rounded-lg border border-border divide-y divide-border">
+                            {selectedOrderIds.map((pid) => (
+                              <label key={pid} className="flex items-center gap-2 px-3 py-1.5 text-xs cursor-pointer hover:bg-muted/40">
+                                <input
+                                  type={comprovMode === 'um' ? 'radio' : 'checkbox'}
+                                  name="comprovPedido"
+                                  checked={comprovPedidos.has(pid)}
+                                  onChange={() => { if (comprovMode === 'um') setComprovPedidos(new Set([pid])); else toggleComprovPedido(pid); }}
+                                />
+                                <span className="font-mono-data font-semibold">{pid}</span>
+                              </label>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex justify-end gap-2 px-4 py-3 border-t border-border shrink-0">
+                        <button type="button" onClick={() => setComprovModalOpen(false)} disabled={comprovSaving} className="px-3 py-1.5 rounded-lg text-xs font-semibold text-muted-foreground hover:bg-muted">Cancelar</button>
+                        <button
+                          type="button"
+                          onClick={() => void handleShareComprovante()}
+                          disabled={comprovSaving || !comprovFile || (comprovMode !== 'todos' && comprovPedidos.size === 0)}
+                          className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 text-white hover:bg-emerald-700 disabled:opacity-50"
+                        >
+                          {comprovSaving ? 'Salvando…' : 'Vincular comprovante'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ), document.body)}
                 <div className="grid grid-cols-1 gap-2">
                   {selectedOrderIds.map(id => {
                     const order = allCandidates.find(o => o.id === id);
@@ -2201,8 +2319,20 @@ const CreateShipment = () => {
               Relatório de Entrega
             </h3>
             <div className="flex items-center gap-2">
+              {isEditing && (
+                <button
+                  type="button"
+                  onClick={() => { setComprovModalOpen(true); setComprovMode('todos'); setComprovPedidos(new Set(selectedOrderIds)); setComprovFile(null); }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-emerald-600/10 border border-emerald-600/20 hover:bg-emerald-600/20 transition-colors text-xs font-semibold text-emerald-700"
+                  title="Anexar comprovante de entrega (um, vários ou todos os pedidos)"
+                >
+                  <FileCheck className="h-3.5 w-3.5" />
+                  Anexar comprovante
+                </button>
+              )}
               <div className="h-4 w-[1px] bg-border mx-1" />
               <button
+                type="button"
                 onClick={() => setReportPage(prev => Math.max(0, prev - 1))}
                 disabled={reportPage === 0}
                 className="p-1.5 rounded-lg hover:bg-muted disabled:opacity-30 disabled:cursor-not-allowed transition-colors"

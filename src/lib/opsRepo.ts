@@ -617,6 +617,68 @@ export async function listRelatorioEntregaAnexos(carregamentoId: string): Promis
   return (data || []) as RelatorioEntregaAnexo[];
 }
 
+/** Insere um anexo (sem onConflict) e retorna o id gerado. Usado p/ comprovante
+ *  compartilhado (o arquivo é uma linha; a cobertura vai na tabela de vínculos). */
+export async function insertRelatorioEntregaAnexoReturningId(row: {
+  carregamento_id: string;
+  pedido_id: string;
+  tipo: string;
+  arquivo_nome: string;
+  arquivo_url: string;
+  criado_por: string | null;
+}): Promise<string | null> {
+  if (!supabaseOps) return null;
+  const { data, error } = await supabaseOps
+    .from('concrem_relatorio_entrega_anexos')
+    .insert({ ...row, criado_em: new Date().toISOString() })
+    .select('id')
+    .single();
+  if (error) {
+    console.error('[Supabase OPS] insert relatorio_entrega_anexos:', error.message);
+    return null;
+  }
+  return (data as any)?.id ?? null;
+}
+
+export type ComprovanteVinculo = { documento_id: string; pedido_id: string };
+
+/** Vincula um COMPROVANTE (documento) a vários pedidos (tabela M2M = autoridade).
+ *  O banco valida tipo/carregamento; NF/boleto/outros são rejeitados. */
+export async function vincularComprovanteAosPedidos(documentoId: string, pedidoIds: string[], criadoPor: string | null): Promise<{ ok: boolean; error?: string }> {
+  if (!supabaseOps || !pedidoIds.length) return { ok: false };
+  const rows = pedidoIds.map((pedido_id) => ({ documento_id: documentoId, pedido_id, criado_por: criadoPor }));
+  const { error } = await supabaseOps
+    .from('concrem_comprovante_entrega_pedidos')
+    .upsert(rows, { onConflict: 'documento_id,pedido_id', ignoreDuplicates: true });
+  if (error) {
+    console.error('[Supabase OPS] vincular comprovante:', error.message);
+    return { ok: false, error: error.message };
+  }
+  return { ok: true };
+}
+
+/** Lista os vínculos de comprovante (cobertura) dos documentos de um carregamento. */
+export async function listComprovanteVinculos(carregamentoId: string): Promise<ComprovanteVinculo[]> {
+  if (!supabaseOps) return [];
+  // Documentos (comprovantes) do carregamento
+  const { data: docs } = await supabaseOps
+    .from('concrem_relatorio_entrega_anexos')
+    .select('id')
+    .eq('carregamento_id', carregamentoId)
+    .like('tipo', 'comprovante%');
+  const ids = (docs || []).map((d: any) => d.id as string);
+  if (!ids.length) return [];
+  const { data, error } = await supabaseOps
+    .from('concrem_comprovante_entrega_pedidos')
+    .select('documento_id, pedido_id')
+    .in('documento_id', ids);
+  if (error) {
+    console.error('[Supabase OPS] list comprovante vinculos:', error.message);
+    return [];
+  }
+  return (data || []) as ComprovanteVinculo[];
+}
+
 // ==============================================================================
 // Relatório de Entrega — Notificações de Representantes
 // ==============================================================================
